@@ -41,10 +41,18 @@ services:
     command:
       - "-s3-bucket=learn-uploads"
       - "-s3-endpoint=http://seaweedfs:8333"
-      - "-hooks-http=http://api:3011/internal/hooks/tusd"
+      # Phase 3: the API runs on the host during dev (not in compose), so the
+      # hook URL must target host.docker.internal. `extra_hosts` below maps
+      # that to the host gateway on Linux. If we containerize the API later,
+      # swap back to http://api:3011/... and drop extra_hosts.
+      - "-hooks-http=http://host.docker.internal:3011/internal/hooks/tusd?token=${TUSD_HOOK_SECRET:?TUSD_HOOK_SECRET must be set in infra/.env — it must match api/.env.local}"
+      # tusd does NOT natively forward a static secret header on hook calls.
+      # The API's /internal/hooks/tusd handler accepts ?token=<secret> as a
+      # fallback path; we pass the token via the URL. TUSD_HOOK_SECRET must
+      # match api/.env.local → api/src/config/env.ts.
       # Only fire hooks for pre-finish (transcode enqueue) and post-finish
       # (cleanup). Blocking pre-create on a not-yet-running API would make
-      # local smoke-testing impossible; the API's hook handler ships in Phase 2.
+      # local smoke-testing impossible.
       - "-hooks-enabled-events=pre-finish,post-finish"
       - "-port=1080"
     environment:
@@ -55,6 +63,8 @@ services:
       AWS_REGION: us-east-1
     ports:
       - "${TUSD_HOST_PORT:-1080}:1080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       seaweedfs:
         condition: service_healthy

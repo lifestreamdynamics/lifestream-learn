@@ -1,5 +1,5 @@
 {
-  "_comment": "SeaweedFS S3 IAM config for local development. Two identities: learn-api-rw has full access on both buckets; tusd-upload can only write/list/head objects under learn-uploads/. The keys here MUST match the docker-compose defaults so the out-of-the-box local stack works with no extra substitution step. When we tackle deploy, this file gets rendered with real credentials sourced from whatever secrets store we pick then.",
+  "_comment": "SeaweedFS S3 IAM config for local development. Three identities: learn-api-rw has full access on both buckets; tusd-upload can only write/list/head objects under learn-uploads/; anonymous can read learn-vod/ only so that nginx (which proxies signed /hls/ URLs to SeaweedFS without S3 credentials) can serve HLS playlists + segments. HLS-level auth is enforced by nginx secure_link upstream of SeaweedFS, not by SeaweedFS itself. The keys here MUST match the docker-compose defaults so the out-of-the-box local stack works with no extra substitution step. When we tackle deploy, this file gets rendered with real credentials sourced from whatever secrets store we pick then.",
   "identities": [
     {
       "name": "learn-api-rw",
@@ -35,6 +35,12 @@
         "Read:learn-uploads",
         "List:learn-uploads",
         "Tagging:learn-uploads"
+      ]
+    },
+    {
+      "name": "anonymous",
+      "actions": [
+        "Read:learn-vod"
       ]
     }
   ]

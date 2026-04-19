@@ -1,3 +1,4 @@
+import os from 'node:os';
 import path from 'node:path';
 import dotenv from 'dotenv';
 import { z } from 'zod';
@@ -43,6 +44,13 @@ const EnvSchema = z.object({
 
   SEED_ADMIN_EMAIL: z.string().email().default('admin@example.local'),
   SEED_ADMIN_PASSWORD: z.string().min(12).optional(),
+
+  TUSD_HOOK_SECRET: z.string().min(16),
+  TRANSCODE_CONCURRENCY: z.coerce.number().int().positive().default(1),
+  TRANSCODE_TMP_DIR: z.string().default(path.join(os.tmpdir(), 'learn-transcode')),
+  FFMPEG_BIN: z.string().default('ffmpeg'),
+  FFPROBE_BIN: z.string().default('ffprobe'),
+  VIDEO_MAX_DURATION_MS: z.coerce.number().int().positive().default(180_000),
 });
 
 const parsed = EnvSchema.safeParse(process.env);

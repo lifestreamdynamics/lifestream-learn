@@ -7,6 +7,7 @@ import { logger } from '@/config/logger';
 import { mountSwagger } from '@/config/swagger';
 import { healthRouter } from '@/routes/health.routes';
 import { apiRouter } from '@/routes/index';
+import { internalHooksRouter } from '@/routes/internal-hooks.routes';
 import { errorHandler } from '@/middleware/error-handler';
 import { NotFoundError } from '@/utils/errors';
 
@@ -32,6 +33,10 @@ export function createApp(): Express {
 
   mountSwagger(app);
 
+  // tusd hooks live off `/api` so they're obviously service-to-service traffic
+  // (the gateway's auth rules look at the `/api` prefix). Mounted before the
+  // API router so the explicit `/internal/*` path wins, not the catch-all.
+  app.use('/internal', internalHooksRouter);
   app.use('/api', apiRouter);
 
   app.use((_req, _res, next) => {

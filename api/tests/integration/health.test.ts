@@ -14,6 +14,7 @@ describe('GET /health', () => {
       database: 'ok',
       redis: 'ok',
       s3: 'ok',
+      queue: 'ok',
     });
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('ok');

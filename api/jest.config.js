@@ -11,18 +11,25 @@ module.exports = {
     '^@tests/(.*)$': '<rootDir>/tests/$1',
   },
   setupFiles: ['<rootDir>/tests/unit/setup.ts'],
-  // Unit coverage targets the Phase-2 exit-criterion scope: middleware + auth.
-  // Infra wiring (config/*, routes/index.ts, route stubs, services that touch
-  // Prisma) is exercised by the integration suite — jest.integration.config.js
-  // runs against a real DB + Redis + SeaweedFS and enforces its own thresholds.
+  // Unit coverage scope: middleware, auth layer, Phase-3 pure/near-pure
+  // modules (ffmpeg arg building, ladder selection, content types, hls
+  // signer, validators). Stateful wiring (Prisma + Redis + S3 + Bull) and
+  // the worker entry process are exercised by the integration suite.
   collectCoverageFrom: [
     'src/middleware/**/*.ts',
-    'src/controllers/auth.controller.ts',
+    'src/controllers/**/*.ts',
     'src/services/auth.service.ts',
-    'src/validators/auth.validators.ts',
+    'src/services/video.service.ts',
+    'src/services/ffmpeg/**/*.ts',
+    'src/services/object-store.ts',
+    'src/validators/**/*.ts',
     'src/utils/jwt.ts',
     'src/utils/password.ts',
     'src/utils/errors.ts',
+    'src/utils/hls-signer.ts',
+    'src/utils/content-type.ts',
+    'src/utils/tmp-dir.ts',
+    'src/workers/transcode.pipeline.ts',
     'src/routes/health.routes.ts',
     '!src/**/*.d.ts',
   ],
