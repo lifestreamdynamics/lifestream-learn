@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
+import '../../core/analytics/analytics_sinks.dart';
 import '../../data/models/cue.dart';
 import '../../data/models/video.dart';
 import '../../data/repositories/attempt_repository.dart';
@@ -30,6 +31,8 @@ class VideoWithCuesScreen extends StatefulWidget {
     required this.attemptRepo,
     required this.enrollmentRepo,
     this.controllerCache,
+    this.cueAnalyticsSink = const NoopCueAnalyticsSink(),
+    this.videoAnalyticsSink = const NoopVideoAnalyticsSink(),
     super.key,
   });
 
@@ -42,6 +45,11 @@ class VideoWithCuesScreen extends StatefulWidget {
   /// Optional shared cache so the screen can share controllers with the
   /// feed's cache. If null, a dedicated cache with capacity=1 is used.
   final VideoControllerCache? controllerCache;
+
+  /// Telemetry sinks — passed into the CueScheduler and LearnVideoPlayer.
+  /// Default Noop so tests that don't care about analytics keep working.
+  final CueAnalyticsSink cueAnalyticsSink;
+  final VideoAnalyticsSink videoAnalyticsSink;
 
   @override
   State<VideoWithCuesScreen> createState() => _VideoWithCuesScreenState();
@@ -111,6 +119,7 @@ class _VideoWithCuesScreenState extends State<VideoWithCuesScreen>
       controller: controller,
       cues: cues,
       videoId: widget.videoId,
+      analyticsSink: widget.cueAnalyticsSink,
     );
     scheduler.start();
     setState(() => _scheduler = scheduler);
@@ -141,6 +150,7 @@ class _VideoWithCuesScreenState extends State<VideoWithCuesScreen>
       enrollmentRepo: widget.enrollmentRepo,
       cache: _cache,
       onControllerReady: _onControllerReady,
+      videoAnalyticsSink: widget.videoAnalyticsSink,
     );
     return Scaffold(
       appBar: AppBar(
@@ -169,6 +179,7 @@ class _CueAwareLearnPlayer extends StatefulWidget {
     required this.enrollmentRepo,
     required this.cache,
     required this.onControllerReady,
+    required this.videoAnalyticsSink,
   });
 
   final VideoSummary video;
@@ -176,6 +187,7 @@ class _CueAwareLearnPlayer extends StatefulWidget {
   final EnrollmentRepository enrollmentRepo;
   final VideoControllerCache cache;
   final ValueChanged<VideoPlayerController> onControllerReady;
+  final VideoAnalyticsSink videoAnalyticsSink;
 
   @override
   State<_CueAwareLearnPlayer> createState() => _CueAwareLearnPlayerState();
@@ -225,6 +237,7 @@ class _CueAwareLearnPlayerState extends State<_CueAwareLearnPlayer> {
       videoRepo: widget.videoRepo,
       enrollmentRepo: widget.enrollmentRepo,
       controllerCache: widget.cache,
+      analyticsSink: widget.videoAnalyticsSink,
     );
   }
 }

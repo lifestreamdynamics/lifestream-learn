@@ -65,19 +65,3 @@ class DesignerApplicationPage with _$DesignerApplicationPage {
   factory DesignerApplicationPage.fromJson(Map<String, dynamic> json) =>
       _$DesignerApplicationPageFromJson(json);
 }
-
-/// Designer application row joined to a trimmed applicant profile, used
-/// by the admin review screen. Not yet emitted by the backend — we
-/// project this client-side today from the (plain) application row by
-/// resolving users separately (see admin repository).
-///
-/// Kept as its own type so the screen can typecheck a separate presenter
-/// model without leaking list-view concerns into the plain application.
-@freezed
-class DesignerApplicationWithApplicant with _$DesignerApplicationWithApplicant {
-  const factory DesignerApplicationWithApplicant({
-    required DesignerApplication application,
-    String? applicantEmail,
-    String? applicantDisplayName,
-  }) = _DesignerApplicationWithApplicant;
-}

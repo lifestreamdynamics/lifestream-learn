@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/analytics/analytics_sinks.dart';
 import '../../data/models/feed_entry.dart';
 import '../../data/repositories/enrollment_repository.dart';
 import '../../data/repositories/feed_repository.dart';
@@ -30,6 +31,7 @@ class FeedScreen extends StatefulWidget {
     this.feedRepo,
     this.itemBuilder,
     this.controllerCache,
+    this.videoAnalyticsSink = const NoopVideoAnalyticsSink(),
     super.key,
   });
 
@@ -48,6 +50,10 @@ class FeedScreen extends StatefulWidget {
 
   /// Injectable so tests can observe cache behaviour directly.
   final VideoControllerCache? controllerCache;
+
+  /// Telemetry sink for video_view / video_complete. Default Noop so
+  /// existing widget tests don't need to supply a fake.
+  final VideoAnalyticsSink videoAnalyticsSink;
 
   @override
   State<FeedScreen> createState() => _FeedScreenState();
@@ -98,6 +104,7 @@ class _FeedScreenState extends State<FeedScreen> {
       videoRepo: widget.videoRepo,
       enrollmentRepo: widget.enrollmentRepo,
       controllerCache: _cache,
+      analyticsSink: widget.videoAnalyticsSink,
     );
   }
 

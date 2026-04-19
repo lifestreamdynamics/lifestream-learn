@@ -59,5 +59,11 @@ module.exports = [
         jest: 'readonly',
       },
     },
+    rules: {
+      // Non-null assertions are idiomatic in test-assertion chains
+      // (expect(x).not.toBeNull(); then x!.field). Keeping the warning
+      // on production code is still desirable.
+      '@typescript-eslint/no-non-null-assertion': 'off',
+    },
   },
 ];

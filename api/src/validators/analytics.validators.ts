@@ -23,6 +23,8 @@ export type AnalyticsEventInput = z.infer<typeof analyticsEventSchema>;
 export const analyticsEventsBodySchema = z.array(analyticsEventSchema).min(1).max(100);
 export type AnalyticsEventsBody = z.infer<typeof analyticsEventsBodySchema>;
 
-export const courseIdParamsSchema = z.object({
-  id: z.string().uuid(),
-});
+// The `:id` UUID-path-param schema is shared with course controllers.
+// Re-export from course.validators.ts so there's one canonical definition
+// (validator dedup — both files otherwise hand-rolled the same 3-line
+// schema).
+export { courseIdParamsSchema } from '@/validators/course.validators';

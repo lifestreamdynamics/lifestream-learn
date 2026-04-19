@@ -508,9 +508,26 @@ Each slice's execution updates this table. I fill it as I finish; you can spot-c
 | C | 🟩 code complete, tests green | Static + unit + widget | Commit 34d9ea5. 38 tests green, analyze clean, APK builds, core/ coverage 91.8%. On-device verification pending. |
 | D | 🟩 code complete, tests green | Static + unit + widget | Commit e3c8e31. 98 tests green, analyze clean, APK builds (212MB debug). On-device verification pending. |
 | E | 🟩 code complete, tests green | Static + unit + widget | Commit 20be263. 175 tests green, analyze clean, APK builds (204MB debug). cue_validators 97.6% / cue_scheduler 94.9%. On-device verification pending. |
-| F | 🟨 in progress | — | — |
+| F | 🟩 code complete, tests green | Static + unit + widget | Commits b982d64 (backend /me) + 3baaad1 (Flutter). 222 Flutter tests green, 0 analyze issues, prod release APK 31.7 MB arm64 (split-per-abi). On-device verification pending. |
 
 Status values: `⬜ not started`, `🟨 in progress`, `🟩 code complete, tests green`, `✅ verified (where possible)`, `⚠️ blocked`.
+
+### Plan-validation pass (2026-04-19, post-Slice F)
+
+Ran `plan-validation-and-review` skill across all 6 slices. Findings:
+- **62 requirements traced → 61 IMPLEMENTED, 1 PARTIAL (route-name drift: `/browse` vs plan's `/courses` — functionally equivalent; intentional to avoid collision with `/courses/:id`), 0 MISSING.**
+- **4 connectivity gaps** consolidated to one root cause: `AnalyticsBufferCueSink` + `AnalyticsBufferVideoSink` were defined but never passed from `main.dart` down into `CueScheduler` / `LearnVideoPlayer` — so `cue_shown`, `cue_answered`, `video_view`, `video_complete` events silently hit `NoopSink` instead of the buffer.
+- **2 orphan widgets**: `FriendlyErrorScreen` (tested but never mounted), `DesignerApplicationWithApplicant` freezed class (0 consumers).
+- **3 dead backend exports**: `isCourseOwnerOrAdminOrCollaborator` (speculative future-use), `CourseCollaborator` re-export, duplicate `courseIdParamsSchema`.
+- **5 refactor-opportunity dupes** (`_unwrap` x9, "Empty response" throws x20, auth-gate x8, cursor codec x2, FeedBloc/CoursesBloc parallels) — left as tech-debt per "three similar lines better than premature abstraction."
+
+Remediated in a single follow-up commit:
+- Threaded `AnalyticsBufferCueSink` + `AnalyticsBufferVideoSink` through `main.dart` → `App` → `createRouter(...)` → `VideoWithCuesScreen` / `FeedScreen` → `CueScheduler` / `LearnVideoPlayer`. Added 3 constructor-wiring regression tests so a future refactor that drops a sink parameter fails loud.
+- Wired `FriendlyErrorScreen` as the go_router `errorBuilder` fallback so unknown routes get a friendly error instead of a raw red screen.
+- Removed `DesignerApplicationWithApplicant`, `isCourseOwnerOrAdminOrCollaborator` (+ its 3 unit tests), the `CourseCollaborator` re-export from `course.service.ts`, and the duplicate `courseIdParamsSchema` in `analytics.validators.ts` (re-exports from `course.validators.ts` now).
+- Fixed 6 pre-plan lint warnings (unused eslint-disable in `mkcourse.ts` + `no-non-null-assertion` in test files via an override in `eslint.config.js`). Backend `npm run lint` now 0 errors, 0 warnings.
+
+Post-remediation: Backend 460 unit + 118 integration green (1 integration failure unchanged: pre-existing `transcode-e2e` EADDRINUSE quirk acknowledged in CLAUDE.md). Flutter 225 tests green. Both analyze clean. Release APK builds under 50 MB per ABI.
 
 ---
 

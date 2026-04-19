@@ -9,6 +9,7 @@ import 'package:fvp/fvp.dart' as fvp;
 
 import 'core/analytics/analytics_buffer.dart';
 import 'core/analytics/analytics_event.dart';
+import 'core/analytics/analytics_sinks.dart';
 import 'core/auth/auth_bloc.dart';
 import 'core/auth/auth_event.dart';
 import 'core/auth/token_store.dart';
@@ -68,6 +69,8 @@ void main() {
   // before installing the periodic flush so the first tick drains any
   // events the previous session couldn't ship.
   final analyticsBuffer = AnalyticsBuffer(repo: eventsRepo);
+  final cueAnalyticsSink = AnalyticsBufferCueSink(analyticsBuffer);
+  final videoAnalyticsSink = AnalyticsBufferVideoSink(analyticsBuffer);
 
   authBloc = AuthBloc(authRepo: authRepo, tokenStore: tokenStore)
     ..add(const AuthStarted());
@@ -88,6 +91,8 @@ void main() {
     adminDesignerAppRepo: adminDesignerAppRepo,
     adminAnalyticsRepo: adminAnalyticsRepo,
     analyticsBuffer: analyticsBuffer,
+    cueAnalyticsSink: cueAnalyticsSink,
+    videoAnalyticsSink: videoAnalyticsSink,
   ));
 }
 
@@ -128,6 +133,8 @@ class App extends StatefulWidget {
     required this.adminDesignerAppRepo,
     required this.adminAnalyticsRepo,
     required this.analyticsBuffer,
+    required this.cueAnalyticsSink,
+    required this.videoAnalyticsSink,
     super.key,
   });
 
@@ -142,6 +149,8 @@ class App extends StatefulWidget {
   final AdminDesignerApplicationRepository adminDesignerAppRepo;
   final AdminAnalyticsRepository adminAnalyticsRepo;
   final AnalyticsBuffer analyticsBuffer;
+  final CueAnalyticsSink cueAnalyticsSink;
+  final VideoAnalyticsSink videoAnalyticsSink;
 
   @override
   State<App> createState() => _AppState();
@@ -159,6 +168,8 @@ class _AppState extends State<App> with WidgetsBindingObserver {
     designerAppRepo: widget.designerAppRepo,
     adminDesignerAppRepo: widget.adminDesignerAppRepo,
     adminAnalyticsRepo: widget.adminAnalyticsRepo,
+    cueAnalyticsSink: widget.cueAnalyticsSink,
+    videoAnalyticsSink: widget.videoAnalyticsSink,
   );
 
   DateTime? _sessionStart;
