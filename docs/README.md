@@ -6,6 +6,7 @@ Project-wide documentation. Sub-project-specific docs live with the code (`api/R
 
 - [`decisions/`](./decisions) — Architectural Decision Records (ADRs). Numbered, immutable once merged. New decision? New file.
 - [`architecture/`](./architecture) — Current-state diagrams and narrative (kept in sync with code; rewrite rather than append).
+- [`plans/`](./plans) — Per-phase or per-feature implementation plans that supplement `IMPLEMENTATION_PLAN.md` with the *how*. Living documents — update or delete once executed.
 - [`runbooks/`](./runbooks) — Incident response procedures (created in Phase 7). Private copies live in `ops/runbooks/`.
 
 ## Conventions
