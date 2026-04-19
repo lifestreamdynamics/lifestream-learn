@@ -1,23 +1,24 @@
 # Lifestream Learn — Implementation Plan
 
 **Document owner:** Eric
-**Last updated:** 2026-04-18
+**Last updated:** 2026-04-19
 **Status:** Draft — pending approval
+
+> **Scope note (2026-04-19):** deployment is deliberately out of scope for this plan. The goal is a fully functional, locally tested application end-to-end before we pick a hosting strategy. Shared-resource hygiene (ports, key prefixes, DB naming) is honoured from day one so that decision stays low-friction later.
 
 ### Distribution model
 
-**Open-source core, SaaS-hosted commercial offering.** Code is public; content and data are not. Precedent: GitLab, Mattermost, Sentry, Plausible.
+**Open-source core, commercial SaaS eventually.** Code is public; content and data are not. Precedent: GitLab, Mattermost, Sentry, Plausible.
 
 - **License:** AGPL-3.0 for both backend and app repos. Protects against a well-funded competitor running a hosted clone against us; self-hosters and contributors remain unaffected. Option to dual-license later if enterprise demand appears.
-- **Repo layout:** three public repos — `lifestream-learn-api`, `lifestream-learn-app`, `lifestream-learn-infra` (docker-compose + ansible for self-hosters). A private `lifestream-learn-ops` repo holds production secrets, VPS-specific configs, and Lifestream-ecosystem wiring (entries for `projects.json`, DEPLOYMENT_ARCHITECTURE, etc.).
-- **Revenue model:** subscriptions / per-course fees for the hosted service at `learn.lifestreamdynamics.com`. Content (videos, cues) and user data are served only through authenticated APIs and are not part of the open-source distribution.
-- **Kept out of public repos:** production `.env` files, course content, DB dumps, VPS hostnames, internal SSH configs, deploy scripts with hard-coded ecosystem paths, signing keys, third-party API keys.
+- **Repo layout:** three public repos — `lifestream-learn-api`, `lifestream-learn-app`, `lifestream-learn-infra`. A private `ops/` directory at the top of the monorepo holds phase reports and environment notes; it never ships to a public repo.
+- **Kept out of public repos:** any `.env` files with real values, course content, DB dumps, real hostnames or paths, signing keys, third-party API keys.
 
 ---
 
 ## 0. Product Summary
 
-An Android-first educational short-video app. Learners scroll a vertical TikTok-style feed of course videos that pause at authored timestamps to present interactive exercises: multiple-choice, matching, fill-in-the-blank, and voice-capture pronunciation scoring. Content is organized into courses authored by approved Course Designers. All video storage, transcoding, streaming, and APIs are self-hosted on the existing Lifestream VPS (`mittonvillage.com`) with a designed migration path to a cloud CDN.
+An Android-first educational short-video app. Learners scroll a vertical TikTok-style feed of course videos that pause at authored timestamps to present interactive exercises: multiple-choice, matching, fill-in-the-blank, and voice-capture pronunciation scoring. Content is organized into courses authored by approved Course Designers. Video storage, transcoding, streaming, and APIs are designed for self-hosting (SeaweedFS + tusd + FFmpeg + Nginx) with a deliberate migration seam to cloud CDN/object storage should that ever become the right trade-off.
 
 ### Roles
 
@@ -25,36 +26,40 @@ An Android-first educational short-video app. Learners scroll a vertical TikTok-
 - **Course Designer** — creates courses, uploads videos, authors interactive cues; managed via admin approval + per-course collaborator list
 - **Learner** — default role; consumes feed, completes exercises, tracks progress
 
-### Domains
+### Surfaces
 
-- `learn.lifestreamdynamics.com` — API only (+ minimal landing page with terms/privacy/app-store links)
-- All learner and designer UI is inside the Flutter app
+- A minimal landing page (pitch + terms/privacy/app-store links) — whatever domain the eventual host uses
+- A REST API (the same host)
+- All learner and designer UI lives inside the Flutter app
 
 ---
 
-## 1. Architecture (Target State)
+## 1. Architecture (Target State — local)
 
 ```
-┌──────────────────────────┐        ┌────────────────────────────────────┐
-│  Flutter App (Android)   │        │  mittonvillage.com (VPS)           │
-│  ─────────────────────   │        │  ──────────────────────────────    │
-│  • TikTok-style feed     │ HTTPS  │  Nginx (TLS, routing, secure_link) │
-│  • Interactive overlays  │◀──────▶│    ├─ learn.lifestreamdynamics.com │
-│  • tus resumable upload  │        │    │   ├─ /         → landing      │
-│  • record → audio blob   │        │    │   ├─ /api/*    → learn-api    │
-│  • HLS playback          │        │    │   ├─ /uploads/*→ tusd         │
-│                          │        │    │   └─ /hls/*    → SeaweedFS (signed)│
-└──────────────────────────┘        │                                    │
-                                     │  learn-api (Node 22, Express,    │
-                                     │    Prisma, port 3101, PM2)       │
-                                     │  learn-transcode-worker (PM2)    │
-                                     │  tusd (resumable upload)         │
-                                     │  SeaweedFS (S3-compatible object     │
-                                     │    storage, buckets: uploads/vod)│
-                                     │  PostgreSQL 15 (learn_api_*)     │
-                                     │  Redis 7 (prefix learn:)         │
-                                     └────────────────────────────────────┘
+┌──────────────────────────┐        ┌─────────────────────────────────────┐
+│  Flutter App (Android)   │        │  Local dev machine                  │
+│  ─────────────────────   │        │  ──────────────────────────────     │
+│  • TikTok-style feed     │ HTTP   │  Nginx (routing, secure_link)       │
+│  • Interactive overlays  │◀──────▶│    ├─ /          → landing          │
+│  • tus resumable upload  │        │    ├─ /api/*     → learn-api        │
+│  • record → audio blob   │        │    ├─ /uploads/* → tusd              │
+│  • HLS playback          │        │    └─ /hls/*     → SeaweedFS (signed)│
+│                          │        │                                     │
+└──────────────────────────┘        │  learn-api (Node 22, Express,       │
+                                     │    Prisma, port 3011)              │
+                                     │  learn-transcode-worker            │
+                                     │  tusd (resumable upload, :1080)    │
+                                     │  SeaweedFS (S3-compatible,         │
+                                     │    buckets: learn-uploads/learn-vod│
+                                     │  [shared] PostgreSQL via           │
+                                     │    accounting-postgres (learn_api_*│
+                                     │  [shared] Redis via accounting-redis│
+                                     │    (prefix learn:)                  │
+                                     └─────────────────────────────────────┘
 ```
+
+TLS, domain name, process supervisor, and host paths are deliberately left abstract — those are deployment decisions for later.
 
 ### Data flow — video upload
 
@@ -87,40 +92,40 @@ An Android-first educational short-video app. Learners scroll a vertical TikTok-
 | Auth | JWT access+refresh, roles `ADMIN`/`COURSE_DESIGNER`/`LEARNER` | Mirrors ecosystem auth-helpers shape |
 | Object storage | **SeaweedFS** (S3-compatible, Apache-2.0) | Chosen over MinIO because MinIO Inc. enforces AGPL aggressively against commercial users and we're open-sourcing the code. SeaweedFS is permissively licensed, single-binary, and keeps the "migrate to S3/R2/CloudFront later = config change" property |
 | Upload server | tusd | Industry-standard resumable protocol |
-| Transcode | FFmpeg CLI in a BullMQ worker (separate PM2 process) | No separate packager; HLS CMAF fMP4 |
+| Transcode | FFmpeg CLI in a BullMQ worker (separate process) | No separate packager; HLS CMAF fMP4 |
 | Streaming | Nginx static serving of SeaweedFS-backed HLS + `secure_link` | VOD = static files; simplest viable stack |
 | Codec | H.264 Main + AAC | Universal Android; skip HEVC (licensing) and AV1 (decoder coverage) |
 | Pronunciation scoring | **Deferred to post-MVP** | MVP ships MCQ, matching, blanks only. Voice cue type reserved in schema; engine hooks left as stubs. Revisit after PMF — candidates: Azure Pronunciation Assessment, self-hosted Kaldi GOP |
 | Cue schema | Custom JSON sidecar (discriminated union) | H5P has no Flutter runtime; bespoke schema is simpler and exportable later |
-| Process mgr | PM2 cluster | Ecosystem standard |
-| TLS / proxy | Nginx + Certbot | Ecosystem standard |
-| Deployment | Clone `accounting-api/scripts/install-production.sh` + `deploy-production.sh` | Ecosystem standard |
+| Reverse proxy | Nginx | Handles `secure_link` HMAC validation for HLS; TLS configured per deployment later |
+| Deployment | **Out of scope until the app is production-ready locally.** | Design still assumes shared infra (ports, prefixes) so the eventual deploy is low-friction. |
 
-### Risks to decide before Phase 1
+### Active risks
 
-- **SeaweedFS operational familiarity** — less mainstream than MinIO. Mitigation: smoke-test during Phase 1; if operationally painful, fall back to filesystem behind an S3-API shim (still open-source-safe).
-- **Open-source repo hygiene** — every deploy script, config template, and CI workflow must be scrubbed of VPS hostnames, internal paths, and secrets before first public push. Enforce via a pre-push hook + `.gitignore` pattern audit before Phase 2 deploy.
+- **SeaweedFS operational familiarity** — less mainstream than MinIO. Phase 1 smoke test passed; if it proves painful later, fall back to filesystem behind an S3-API shim (same abstraction, still license-safe).
+- **Open-source repo hygiene** — every config template and script must be clean of real hostnames, internal paths, and secrets before first public push. Enforced via `.githooks/pre-push` secret scan and the `ops/` gitignore wall.
 - **AGPL-3.0 contribution friction** — some contributors avoid AGPL. Accept as a trade-off; mention dual-licensing option in CONTRIBUTING.md.
 
 ---
 
-## 3. Port / Infrastructure Allocation
+## 3. Shared-resource allocation
+
+Fixed from day one so the app is deploy-ready onto a shared host without conflict. None of these are deployment decisions — they're naming conventions that prevent later surprises.
 
 | Resource | Value |
 |---|---|
-| learn-api port (prod) | **3101** |
-| learn-api port (dev) | 3011 |
+| learn-api port (dev) | **3011** |
+| learn-api port (reserved for later prod) | **3101** |
 | tusd port (internal) | 1080 |
 | SeaweedFS S3 API port (internal) | 8333 |
 | SeaweedFS master/filer ports (internal) | 9333 (master), 8888 (filer) |
-| PostgreSQL DB name | `learn_api_production` / `learn_api_development` / `learn_api_test` |
+| PostgreSQL DB names | `learn_api_production`, `learn_api_development`, `learn_api_test` |
 | PostgreSQL user | `learn_api_user` |
 | Redis key prefix | `learn:` |
-| PM2 names | `learn-api`, `learn-transcode-worker` |
-| VPS paths | `/var/www/learn-api`, `/var/www/learn-landing`, `/var/lib/seaweedfs`, `/var/lib/tusd` |
-| Domain | `learn.lifestreamdynamics.com` |
+| BullMQ queue prefix | `learn:` (e.g. `learn:transcode`) |
+| SeaweedFS bucket names | `learn-uploads`, `learn-vod`, (future) `learn-backups` |
 
-**Action:** Add `learn-api` entry to `lifestream-devtools/config/projects.json`, update `DEPLOYMENT_ARCHITECTURE.md`.
+Postgres (`accounting-postgres`) and Redis (`accounting-redis`) are shared with accounting-api during local dev — we only own the role, DBs, and key prefix above.
 
 ---
 
@@ -262,97 +267,67 @@ model AnalyticsEvent {
 
 Each phase has **exit criteria** that must all be met before the next phase begins. Phases 2-7 are intended to be implemented with parallel subagents where tasks are independent (per user-level CLAUDE.md rules).
 
-### Phase 0 — Decisions & Prerequisites (blocking)
+### Phase 0 — Decisions & Scaffolding  ✓ complete
 
-**Goal:** Resolve open questions before committing code.
+**Goal:** Lock the major decisions; land the repo skeleton.
 
-**Resolved (2026-04-18):**
-- Voice capture cue deferred to post-MVP. Schema keeps the `VOICE` enum value; engine treats it as `unimplemented` until revisited.
-- Object storage: SeaweedFS (Apache-2.0), not SeaweedFS — consistent with open-sourcing the code.
-- License: AGPL-3.0 for all three public repos.
+**Resolved:**
+- Voice capture cue deferred to post-MVP (ADR 0004). Schema keeps the `VOICE` enum value; engine treats it as `unimplemented` until revisited.
+- Object storage: SeaweedFS, not MinIO (ADR 0002).
+- License: AGPL-3.0 for all three public repos (ADR 0001).
+- Monorepo with private top-level `ops/` directory (ADR 0005).
+- Storage-conscious guardrails at the API and worker layer (ADR 0006).
 
-**Tasks:**
-- [ ] Confirm DNS control of `lifestreamdynamics.com` and ability to add `learn.` A record
-- [x] Confirm VPS disk headroom (2026-04-18): 38 GB free on single volume. Storage upgrade **deferred to post-MVP** (ADR 0006). Mitigations: duration cap, delete raw after transcode, free-space alert.
-- [ ] Confirm Flutter dev environment on Eric's machine (Android SDK, device/emulator)
-- [ ] Verify Node 22.12+ available on VPS (`node --version` via SSH); if not, install via NodeSource and validate existing PM2 apps (`accounting-api`, `chatbot-api`) still run — they declare `engines.node >=18` so Node 22 is within range, but run their test suites as a regression check before flipping the default
-- [ ] Create public GitHub org or decide on username for repo hosting; reserve `lifestream-learn-api`, `lifestream-learn-app`, `lifestream-learn-infra` names
-- [ ] Create private `lifestream-learn-ops` repo for secrets/deploy configs
-- [ ] Write initial AGPL-3.0 LICENSE, README, CONTRIBUTING, CODE_OF_CONDUCT scaffolds for each public repo
-- [ ] Add `.gitignore` and pre-push secret-scan (gitleaks or similar) to public repos
-
-**Exit criteria:**
-- All decisions recorded in this file
-- DNS, disk, and Flutter environment verified
-- Public/private repo skeletons created with license + secret-scan wired up
-- VPS disk/CPU checked via `server-monitor` skill
+**Delivered:**
+- `api/`, `app/`, `infra/` scaffolds plus root LICENSE, README, CONTRIBUTING, CODE_OF_CONDUCT.
+- `.gitignore` + `.githooks/pre-push` secret scan.
 
 ---
 
-### Phase 1 — Infrastructure on VPS
+### Phase 1 — Local infrastructure  ✓ complete for MVP scope
 
-**Goal:** VPS has all persistent services running and reachable; landing page live; no app code yet.
+**Goal:** A local docker-compose stack that backs every piece of the app — object store, upload gateway, reverse proxy, landing page — so Phase 2+ work has somewhere to plug in.
 
-**Tasks:**
-1. DNS: add `learn.lifestreamdynamics.com` A record → VPS
-2. Nginx: create server block for `learn.lifestreamdynamics.com` with Certbot TLS
-3. Landing page: minimal static HTML under `/var/www/learn-landing/` with:
-   - Product pitch (one paragraph)
-   - Terms of service, privacy policy (stub links acceptable for now; content comes before public launch)
-   - App store badge placeholder
-4. PostgreSQL: create `learn_api_production`, `learn_api_development`, `learn_api_test` DBs + `learn_api_user`
-5. Redis: verify accessibility; no config change needed (shared instance, prefix-separated)
-6. SeaweedFS: install single-binary, configure systemd (master + volume + filer + s3), create `learn-uploads` and `learn-vod` buckets via S3 API, create scoped access key for learn-api
-7. tusd: install binary, configure systemd, point storage at SeaweedFS `learn-uploads` bucket (S3 backend), configure hooks endpoint
-8. FFmpeg: install via apt; verify H.264 + AAC encoders available
-9. Nginx: add `/uploads/*` → tusd reverse proxy; add `/hls/*` → SeaweedFS S3 reverse proxy with `secure_link` module
-10. Firewall: ensure only 80/443/22 are externally reachable
-11. Publish `lifestream-learn-infra` repo with docker-compose + ansible equivalent so self-hosters can reproduce this layer
+**Delivered:**
+1. `infra/docker-compose.yml` — seaweedfs, tusd, nginx. **No Postgres or Redis here**: this project borrows `accounting-postgres` and `accounting-redis` from accounting-api's compose and isolates itself with a `learn_api_user` role + `learn_api_*` DBs + `learn:` Redis key prefix.
+2. `infra/nginx/local.conf` + `infra/nginx/secure_link.conf.inc` — plain-HTTP reverse proxy for `/api/*`, `/uploads/*`, `/hls/*` (signed-URL validation using Nginx `secure_link` stock MD5 — see `secure_link.conf.inc` for the rationale and SHA256 upgrade path).
+3. `infra/seaweedfs/s3.json` — two-identity IAM: `learn-api-rw` (full) and `tusd-upload` (write-only to `learn-uploads/`).
+4. `infra/landing/` — `index.html`, `terms.html`, `privacy.html`.
+5. `infra/scripts/` — `create-databases.sh` (idempotent DB/user bootstrap on the shared Postgres), `create-buckets.sh` (SeaweedFS bucket provisioning), `sign-hls-url.sh` (signed-URL helper), `disk-alert.sh` (standalone watchdog — not yet scheduled, that's a deploy concern).
+6. `scripts/tests/*.bats` — 34 BATS cases covering every shell script.
 
-**Storage-constrained MVP guardrails (per ADR 0006):**
-- API-layer video duration cap (default 180s, env-configurable)
-- Transcode worker deletes the raw upload from `learn-uploads` bucket on successful HLS publish
-- Disk alert: script + systemd timer that warns (email or server-monitor integration) when `/var/lib/seaweedfs` exceeds 25 GB
+**Exit criteria — all met:**
+- Landing page served, `/health` → 200.
+- `learn_api_user` connects to `learn_api_development` on accounting-postgres.
+- `redis-cli SET learn:ping` round-trips on accounting-redis.
+- SeaweedFS buckets `learn-uploads` + `learn-vod` created idempotently.
+- tus resumable upload via `/uploads/files/` → 201 Created, file lands in `learn-uploads`.
+- `secure_link`: unsigned → 403, tampered → 403, expired → 410, valid → proxied to SeaweedFS.
+- BATS: 34/34 pass.
 
-**Exit criteria:**
-- `curl https://learn.lifestreamdynamics.com/` returns the landing page with valid TLS
-- `psql -h localhost -U learn_api_user -d learn_api_production` connects successfully
-- `redis-cli` responds; `SET learn:ping 1` works
-- SeaweedFS console reachable via SSH tunnel only
-- tusd `/uploads/` accepts a 10 MB test file with resumable semantics (test from laptop)
-- FFmpeg transcodes a 30-second test MP4 → HLS ladder in a manual invocation
-- Nginx `secure_link` rejects unsigned `/hls/` requests and accepts HMAC-signed ones (manual curl test)
-- `server-monitor` skill reports all services healthy
-
-**Validation:** Use `pre-deployment-validation` skill before marking phase complete.
+**Not in scope:** TLS/Certbot, systemd units, process supervision, domain registration, disk-alert scheduling — all deferred with the deploy strategy.
 
 ---
 
 ### Phase 2 — learn-api Scaffold
 
-**Goal:** A working Express API on port 3101 with auth, health check, and empty domain routes — but no video logic yet.
+**Goal:** A working Express API on port 3011 (dev) with auth, health check, and empty domain routes — but no video logic yet.
 
 **Tasks:**
-1. Clone structure from `accounting-api` (do NOT copy domain code; copy only scaffolding: TS config, ESLint, Prettier, Jest, PM2 ecosystem file, install/deploy scripts, Winston/Morgan/Helmet/rate-limit setup, Prisma setup, OpenAPI JSDoc scaffold). **Do not copy the Bull queue code** — rewrite against BullMQ API (`Queue`, `Worker`, `QueueEvents` classes; no `Queue#process` callback).
-2. Initialize Prisma 7 (requires Node 22.12+) with schema from §4
-3. Run initial migration against `learn_api_development`
-4. Auth: email/password signup + login endpoints returning JWT access (15 min) + refresh (30 days); role claim present; copy `authenticate`, `requireRole` middleware shape from `accounting-api/src/middleware/helpers/auth-helpers.ts`
-5. Role seed: create admin user via Prisma seed script (idempotent)
-6. Route stubs (return `501 Not Implemented`) for: `/api/courses`, `/api/videos`, `/api/cues`, `/api/attempts`, `/api/voice-attempts`, `/api/feed`, `/api/designer-applications`, `/api/events`
-7. Health endpoint at `/health` returning DB + Redis + SeaweedFS connectivity status
-8. OpenAPI docs served at `/api/docs` (local/dev only)
-9. Deploy to VPS via cloned install/deploy scripts; register in `lifestream-devtools/config/projects.json`; update `DEPLOYMENT_ARCHITECTURE.md`
-10. Configure PM2 cluster entry
+1. Clone structure from `accounting-api` (do NOT copy domain code; copy only scaffolding: TS config, ESLint, Prettier, Jest, Winston/Morgan/Helmet/rate-limit setup, Prisma setup, OpenAPI JSDoc scaffold). **Do not copy the Bull queue code** — rewrite against BullMQ API (`Queue`, `Worker`, `QueueEvents` classes; no `Queue#process` callback).
+2. Initialize Prisma 7 (requires Node 22.12+) with schema from §4.
+3. Run initial migration against `learn_api_development` on the shared accounting-postgres.
+4. Auth: email/password signup + login endpoints returning JWT access (15 min) + refresh (30 days); role claim present; copy `authenticate`, `requireRole` middleware shape from `accounting-api/src/middleware/helpers/auth-helpers.ts`.
+5. Role seed: create admin user via Prisma seed script (idempotent).
+6. Route stubs (return `501 Not Implemented`) for: `/api/courses`, `/api/videos`, `/api/cues`, `/api/attempts`, `/api/voice-attempts`, `/api/feed`, `/api/designer-applications`, `/api/events`.
+7. Health endpoint at `/health` returning DB + Redis + SeaweedFS connectivity status.
+8. OpenAPI docs served at `/api/docs` (local/dev only).
 
 **Exit criteria:**
-- `curl https://learn.lifestreamdynamics.com/api/health` returns 200 with all dependencies "ok"
-- Signup → login → protected-route round-trip works end-to-end
-- Unit tests pass at ≥80% coverage on middleware and auth
-- Integration tests pass at ≥85% coverage with Postgres-backed setup
-- `pm2 list` on VPS shows `learn-api` online in cluster mode
-- New entry in `projects.json` and `DEPLOYMENT_ARCHITECTURE.md`
-
-**Validation:** `pre-deployment-validation` + `environment-standardization` skills.
+- `curl http://localhost:3011/health` returns 200 with all dependencies "ok".
+- Signup → login → protected-route round-trip works end-to-end against local infra.
+- Unit tests pass at ≥80% coverage on middleware and auth.
+- Integration tests pass at ≥85% coverage against `learn_api_test` on accounting-postgres and a `learn:` prefix on accounting-redis.
 
 ---
 
@@ -363,18 +338,18 @@ Each phase has **exit criteria** that must all be met before the next phase begi
 **Tasks:**
 1. `POST /api/videos` → creates `Video` row with `status=UPLOADING`, returns `{videoId, uploadUrl}` (tusd URL with pre-signed token)
 2. tusd `pre-finish` hook → hits learn-api `/internal/hooks/upload-complete` → enqueues `learn:transcode` Bull job
-3. `learn-transcode-worker` (separate PM2 process): pulls source from SeaweedFS, runs FFmpeg ladder (360/540/720/1080p CMAF fMP4), writes to `learn-vod/{videoId}/`, writes master playlist, updates DB `status=READY`, publishes `learn:video.ready` event (future analytics hook)
+3. `learn-transcode-worker` (separate process, `npm run worker:transcode:dev` in dev): pulls source from SeaweedFS, runs FFmpeg ladder (360/540/720/1080p CMAF fMP4), writes to `learn-vod/{videoId}/`, writes master playlist, updates DB `status=READY`, publishes `learn:video.ready` event (future analytics hook)
 4. Failure path: retry with backoff (BullMQ built-in); after 3 fails, set `status=FAILED` + store error
 5. `GET /api/videos/{id}/playback` → verify user has access (enrolled or owner) → generate HMAC-signed master playlist URL; tokens expire 2h
 6. Nginx `secure_link` config validates HMAC on every request under `/hls/`
 7. Shell tests via `shell-testing-workflow` skill for any bash plumbing (e.g. SeaweedFS bucket provisioning script)
 
 **Exit criteria:**
-- End-to-end: `curl` tus upload of a 90-second MP4 → within ≤3 minutes (on VPS), `GET /api/videos/{id}` shows `status=READY`
+- End-to-end: `curl` tus upload of a 90-second MP4 → within a few minutes locally, `GET /api/videos/{id}` shows `status=READY`
 - `ffprobe` on produced master playlist shows 4 variant streams with correct bitrates
 - `curl` to a signed master URL succeeds; same URL after expiry returns 403
 - `curl` to a segment URL with tampered HMAC returns 403
-- Transcode worker survives a simulated kill mid-job and resumes on PM2 restart without data corruption
+- Transcode worker survives a simulated kill mid-job and resumes cleanly on restart without data corruption
 - BullMQ dashboard (Bull Board, SSH-tunneled) shows completed/failed job history
 
 ---
@@ -384,9 +359,9 @@ Each phase has **exit criteria** that must all be met before the next phase begi
 **Goal:** Learner can sign up, log in, scroll a vertical feed of seeded videos, and watch them with ABR. No interactivity yet.
 
 **Tasks:**
-1. Fork `FlutterWiz/flutter_video_feed` into `/home/eric/Projects/lifestream-learn/app/` (Flutter project)
-2. Flutter project setup: Android-only build initially; Dart/Flutter version pinned; `.nvmrc`-equivalent via `fvm` config
-3. Seed learn-api with 3-5 test videos (uploaded via Phase 3 flow) and enroll a test learner
+1. Fork `FlutterWiz/flutter_video_feed` into `app/` (Flutter project)
+2. Flutter project setup: Android-only build initially; Dart/Flutter version pinned; `fvm` config
+3. Seed the local learn-api with 3-5 test videos (uploaded via Phase 3 flow) and enroll a test learner
 4. Auth screens: signup, login, "forgot password" stub
 5. Feed screen: `PageView` wrapping `flutter_video_feed`'s controller pool, points at `/api/feed` + `/api/videos/{id}/playback`
 6. Video player wiring: `video_player` controller per page, preload ±1, dispose on leave
@@ -397,7 +372,7 @@ Each phase has **exit criteria** that must all be met before the next phase begi
 
 **Exit criteria:**
 - APK installs on a physical Android device (Android 10+)
-- Signup + login work against production learn-api
+- Signup + login work against the local learn-api
 - Feed loads ≥5 seeded videos; each plays immediately on view
 - Swipe up advances to next video with no visible buffer gap on a good connection
 - Network throttled to 3G: ABR drops to 360p within ~10s; no stalls >3s
@@ -463,29 +438,28 @@ Each phase has **exit criteria** that must all be met before the next phase begi
 
 ---
 
-### Phase 7 — Hardening & Release Candidate
+### Phase 7 — Local hardening
 
-**Goal:** App is ready for closed beta release to a private Google Play track.
+**Goal:** The full app is production-ready *locally* — correctness, accessibility, crash reporting, security review — before any deployment work.
 
 **Tasks:**
-1. Load test learn-api to target: 200 concurrent learners, sustained 30 min; tune Postgres pool, Nginx workers, SeaweedFS connection limits
-2. Bandwidth test: simulate 100 concurrent 720p streams; document observed throughput vs 1 Gbps ceiling
-3. Security audit: run `security-review` skill on all backend code
-4. Accessibility pass: TalkBack works on MCQ/blanks/matching; sufficient color contrast
-5. Crash reporting: Sentry (or equivalent ecosystem choice) wired into app + API
-6. Backup: nightly `pg_dump` to SeaweedFS bucket `learn-backups` + weekly snapshot pushed to `lifestream-vault`
-7. Runbook: written incident response for (a) transcode worker stuck, (b) SeaweedFS disk full, (c) Azure outage, (d) Nginx HMAC mismatches
-8. Google Play console setup: app listing, internal testing track, test device whitelist
-9. `plan-validation-and-review` skill on the whole codebase
-10. Written migration runbook: VPS → Cloudflare Stream or S3+CloudFront (what to swap, how to test, rollback plan)
+1. Local load test of learn-api against the local stack: 200 concurrent simulated learners, sustained 30 min; tune Postgres pool, Nginx workers, SeaweedFS connection limits. Record baseline numbers so we have something to compare against after a future deploy.
+2. Security audit: run `security-review` skill on all backend code.
+3. Accessibility pass on the Flutter app: TalkBack works on MCQ/blanks/matching; sufficient color contrast.
+4. Crash reporting wired into app + API (Sentry or equivalent). Configurable via env so the endpoint can be pointed anywhere later.
+5. `plan-validation-and-review` skill on the whole codebase.
 
 **Exit criteria:**
-- APK passes Google Play "Internal App Sharing" review
-- Load test meets targets with p95 latency <500ms on API and <1s TTFB on HLS master playlist
-- Zero Sentry-reported crashes in a 2-day smoke test on 3 devices
-- Backup + restore drill succeeds from a fresh staging DB
-- Runbook reviewed
-- Migration plan reviewed
+- Full end-to-end user journey works reliably on a local build for multiple days without manual intervention
+- Local load test meets targets with p95 latency <500ms on API and <1s TTFB on HLS master playlist
+- Zero crashes in a 2-day smoke test on 3 devices
+- Security review green
+
+---
+
+### After Phase 7 — Deployment (separate work track)
+
+Deployment is deliberately kept out of this plan. Once Phase 7 is green we pick a deploy strategy (self-hosted on the shared VPS, cloud, hybrid), write the relevant runbooks and automation, and schedule a closed beta. That track will include: TLS/domain/CDN decisions, process supervision, backup + restore drill, incident-response runbook, Google Play console setup, release-candidate sign-off.
 
 ---
 
@@ -493,23 +467,23 @@ Each phase has **exit criteria** that must all be met before the next phase begi
 
 Per user-level CLAUDE.md, phases with 2+ independent tasks should be implemented with parallel subagents. Natural split points:
 
-- **Phase 1:** one subagent per service (SeaweedFS, tusd, Nginx/TLS, Postgres/Redis, landing page) — 5 parallel
-- **Phase 2:** one for Prisma schema + migrations, one for auth middleware + JWT, one for route scaffolding + OpenAPI
-- **Phase 3:** one for tusd+hook integration, one for transcode worker + FFmpeg ladder, one for Nginx `secure_link`
-- **Phase 4:** one for auth flows, one for feed + player, one for API client + state
-- **Phase 5:** subagents A/B/C as specified above
-- **Phase 7:** one for load test, one for security audit, one for backup/runbook
+- **Phase 1 (done):** one subagent per service — SeaweedFS + tusd, Nginx + secure_link, scripts + landing page + disk-alert — ran 3-way parallel during scaffolding.
+- **Phase 2:** one for Prisma schema + migrations, one for auth middleware + JWT, one for route scaffolding + OpenAPI.
+- **Phase 3:** one for tusd+hook integration, one for transcode worker + FFmpeg ladder, one for signed-URL issuance + secure_link tuning.
+- **Phase 4:** one for auth flows, one for feed + player, one for API client + state.
+- **Phase 5:** subagents A/B/C as specified above.
+- **Phase 7:** one for load test, one for security audit.
 
 ---
 
-## 7. Migration Seams (cloud-ready from day one)
+## 7. Migration Seams (host-portable from day one)
 
-Deliberate seams so a future VPS→cloud cutover is config, not rewrite:
+Deliberate seams so the eventual hosting decision stays a config change, not a rewrite:
 
-1. **Storage abstraction:** all reads/writes go through a single `ObjectStore` interface (S3 SDK under the hood). Swap `MINIO_ENDPOINT` → `s3.amazonaws.com` / `r2.cloudflarestorage.com` with no code change.
+1. **Storage abstraction:** all reads/writes go through a single `ObjectStore` interface (S3 SDK under the hood). Swap the `S3_ENDPOINT` env var to any S3-compatible endpoint (AWS S3, Cloudflare R2, Backblaze B2, a self-hosted SeaweedFS, etc.) with no code change.
 2. **Playback URL builder:** one `getPlaybackUrl(videoId, userId)` service method. Replace its body to issue CloudFront signed URLs, Cloudflare Stream signed tokens, etc.
-3. **Transcode abstraction:** `VideoTranscoder` interface with `transcode(sourceKey) → hlsPrefix`. Replace FFmpeg worker with AWS MediaConvert or Cloudflare Stream API without touching routes.
-4. **CMAF fMP4 output format:** portable across CloudFront, Cloudflare, Bunny, etc.
+3. **Transcode abstraction:** `VideoTranscoder` interface with `transcode(sourceKey) → hlsPrefix`. Replace the FFmpeg worker with AWS MediaConvert or Cloudflare Stream API without touching routes.
+4. **CMAF fMP4 output format:** portable across CloudFront, Cloudflare, Bunny, Fastly, etc.
 
 ---
 
@@ -519,27 +493,29 @@ Assuming Eric + Claude Code working through these in order, with subagent parall
 
 | Phase | Estimate |
 |---|---|
-| 0 — Decisions | 1-2 days (mostly waiting on legal + Azure setup) |
-| 1 — Infra | 2-3 days |
+| 0 — Decisions & scaffolding | ✓ complete |
+| 1 — Local infra | ✓ complete |
 | 2 — API scaffold | 2-3 days |
 | 3 — Upload/transcode | 3-4 days |
 | 4 — Flutter feed | 4-6 days |
 | 5 — Cues MVP (MCQ, matching, blanks) | 6-8 days |
 | 6 — Approval+analytics+polish | 4-5 days |
-| 7 — Hardening+RC | 3-5 days |
-| **Total** | **~3.5-4.5 weeks of focused work to closed beta** (voice deferred) |
+| 7 — Local hardening | 3-5 days |
+| **Total remaining** | **~2.5-3.5 weeks of focused work to production-ready locally** (voice deferred; deploy after) |
 
 ---
 
-## 9. Open Questions (to resolve inline or before Phase 0 closes)
+## 9. Open Questions
 
-1. **Payment / monetization**: Stripe-based subscription? Per-course one-time? Free tier limits? Stubbed behind a feature flag for closed beta, or wired in before public launch?
+Carry-overs that don't block Phase 2 but need to land before a deploy track opens:
+
+1. **Payment / monetization**: Stripe-based subscription? Per-course one-time? Free tier limits? Stubbed behind a feature flag initially.
 2. **Content moderation**: approved designers publish without review, or does admin review each course? (Current plan: no review post-approval — flag if that's wrong.)
-3. **Data retention**: how long do we keep attempt history and analytics raw events? (GDPR / CCPA relevance once public.)
-4. **Offline mode**: is "download course for offline playback" required for MVP? Currently assumed **no**.
-5. **iOS**: target launch date, or strictly post-Android-beta?
-6. **Terms/Privacy content**: who writes these? Needed for Google Play submission and for the landing page.
-7. **GitHub org**: publish under personal account, a new `lifestream-dynamics` org, or existing one? Affects brand and contribution UX.
+3. **Data retention**: how long do we keep attempt history and analytics raw events? (GDPR / CCPA relevance before anything goes public.)
+4. **Offline mode**: is "download course for offline playback" required? Currently assumed **no** for initial scope.
+5. **iOS**: target launch date, or strictly post-Android?
+6. **Terms/Privacy content**: real copy needed before anything goes public.
+7. **GitHub org**: publish under personal account, a new `lifestream-dynamics` org, or an existing one? Affects brand and contribution UX.
 
 ---
 
@@ -554,4 +530,3 @@ Assuming Eric + Claude Code working through these in order, with subagent parall
 - Node.js 22 LTS: https://nodesource.com/blog/Node.js-v22-Long-Term-Support-LTS
 - Prisma system requirements: https://www.prisma.io/docs/orm/reference/system-requirements
 - BullMQ (Bull EOL 2026): https://docs.bullmq.io · https://pocketlantern.dev/briefs/bull-vs-bullmq-node-job-queue-performance-2026
-- Ecosystem standards: `~/Projects/DEPLOYMENT_ARCHITECTURE.md`, `~/Projects/accounting-api/ECOSYSTEM_INTEGRATION.md`, `~/Projects/lifestream-devtools/config/projects.json`

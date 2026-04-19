@@ -14,8 +14,8 @@ This is a multi-project workspace. Each subdirectory is published as its own pub
 |---|---|---|
 | [`api/`](./api) | Node 22 / Express / Prisma / Postgres REST API | AGPL-3.0 |
 | [`app/`](./app) | Flutter Android app (iOS later) — learner + course-designer UI | AGPL-3.0 |
-| [`infra/`](./infra) | Docker Compose + Ansible templates for self-hosters | AGPL-3.0 |
-| [`ops/`](./ops) | **Private** — production secrets, VPS-specific deploy configs. Git-ignored at the top level; tracked in a separate private repo. |
+| [`infra/`](./infra) | Docker Compose for local development (postgres + redis are shared with accounting-api; this stack adds SeaweedFS, tusd, nginx). | AGPL-3.0 |
+| [`ops/`](./ops) | **Private** — phase reports and environment notes. Git-ignored at the top level. |
 | [`docs/`](./docs) | Architecture decisions, design notes, runbooks | — |
 
 The canonical implementation plan lives at [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md).
@@ -35,7 +35,7 @@ Open-source core, commercial SaaS. The code is public under AGPL-3.0. The conten
 - **Storage:** SeaweedFS (S3-compatible, Apache-2.0)
 - **Upload:** tusd (resumable)
 - **Streaming:** FFmpeg → HLS (CMAF fMP4) → Nginx with `secure_link` HMAC tokens
-- **Deploy:** PM2 · Nginx · Certbot on a single VPS; designed for seamless migration to S3 + CDN later
+- **Deploy:** not in scope yet — focus is a fully functional, locally tested app first. Migration seams (object-store abstraction, playback-URL builder, transcoder interface) are designed in from day one so the eventual hosting decision stays a config change, not a rewrite.
 
 ---
 

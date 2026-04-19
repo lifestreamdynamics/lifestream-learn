@@ -5,10 +5,10 @@
 
 ## Context
 
-Lifestream Learn has four deliverables that live on different release schedules but share architecture, data model, and a common history of decisions: the API, the Flutter app, the infra templates, and the production ops/deploy configs. We needed to pick a repository structure that:
+Lifestream Learn has four strands that live on different release schedules but share architecture, data model, and a common history of decisions: the API, the Flutter app, the infra templates, and a private scratch area. We needed to pick a repository structure that:
 
 1. Keeps related code discoverable during early development (lots of cross-cutting changes)
-2. Does not leak production secrets or VPS-specific paths when the code goes public
+2. Does not leak secrets or environment-specific paths when the code goes public
 3. Does not force each deliverable into the *same* public repo (they have different audiences and different contribution UX)
 4. Is cheap to split later without rewriting history
 

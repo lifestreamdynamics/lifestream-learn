@@ -21,7 +21,7 @@ Matching the old stack on a brand-new service would mean adopting an EOL depende
 ## Consequences
 
 - Divergence from `accounting-api` in queue API — BullMQ's `Queue` / `Worker` / `QueueEvents` classes are not the same as Bull's `Queue#process`. Queue code cannot be copy-pasted; it must be rewritten from scratch (already reflected in Phase 2 task list).
-- The VPS must run Node 22.12+. VPS is already on 22.22.2 (verified), so no install step is required — only a brief regression check that `accounting-api` and `chatbot-api` still run under Node 22 (they declare `engines.node >= 18.0.0` so they should).
+- Wherever the service eventually runs, that host must supply Node 22.12+. Baking this into `engines` means an incompatible host is a fast-fail at `npm install` time, not a surprise at runtime.
 - When the broader ecosystem upgrades, `accounting-api` should migrate to BullMQ — but that is out of scope for this project.
 
 ## Alternatives considered

@@ -1,0 +1,180 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  COURSE_DESIGNER
+  LEARNER
+}
+
+enum AppStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum VideoStatus {
+  UPLOADING
+  TRANSCODING
+  READY
+  FAILED
+}
+
+enum CueType {
+  MCQ
+  MATCHING
+  BLANKS
+  VOICE
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique
+  passwordHash String
+  role         Role     @default(LEARNER)
+  displayName  String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  designerApp    DesignerApplication?
+  enrollments    Enrollment[]
+  attempts       Attempt[]
+  ownedCourses   Course[]             @relation("CourseOwner")
+  collaborations CourseCollaborator[]
+  analytics      AnalyticsEvent[]
+
+  @@index([role])
+}
+
+model DesignerApplication {
+  id          String    @id @default(uuid()) @db.Uuid
+  userId      String    @unique @db.Uuid
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status      AppStatus @default(PENDING)
+  reviewedBy  String?   @db.Uuid
+  submittedAt DateTime  @default(now())
+  reviewedAt  DateTime?
+  note        String?
+  updatedAt   DateTime  @updatedAt
+
+  @@index([status])
+}
+
+model Course {
+  id             String               @id @default(uuid()) @db.Uuid
+  slug           String               @unique
+  title          String
+  description    String
+  coverImageUrl  String?
+  ownerId        String               @db.Uuid
+  owner          User                 @relation("CourseOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  published      Boolean              @default(false)
+  videos         Video[]
+  collaborators  CourseCollaborator[]
+  enrollments    Enrollment[]
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  @@index([ownerId])
+  @@index([published])
+}
+
+model CourseCollaborator {
+  courseId String   @db.Uuid
+  userId   String   @db.Uuid
+  course   Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  addedAt  DateTime @default(now())
+
+  @@id([courseId, userId])
+  @@index([userId])
+}
+
+model Video {
+  id          String      @id @default(uuid()) @db.Uuid
+  courseId    String      @db.Uuid
+  course      Course      @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  title       String
+  orderIndex  Int
+  status      VideoStatus @default(UPLOADING)
+  durationMs  Int?
+  sourceKey   String?
+  hlsPrefix   String?
+  cues        Cue[]
+  attempts    Attempt[]
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([courseId, orderIndex])
+  @@index([status])
+}
+
+model Cue {
+  id         String    @id @default(uuid()) @db.Uuid
+  videoId    String    @db.Uuid
+  video      Video     @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  atMs       Int
+  pause      Boolean   @default(true)
+  type       CueType
+  payload    Json
+  orderIndex Int
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  attempts   Attempt[]
+
+  @@index([videoId, orderIndex])
+  @@index([videoId, atMs])
+}
+
+model Enrollment {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @db.Uuid
+  courseId    String   @db.Uuid
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course      Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  startedAt   DateTime @default(now())
+  lastVideoId String?  @db.Uuid
+  lastPosMs   Int?
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userId, courseId])
+  @@index([courseId])
+}
+
+model Attempt {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @db.Uuid
+  videoId     String   @db.Uuid
+  cueId       String   @db.Uuid
+  correct     Boolean
+  scoreJson   Json?
+  submittedAt DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  video       Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  cue         Cue      @relation(fields: [cueId], references: [id], onDelete: Cascade)
+
+  @@index([userId, videoId])
+  @@index([cueId])
+}
+
+model AnalyticsEvent {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String?  @db.Uuid
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  eventType  String
+  videoId    String?  @db.Uuid
+  cueId      String?  @db.Uuid
+  payload    Json
+  occurredAt DateTime
+  receivedAt DateTime @default(now())
+
+  @@index([eventType, occurredAt])
+  @@index([userId, occurredAt])
+  @@index([videoId])
+}

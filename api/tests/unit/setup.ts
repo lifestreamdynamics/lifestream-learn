@@ -1,0 +1,15 @@
+process.env.NODE_ENV = 'test';
+process.env.DATABASE_URL = 'postgresql://user:pass@localhost:5432/learn_api_test';
+process.env.REDIS_URL = 'redis://localhost:6379';
+process.env.REDIS_KEY_PREFIX = 'learn_test:';
+process.env.JWT_ACCESS_SECRET = 'a'.repeat(48);
+process.env.JWT_REFRESH_SECRET = 'b'.repeat(48);
+process.env.JWT_ACCESS_TTL = '15m';
+process.env.JWT_REFRESH_TTL = '30d';
+process.env.S3_ENDPOINT = 'http://localhost:8333';
+process.env.S3_ACCESS_KEY = 'test';
+process.env.S3_SECRET_KEY = 'test';
+process.env.TUSD_PUBLIC_URL = 'http://localhost:1080/files';
+process.env.HLS_BASE_URL = 'http://localhost:8080/hls';
+process.env.HLS_SIGNING_SECRET = 'a'.repeat(32);
+process.env.CORS_ALLOWED_ORIGINS = 'http://localhost:3000';

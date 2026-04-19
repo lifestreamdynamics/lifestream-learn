@@ -1,6 +1,8 @@
 # lifestream-learn-api
 
-REST API for Lifestream Learn. Runs at `learn.lifestreamdynamics.com` for the hosted service; self-hosters deploy via [`../infra/`](../infra).
+REST API for Lifestream Learn. Backs the Android learner app and the course-designer authoring flow. Pairs with the local stack in [`../infra/`](../infra) (SeaweedFS + tusd + nginx; Postgres + Redis borrowed from accounting-api's compose).
+
+Deployment is deliberately out of scope right now — focus is a fully functional, locally tested API first.
 
 ## Stack
 
@@ -71,7 +73,7 @@ See [`.env.example`](./.env.example) for the canonical list. Required at minimum
 ## Ports
 
 - **Dev:** 3011
-- **Prod:** 3101 (assigned in the Lifestream port registry)
+- **Reserved for eventual prod:** 3101 — bookkeeping only, so the value's settled when we do tackle deploy.
 
 ## License
 
