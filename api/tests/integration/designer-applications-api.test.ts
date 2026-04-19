@@ -74,6 +74,48 @@ describe('Designer Applications API (integration)', () => {
     });
   });
 
+  describe('GET /api/designer-applications/me', () => {
+    it('404 when the authed user has no application', async () => {
+      const app = await getTestApp();
+      const learner = await createUser({ role: 'LEARNER' });
+      const res = await request(app)
+        .get('/api/designer-applications/me')
+        .set('authorization', `Bearer ${learner.accessToken}`);
+      expect(res.status).toBe(404);
+    });
+
+    it('returns the caller own application when one exists', async () => {
+      const app = await getTestApp();
+      const learner = await createUser({ role: 'LEARNER' });
+      await createDesignerApplication(learner.id, {
+        status: 'PENDING',
+      });
+      const res = await request(app)
+        .get('/api/designer-applications/me')
+        .set('authorization', `Bearer ${learner.accessToken}`);
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe('PENDING');
+      expect(res.body.userId).toBe(learner.id);
+    });
+
+    it('never returns another users application', async () => {
+      const app = await getTestApp();
+      const owner = await createUser({ role: 'LEARNER' });
+      const other = await createUser({ role: 'LEARNER' });
+      await createDesignerApplication(owner.id, { status: 'PENDING' });
+      const res = await request(app)
+        .get('/api/designer-applications/me')
+        .set('authorization', `Bearer ${other.accessToken}`);
+      expect(res.status).toBe(404);
+    });
+
+    it('401 without a bearer token', async () => {
+      const app = await getTestApp();
+      const res = await request(app).get('/api/designer-applications/me');
+      expect(res.status).toBe(401);
+    });
+  });
+
   describe('GET /api/admin/designer-applications', () => {
     it('admin lists; non-admin is forbidden', async () => {
       const app = await getTestApp();

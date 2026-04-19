@@ -14,3 +14,11 @@ designerApplicationsRouter.post(
   authenticate,
   asyncHandler(designerApplicationsController.apply),
 );
+
+// Learner self-read: fetch the caller's own designer application (or 404).
+// Routed before any id-param-style reads so there's no path collision.
+designerApplicationsRouter.get(
+  '/me',
+  authenticate,
+  asyncHandler(designerApplicationsController.getMine),
+);

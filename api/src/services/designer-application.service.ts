@@ -30,6 +30,13 @@ export interface DesignerApplicationService {
     role: Role,
     note?: string,
   ): Promise<DesignerApplication>;
+  /**
+   * Returns the caller's own designer application row, or `null` if none
+   * exists. Read-path counterpart to `applyAsLearner`; the client polls
+   * this to render the PENDING/APPROVED/REJECTED variant of the
+   * designer-application screen.
+   */
+  findByUserId(userId: string): Promise<DesignerApplication | null>;
   list(opts: ListDesignerApplicationsOpts): Promise<ListDesignerApplicationsResult>;
   review(
     applicationId: string,
@@ -90,6 +97,10 @@ export function createDesignerApplicationService(
           note: note ?? null,
         },
       });
+    },
+
+    async findByUserId(userId) {
+      return prisma.designerApplication.findUnique({ where: { userId } });
     },
 
     async list(opts) {

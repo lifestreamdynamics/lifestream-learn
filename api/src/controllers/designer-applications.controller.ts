@@ -54,6 +54,34 @@ export async function apply(req: Request, res: Response): Promise<void> {
 
 /**
  * @openapi
+ * /api/designer-applications/me:
+ *   get:
+ *     tags: [DesignerApplications]
+ *     summary: Get the authenticated caller's own designer application.
+ *     description: |
+ *       Returns the caller's single DesignerApplication row (PENDING,
+ *       APPROVED, or REJECTED) or 404 if they have never applied. Used
+ *       by the Flutter app to pick which variant of the designer-
+ *       application screen to render (form / waiting / success /
+ *       resubmit).
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: The caller's application. }
+ *       401: { description: Unauthenticated. }
+ *       404: { description: No application found for this user. }
+ */
+export async function getMine(req: Request, res: Response): Promise<void> {
+  if (!req.user) throw new UnauthorizedError('Not authenticated');
+  const app = await designerApplicationService.findByUserId(req.user.id);
+  if (!app) {
+    res.status(404).json({ error: 'NOT_FOUND', message: 'No application' });
+    return;
+  }
+  res.status(200).json(app);
+}
+
+/**
+ * @openapi
  * /api/admin/designer-applications:
  *   get:
  *     tags: [DesignerApplications]
