@@ -8,7 +8,7 @@ This is a **single working directory that will split into multiple public repos*
 
 | Path | Sub-project | Status |
 |---|---|---|
-| `api/` | Node 22 / TypeScript / Express / Prisma / Postgres / Redis / BullMQ REST API. Dev port 3011, prod 3101. | Phase 2 (scaffold) |
+| `api/` | Node 22 / TypeScript / Express / Prisma / Postgres / Redis / BullMQ REST API. Dev port 3011, prod 3101. | Phase 3 (pipeline) |
 | `app/` | Flutter Android app (learner feed + designer authoring). | Phase 4 (not yet initialised) |
 | `infra/` | Docker Compose for local dev (seaweedfs, tusd, nginx). Postgres + Redis are borrowed from accounting-api's local stack. | Phase 1 (complete for MVP scope) |
 | `ops/` | **Private, git-ignored at top level.** Phase reports, environment snapshots, future deployment notes. Never commit anything here through the public monorepo. | — |
@@ -19,7 +19,7 @@ This is a **single working directory that will split into multiple public repos*
 
 - **`IMPLEMENTATION_PLAN.md`** is the source of truth for phases, exit criteria, parallel-work splits, and migration seams. Read it before planning non-trivial work.
 - **ADRs in `docs/decisions/`** record *why* decisions were made (AGPL license, SeaweedFS over MinIO, BullMQ over Bull, VOICE cue deferred, monorepo layout). They're living documents — update them when the rationale or reality shifts.
-- **Architecture docs** in `docs/architecture/` describe *what is*, not what was — rewrite rather than append when reality changes.
+- **Architecture docs** in `docs/architecture/` will describe *what is*, not what was — rewrite rather than append when reality changes. (Currently empty — populated starting Phase 3.)
 
 ## Commands (api/)
 
@@ -46,7 +46,7 @@ npm run dev                       # hot-reload on :3011
 | `npm run test:all` | Unit + integration with coverage |
 | `npm run lint` / `lint:fix` | ESLint on `.ts` |
 | `npm run typecheck` | `tsc --noEmit` |
-| `npm run validate` | lint + typecheck + unit tests (run before opening a PR) |
+| `npm run validate` | lint + typecheck + unit tests (run before opening a PR — note: integration tests are **not** included; run `npm run test:integration` separately, per `CONTRIBUTING.md`) |
 | `npm run prisma:migrate` | `prisma migrate dev` |
 | `npm run prisma:deploy` | `prisma migrate deploy` (prod) |
 | `npm run prisma:generate` | Regenerate client |
@@ -79,15 +79,15 @@ Postgres (`accounting-postgres`) and Redis (`accounting-redis`) come from accoun
 
 1. **Upload:** App (as `COURSE_DESIGNER`) → `POST /api/videos` → gets `{videoId, uploadUrl}` for tusd → uploads chunks (resumable) to `learn-uploads` SeaweedFS bucket.
 2. **Transcode trigger:** tusd `pre-finish` hook calls `POST /internal/hooks/tusd` on learn-api → enqueues BullMQ job on the `learn:transcode` queue (shared Redis, keys prefixed `learn:`).
-3. **Transcode worker** (separate process, `learn-transcode-worker`): pulls source from `learn-uploads`, FFmpeg → H.264/AAC CMAF fMP4 HLS ladder (360/540/720/1080p) → writes to `learn-vod/{videoId}/` → sets `Video.status = READY`. On success, deletes the raw upload (ADR 0006). Retries with BullMQ backoff; 3 fails → `FAILED`.
+3. **Transcode worker** (separate process, `learn-transcode-worker`): pulls source from `learn-uploads`, FFmpeg → H.264/AAC CMAF fMP4 HLS ladder (360/540/720/1080p) → writes to `learn-vod/{videoId}/` → sets `Video.status = READY`. On success, deletes the raw upload (ADR 0006). Retries with BullMQ backoff; 3 fails → `FAILED`. Worker entrypoint is `src/workers/transcode.ts` (BullMQ wiring); pipeline logic lives in `src/workers/transcode.pipeline.ts` so it's unit-testable in isolation.
 4. **Playback:** App → `GET /api/videos/{id}/playback` → learn-api checks enrollment/ownership → returns HMAC-signed master playlist URL (2–4h TTL). Flutter `video_player` + ExoPlayer fetches → Nginx `secure_link` validates HMAC on every segment request → serves from SeaweedFS. ABR handled by ExoPlayer.
 5. **Cue engine:** Flutter polls `controller.value.position` every 50ms; at `cue.atMs - 200ms` calls `pause()` + `seekTo(cue.atMs)`, renders overlay widget for the cue type. On submit, `POST /api/attempts` — **grading always happens server-side, never trust the client**. Then `controller.play()`.
 
 ### Service boundaries to respect
 
 - **`ObjectStore` interface** wraps S3 SDK calls so SeaweedFS → S3/R2 is a config swap, not a rewrite.
-- **`getPlaybackUrl(videoId, userId)`** is the single seam for signed URLs — replace the body to swap to CloudFront / Cloudflare Stream.
-- **`VideoTranscoder` interface** (`transcode(sourceKey) → hlsPrefix`) lets the FFmpeg worker be replaced by AWS MediaConvert or Cloudflare Stream.
+- **`getPlaybackUrl(videoId, userId)`** is the single seam for signed URLs — replace the body to swap to CloudFront / Cloudflare Stream. The Nginx `secure_link` HMAC implementation lives in `src/utils/hls-signer.ts`; swap that file when moving to a different CDN's signing scheme.
+- **`VideoTranscoder` interface** (`transcode(sourceKey) → hlsPrefix`) lets the FFmpeg worker be replaced by AWS MediaConvert or Cloudflare Stream. Current FFmpeg implementation is under `src/services/ffmpeg/`.
 - **CMAF fMP4** output is portable across CDNs — don't regress to TS segments.
 
 ### Roles and auth
@@ -139,6 +139,6 @@ Per `CONTRIBUTING.md`:
 
 ## Phase awareness
 
-The project is pre-alpha. Current phase: **Phase 0 scaffolding complete, moving into Phase 1** (per recent commits). Before implementing anything, check `IMPLEMENTATION_PLAN.md` §5 to confirm:
+The project is pre-alpha. Current phase: **Phase 3 (upload → transcode → playback pipeline)** — Phases 0, 1, and 2 are complete. The pipeline is wired end-to-end: `POST /api/videos` issues tusd upload coordinates, the tusd `pre-finish` hook enqueues a `learn:transcode` BullMQ job, the worker produces a CMAF fMP4 HLS ladder, and `GET /api/videos/:id/playback` returns a short-lived MD5 secure_link URL. The `transcode-e2e` and `transcode-resilience` integration tests cover the happy path and a kill-and-resume scenario respectively. Remaining Phase 3 polish (Bull Board dashboard, an integration assertion for tampered-HMAC at the segment layer) is non-blocking. Before implementing anything, check `IMPLEMENTATION_PLAN.md` §5 to confirm:
 - Which phase you're in and its exit criteria
 - Whether the task is listed as a **parallel-subagent split point** (§6) — if so, spawn subagents per the prescribed split rather than doing the work sequentially.
