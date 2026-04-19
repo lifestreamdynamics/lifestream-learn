@@ -4,8 +4,6 @@ import { closeConnections } from '@tests/integration/helpers/teardown';
 
 const STUB_PATHS = [
   '/api/courses',
-  '/api/cues',
-  '/api/attempts',
   '/api/voice-attempts',
   '/api/feed',
   '/api/designer-applications',
