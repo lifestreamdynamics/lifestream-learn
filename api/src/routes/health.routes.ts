@@ -6,6 +6,7 @@ import { s3Client } from '@/config/s3';
 import { env } from '@/config/env';
 import { logger } from '@/config/logger';
 import { asyncHandler } from '@/middleware/async-handler';
+import { getTranscodeQueue } from '@/queues/transcode.queue';
 
 export const healthRouter = Router();
 
@@ -22,21 +23,25 @@ export const healthRouter = Router();
 healthRouter.get(
   '/',
   asyncHandler(async (_req, res) => {
-    const [db, redisPing, s3] = await Promise.allSettled([
+    const [db, redisPing, s3, queue] = await Promise.allSettled([
       prisma.$queryRaw`SELECT 1`,
       redis.ping(),
       s3Client.send(new HeadBucketCommand({ Bucket: env.S3_UPLOAD_BUCKET })),
+      getTranscodeQueue()
+        .client.then((c) => c.ping()),
     ]);
 
     const dependencies = {
       database: db.status === 'fulfilled' ? 'ok' : 'error',
       redis: redisPing.status === 'fulfilled' && redisPing.value === 'PONG' ? 'ok' : 'error',
       s3: s3.status === 'fulfilled' ? 'ok' : 'error',
+      queue: queue.status === 'fulfilled' && queue.value === 'PONG' ? 'ok' : 'error',
     };
 
     if (db.status === 'rejected') logger.warn({ err: db.reason }, 'health: database check failed');
     if (redisPing.status === 'rejected') logger.warn({ err: redisPing.reason }, 'health: redis check failed');
     if (s3.status === 'rejected') logger.warn({ err: s3.reason }, 'health: s3 check failed');
+    if (queue.status === 'rejected') logger.warn({ err: queue.reason }, 'health: queue check failed');
 
     const allOk = Object.values(dependencies).every((v) => v === 'ok');
     res.status(allOk ? 200 : 503).json({

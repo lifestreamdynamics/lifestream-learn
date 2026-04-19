@@ -13,3 +13,4 @@ process.env.TUSD_PUBLIC_URL = 'http://localhost:1080/files';
 process.env.HLS_BASE_URL = 'http://localhost:8080/hls';
 process.env.HLS_SIGNING_SECRET = 'a'.repeat(32);
 process.env.CORS_ALLOWED_ORIGINS = 'http://localhost:3000';
+process.env.TUSD_HOOK_SECRET = 'test_tusd_hook_secret_abcdef';

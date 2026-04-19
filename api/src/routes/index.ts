@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { authRouter } from '@/routes/auth.routes';
 import { coursesRouter } from '@/routes/stubs/courses.routes';
-import { videosRouter } from '@/routes/stubs/videos.routes';
+import { videosRouter } from '@/routes/videos.routes';
 import { cuesRouter } from '@/routes/stubs/cues.routes';
 import { attemptsRouter } from '@/routes/stubs/attempts.routes';
 import { voiceAttemptsRouter } from '@/routes/stubs/voice-attempts.routes';

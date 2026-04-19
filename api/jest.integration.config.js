@@ -11,7 +11,12 @@ module.exports = {
   },
   setupFiles: ['<rootDir>/tests/integration/env.ts'],
   globalSetup: '<rootDir>/tests/integration/global-setup.ts',
-  testTimeout: 30000,
+  // Module singletons (prisma, shared ioredis, BullMQ queue) live for the
+  // whole serial run. We force-exit so jest doesn't wait for them to close
+  // themselves after the last test's afterAll — Node's process exit will
+  // reap them. detectOpenHandles helps catch new leaks when they appear.
+  forceExit: true,
+  testTimeout: 90000,
   maxWorkers: 1,
   // Integration coverage targets app wiring, route composition, and end-to-end
   // auth flow. Pure utilities (jwt, errors, password, validators) and unit-
@@ -21,6 +26,7 @@ module.exports = {
     'src/routes/**/*.ts',
     'src/controllers/**/*.ts',
     'src/services/**/*.ts',
+    'src/queues/**/*.ts',
     '!src/**/*.d.ts',
   ],
   coverageThreshold: {
