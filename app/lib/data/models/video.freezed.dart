@@ -754,3 +754,282 @@ abstract class _PlaybackInfo implements PlaybackInfo {
   _$$PlaybackInfoImplCopyWith<_$PlaybackInfoImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
+
+VideoUploadTicket _$VideoUploadTicketFromJson(Map<String, dynamic> json) {
+  return _VideoUploadTicket.fromJson(json);
+}
+
+/// @nodoc
+mixin _$VideoUploadTicket {
+  String get videoId => throw _privateConstructorUsedError;
+  VideoSummary get video => throw _privateConstructorUsedError;
+  String get uploadUrl => throw _privateConstructorUsedError;
+  Map<String, String> get uploadHeaders => throw _privateConstructorUsedError;
+  String get sourceKey => throw _privateConstructorUsedError;
+
+  /// Serializes this VideoUploadTicket to a JSON map.
+  Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
+
+  /// Create a copy of VideoUploadTicket
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  $VideoUploadTicketCopyWith<VideoUploadTicket> get copyWith =>
+      throw _privateConstructorUsedError;
+}
+
+/// @nodoc
+abstract class $VideoUploadTicketCopyWith<$Res> {
+  factory $VideoUploadTicketCopyWith(
+    VideoUploadTicket value,
+    $Res Function(VideoUploadTicket) then,
+  ) = _$VideoUploadTicketCopyWithImpl<$Res, VideoUploadTicket>;
+  @useResult
+  $Res call({
+    String videoId,
+    VideoSummary video,
+    String uploadUrl,
+    Map<String, String> uploadHeaders,
+    String sourceKey,
+  });
+
+  $VideoSummaryCopyWith<$Res> get video;
+}
+
+/// @nodoc
+class _$VideoUploadTicketCopyWithImpl<$Res, $Val extends VideoUploadTicket>
+    implements $VideoUploadTicketCopyWith<$Res> {
+  _$VideoUploadTicketCopyWithImpl(this._value, this._then);
+
+  // ignore: unused_field
+  final $Val _value;
+  // ignore: unused_field
+  final $Res Function($Val) _then;
+
+  /// Create a copy of VideoUploadTicket
+  /// with the given fields replaced by the non-null parameter values.
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? videoId = null,
+    Object? video = null,
+    Object? uploadUrl = null,
+    Object? uploadHeaders = null,
+    Object? sourceKey = null,
+  }) {
+    return _then(
+      _value.copyWith(
+            videoId: null == videoId
+                ? _value.videoId
+                : videoId // ignore: cast_nullable_to_non_nullable
+                      as String,
+            video: null == video
+                ? _value.video
+                : video // ignore: cast_nullable_to_non_nullable
+                      as VideoSummary,
+            uploadUrl: null == uploadUrl
+                ? _value.uploadUrl
+                : uploadUrl // ignore: cast_nullable_to_non_nullable
+                      as String,
+            uploadHeaders: null == uploadHeaders
+                ? _value.uploadHeaders
+                : uploadHeaders // ignore: cast_nullable_to_non_nullable
+                      as Map<String, String>,
+            sourceKey: null == sourceKey
+                ? _value.sourceKey
+                : sourceKey // ignore: cast_nullable_to_non_nullable
+                      as String,
+          )
+          as $Val,
+    );
+  }
+
+  /// Create a copy of VideoUploadTicket
+  /// with the given fields replaced by the non-null parameter values.
+  @override
+  @pragma('vm:prefer-inline')
+  $VideoSummaryCopyWith<$Res> get video {
+    return $VideoSummaryCopyWith<$Res>(_value.video, (value) {
+      return _then(_value.copyWith(video: value) as $Val);
+    });
+  }
+}
+
+/// @nodoc
+abstract class _$$VideoUploadTicketImplCopyWith<$Res>
+    implements $VideoUploadTicketCopyWith<$Res> {
+  factory _$$VideoUploadTicketImplCopyWith(
+    _$VideoUploadTicketImpl value,
+    $Res Function(_$VideoUploadTicketImpl) then,
+  ) = __$$VideoUploadTicketImplCopyWithImpl<$Res>;
+  @override
+  @useResult
+  $Res call({
+    String videoId,
+    VideoSummary video,
+    String uploadUrl,
+    Map<String, String> uploadHeaders,
+    String sourceKey,
+  });
+
+  @override
+  $VideoSummaryCopyWith<$Res> get video;
+}
+
+/// @nodoc
+class __$$VideoUploadTicketImplCopyWithImpl<$Res>
+    extends _$VideoUploadTicketCopyWithImpl<$Res, _$VideoUploadTicketImpl>
+    implements _$$VideoUploadTicketImplCopyWith<$Res> {
+  __$$VideoUploadTicketImplCopyWithImpl(
+    _$VideoUploadTicketImpl _value,
+    $Res Function(_$VideoUploadTicketImpl) _then,
+  ) : super(_value, _then);
+
+  /// Create a copy of VideoUploadTicket
+  /// with the given fields replaced by the non-null parameter values.
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? videoId = null,
+    Object? video = null,
+    Object? uploadUrl = null,
+    Object? uploadHeaders = null,
+    Object? sourceKey = null,
+  }) {
+    return _then(
+      _$VideoUploadTicketImpl(
+        videoId: null == videoId
+            ? _value.videoId
+            : videoId // ignore: cast_nullable_to_non_nullable
+                  as String,
+        video: null == video
+            ? _value.video
+            : video // ignore: cast_nullable_to_non_nullable
+                  as VideoSummary,
+        uploadUrl: null == uploadUrl
+            ? _value.uploadUrl
+            : uploadUrl // ignore: cast_nullable_to_non_nullable
+                  as String,
+        uploadHeaders: null == uploadHeaders
+            ? _value._uploadHeaders
+            : uploadHeaders // ignore: cast_nullable_to_non_nullable
+                  as Map<String, String>,
+        sourceKey: null == sourceKey
+            ? _value.sourceKey
+            : sourceKey // ignore: cast_nullable_to_non_nullable
+                  as String,
+      ),
+    );
+  }
+}
+
+/// @nodoc
+@JsonSerializable()
+class _$VideoUploadTicketImpl implements _VideoUploadTicket {
+  const _$VideoUploadTicketImpl({
+    required this.videoId,
+    required this.video,
+    required this.uploadUrl,
+    required final Map<String, String> uploadHeaders,
+    required this.sourceKey,
+  }) : _uploadHeaders = uploadHeaders;
+
+  factory _$VideoUploadTicketImpl.fromJson(Map<String, dynamic> json) =>
+      _$$VideoUploadTicketImplFromJson(json);
+
+  @override
+  final String videoId;
+  @override
+  final VideoSummary video;
+  @override
+  final String uploadUrl;
+  final Map<String, String> _uploadHeaders;
+  @override
+  Map<String, String> get uploadHeaders {
+    if (_uploadHeaders is EqualUnmodifiableMapView) return _uploadHeaders;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableMapView(_uploadHeaders);
+  }
+
+  @override
+  final String sourceKey;
+
+  @override
+  String toString() {
+    return 'VideoUploadTicket(videoId: $videoId, video: $video, uploadUrl: $uploadUrl, uploadHeaders: $uploadHeaders, sourceKey: $sourceKey)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is _$VideoUploadTicketImpl &&
+            (identical(other.videoId, videoId) || other.videoId == videoId) &&
+            (identical(other.video, video) || other.video == video) &&
+            (identical(other.uploadUrl, uploadUrl) ||
+                other.uploadUrl == uploadUrl) &&
+            const DeepCollectionEquality().equals(
+              other._uploadHeaders,
+              _uploadHeaders,
+            ) &&
+            (identical(other.sourceKey, sourceKey) ||
+                other.sourceKey == sourceKey));
+  }
+
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  @override
+  int get hashCode => Object.hash(
+    runtimeType,
+    videoId,
+    video,
+    uploadUrl,
+    const DeepCollectionEquality().hash(_uploadHeaders),
+    sourceKey,
+  );
+
+  /// Create a copy of VideoUploadTicket
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  @override
+  @pragma('vm:prefer-inline')
+  _$$VideoUploadTicketImplCopyWith<_$VideoUploadTicketImpl> get copyWith =>
+      __$$VideoUploadTicketImplCopyWithImpl<_$VideoUploadTicketImpl>(
+        this,
+        _$identity,
+      );
+
+  @override
+  Map<String, dynamic> toJson() {
+    return _$$VideoUploadTicketImplToJson(this);
+  }
+}
+
+abstract class _VideoUploadTicket implements VideoUploadTicket {
+  const factory _VideoUploadTicket({
+    required final String videoId,
+    required final VideoSummary video,
+    required final String uploadUrl,
+    required final Map<String, String> uploadHeaders,
+    required final String sourceKey,
+  }) = _$VideoUploadTicketImpl;
+
+  factory _VideoUploadTicket.fromJson(Map<String, dynamic> json) =
+      _$VideoUploadTicketImpl.fromJson;
+
+  @override
+  String get videoId;
+  @override
+  VideoSummary get video;
+  @override
+  String get uploadUrl;
+  @override
+  Map<String, String> get uploadHeaders;
+  @override
+  String get sourceKey;
+
+  /// Create a copy of VideoUploadTicket
+  /// with the given fields replaced by the non-null parameter values.
+  @override
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  _$$VideoUploadTicketImplCopyWith<_$VideoUploadTicketImpl> get copyWith =>
+      throw _privateConstructorUsedError;
+}

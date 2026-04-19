@@ -157,27 +157,6 @@ List<HomeTabSpec> tabsForRole(UserRole role) {
   }
 }
 
-/// Stub designer screen — full authoring arrives in Slice E.
-class DesignerStubScreen extends StatelessWidget {
-  const DesignerStubScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Designer')),
-      body: const Center(
-        child: Padding(
-          padding: EdgeInsets.all(24),
-          child: Text(
-            'Designer authoring — coming in Slice E.',
-            textAlign: TextAlign.center,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 /// Stub admin screen — full panel arrives in Slice F.
 class AdminStubScreen extends StatelessWidget {
   const AdminStubScreen({super.key});

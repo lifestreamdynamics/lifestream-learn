@@ -70,3 +70,23 @@ Map<String, dynamic> _$$PlaybackInfoImplToJson(_$PlaybackInfoImpl instance) =>
       'masterPlaylistUrl': instance.masterPlaylistUrl,
       'expiresAt': instance.expiresAt.toIso8601String(),
     };
+
+_$VideoUploadTicketImpl _$$VideoUploadTicketImplFromJson(
+  Map<String, dynamic> json,
+) => _$VideoUploadTicketImpl(
+  videoId: json['videoId'] as String,
+  video: VideoSummary.fromJson(json['video'] as Map<String, dynamic>),
+  uploadUrl: json['uploadUrl'] as String,
+  uploadHeaders: Map<String, String>.from(json['uploadHeaders'] as Map),
+  sourceKey: json['sourceKey'] as String,
+);
+
+Map<String, dynamic> _$$VideoUploadTicketImplToJson(
+  _$VideoUploadTicketImpl instance,
+) => <String, dynamic>{
+  'videoId': instance.videoId,
+  'video': instance.video,
+  'uploadUrl': instance.uploadUrl,
+  'uploadHeaders': instance.uploadHeaders,
+  'sourceKey': instance.sourceKey,
+};
