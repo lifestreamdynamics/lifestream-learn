@@ -13,8 +13,10 @@ import 'core/http/auth_interceptor.dart';
 import 'core/http/dio_client.dart';
 import 'core/routing/app_router.dart';
 import 'core/theme/app_theme.dart';
+import 'data/repositories/attempt_repository.dart';
 import 'data/repositories/auth_repository.dart';
 import 'data/repositories/course_repository.dart';
+import 'data/repositories/cue_repository.dart';
 import 'data/repositories/enrollment_repository.dart';
 import 'data/repositories/feed_repository.dart';
 import 'data/repositories/video_repository.dart';
@@ -48,6 +50,8 @@ void main() {
   final courseRepo = CourseRepository(dio);
   final videoRepo = VideoRepository(dio);
   final enrollmentRepo = EnrollmentRepository(dio);
+  final cueRepo = CueRepository(dio);
+  final attemptRepo = AttemptRepository(dio);
 
   authBloc = AuthBloc(authRepo: authRepo, tokenStore: tokenStore)
     ..add(const AuthStarted());
@@ -58,6 +62,8 @@ void main() {
     courseRepo: courseRepo,
     videoRepo: videoRepo,
     enrollmentRepo: enrollmentRepo,
+    cueRepo: cueRepo,
+    attemptRepo: attemptRepo,
   ));
 }
 
@@ -76,6 +82,8 @@ class App extends StatefulWidget {
     required this.courseRepo,
     required this.videoRepo,
     required this.enrollmentRepo,
+    required this.cueRepo,
+    required this.attemptRepo,
     super.key,
   });
 
@@ -84,6 +92,8 @@ class App extends StatefulWidget {
   final CourseRepository courseRepo;
   final VideoRepository videoRepo;
   final EnrollmentRepository enrollmentRepo;
+  final CueRepository cueRepo;
+  final AttemptRepository attemptRepo;
 
   @override
   State<App> createState() => _AppState();
@@ -96,6 +106,8 @@ class _AppState extends State<App> {
     courseRepo: widget.courseRepo,
     videoRepo: widget.videoRepo,
     enrollmentRepo: widget.enrollmentRepo,
+    cueRepo: widget.cueRepo,
+    attemptRepo: widget.attemptRepo,
   );
 
   @override

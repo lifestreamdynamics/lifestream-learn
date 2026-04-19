@@ -67,3 +67,27 @@ class PlaybackInfo with _$PlaybackInfo {
   factory PlaybackInfo.fromJson(Map<String, dynamic> json) =>
       _$PlaybackInfoFromJson(json);
 }
+
+/// Tusd upload coordinates returned by `POST /api/videos`. The `uploadUrl`
+/// is the shared tusd endpoint; the `uploadHeaders` contain the
+/// pre-baked `Upload-Metadata` line tusd's pre-finish hook decodes to
+/// recover the `videoId`. The client may use `uploadHeaders` directly or,
+/// equivalently, pass `{'videoId': videoId}` through the tus client's
+/// `metadata:` param — tusd's permissive base64 decoder tolerates padded
+/// and unpadded values alike.
+///
+/// Never log any field of this shape — the signed upload URL is bound to
+/// the caller's bearer token until finalised.
+@freezed
+class VideoUploadTicket with _$VideoUploadTicket {
+  const factory VideoUploadTicket({
+    required String videoId,
+    required VideoSummary video,
+    required String uploadUrl,
+    required Map<String, String> uploadHeaders,
+    required String sourceKey,
+  }) = _VideoUploadTicket;
+
+  factory VideoUploadTicket.fromJson(Map<String, dynamic> json) =>
+      _$VideoUploadTicketFromJson(json);
+}

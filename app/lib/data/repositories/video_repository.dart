@@ -49,6 +49,47 @@ class VideoRepository {
   /// via `playback()` / `debugClearCache()` only.
   final Map<String, _PlaybackCacheEntry> _cache = <String, _PlaybackCacheEntry>{};
 
+  /// `POST /api/videos` — creates a video row (status=UPLOADING) and
+  /// returns the tusd upload coordinates. The `sourceKey` is the
+  /// `learn-uploads/{videoId}.mp4` object the tusd hook will stream the
+  /// chunks into; we echo it back so a future tool could inspect without
+  /// re-querying.
+  Future<VideoUploadTicket> createVideo({
+    required String courseId,
+    required String title,
+    required int orderIndex,
+  }) async {
+    try {
+      final response = await _dio.post<Map<String, dynamic>>(
+        '/api/videos',
+        data: <String, dynamic>{
+          'courseId': courseId,
+          'title': title,
+          'orderIndex': orderIndex,
+        },
+      );
+      final data = response.data;
+      if (data == null) {
+        throw const ApiException(
+          code: 'NETWORK_ERROR',
+          statusCode: 0,
+          message: 'Empty video create response',
+        );
+      }
+      // uploadHeaders comes back as Map<String, dynamic>; freezed's
+      // generated fromJson expects Map<String, String>. Coerce here.
+      if (data['uploadHeaders'] is Map) {
+        data['uploadHeaders'] = <String, String>{
+          for (final entry in (data['uploadHeaders'] as Map).entries)
+            entry.key as String: '${entry.value}',
+        };
+      }
+      return VideoUploadTicket.fromJson(data);
+    } on DioException catch (e) {
+      throw _unwrap(e);
+    }
+  }
+
   Future<VideoSummary> get(String id) async {
     try {
       final response =

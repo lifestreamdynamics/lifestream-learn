@@ -4,7 +4,9 @@ import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../data/models/user.dart';
+import '../../data/repositories/attempt_repository.dart';
 import '../../data/repositories/course_repository.dart';
+import '../../data/repositories/cue_repository.dart';
 import '../../data/repositories/enrollment_repository.dart';
 import '../../data/repositories/feed_repository.dart';
 import '../../data/repositories/video_repository.dart';
@@ -13,10 +15,15 @@ import '../../features/auth/signup_screen.dart';
 import '../../features/courses/course_detail_screen.dart';
 import '../../features/courses/courses_browse_screen.dart';
 import '../../features/courses/my_courses_screen.dart';
+import '../../features/designer/course_editor_screen.dart';
+import '../../features/designer/create_course_screen.dart';
+import '../../features/designer/designer_home_screen.dart';
+import '../../features/designer/video_editor_screen.dart';
 import '../../features/feed/feed_bloc.dart';
 import '../../features/feed/feed_event.dart';
 import '../../features/feed/feed_screen.dart';
 import '../../features/home/home_shell.dart';
+import '../../features/player/video_with_cues_screen.dart';
 import '../../features/profile/profile_screen.dart';
 import '../auth/auth_bloc.dart';
 import '../auth/auth_state.dart';
@@ -30,6 +37,8 @@ GoRouter createRouter(
   required CourseRepository courseRepo,
   required VideoRepository videoRepo,
   required EnrollmentRepository enrollmentRepo,
+  required CueRepository cueRepo,
+  required AttemptRepository attemptRepo,
 }) {
   final shellNavigatorKey = GlobalKey<NavigatorState>();
 
@@ -96,6 +105,37 @@ GoRouter createRouter(
         path: '/designer-application',
         builder: (_, __) => const DesignerApplicationStubScreen(),
       ),
+      GoRoute(
+        path: '/designer/courses/new',
+        builder: (_, __) => CreateCourseScreen(courseRepo: courseRepo),
+      ),
+      GoRoute(
+        path: '/designer/courses/:id',
+        builder: (context, state) => CourseEditorScreen(
+          courseId: state.pathParameters['id']!,
+          courseRepo: courseRepo,
+          videoRepo: videoRepo,
+        ),
+      ),
+      GoRoute(
+        path: '/designer/videos/:id/edit',
+        builder: (context, state) => VideoEditorScreen(
+          videoId: state.pathParameters['id']!,
+          videoRepo: videoRepo,
+          cueRepo: cueRepo,
+          enrollmentRepo: enrollmentRepo,
+        ),
+      ),
+      GoRoute(
+        path: '/videos/:id/watch',
+        builder: (context, state) => VideoWithCuesScreen(
+          videoId: state.pathParameters['id']!,
+          videoRepo: videoRepo,
+          cueRepo: cueRepo,
+          attemptRepo: attemptRepo,
+          enrollmentRepo: enrollmentRepo,
+        ),
+      ),
       StatefulShellRoute.indexedStack(
         parentNavigatorKey: shellNavigatorKey,
         builder: (context, _, navigationShell) => HomeShell(
@@ -129,7 +169,8 @@ GoRouter createRouter(
               ),
               GoRoute(
                 path: '/designer',
-                builder: (_, __) => const DesignerStubScreen(),
+                builder: (_, __) =>
+                    DesignerHomeScreen(courseRepo: courseRepo),
               ),
               GoRoute(
                 path: '/admin',
