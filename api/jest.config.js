@@ -10,11 +10,21 @@ module.exports = {
     '^@/(.*)$': '<rootDir>/src/$1',
     '^@tests/(.*)$': '<rootDir>/tests/$1',
   },
+  setupFiles: ['<rootDir>/tests/unit/setup.ts'],
+  // Unit coverage targets the Phase-2 exit-criterion scope: middleware + auth.
+  // Infra wiring (config/*, routes/index.ts, route stubs, services that touch
+  // Prisma) is exercised by the integration suite — jest.integration.config.js
+  // runs against a real DB + Redis + SeaweedFS and enforces its own thresholds.
   collectCoverageFrom: [
-    'src/**/*.ts',
+    'src/middleware/**/*.ts',
+    'src/controllers/auth.controller.ts',
+    'src/services/auth.service.ts',
+    'src/validators/auth.validators.ts',
+    'src/utils/jwt.ts',
+    'src/utils/password.ts',
+    'src/utils/errors.ts',
+    'src/routes/health.routes.ts',
     '!src/**/*.d.ts',
-    '!src/index.ts',
-    '!src/workers/*.ts',
   ],
   coverageDirectory: 'coverage',
   coverageThreshold: {

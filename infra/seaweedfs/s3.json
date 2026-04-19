@@ -1,0 +1,41 @@
+{
+  "_comment": "SeaweedFS S3 IAM config for local development. Two identities: learn-api-rw has full access on both buckets; tusd-upload can only write/list/head objects under learn-uploads/. The keys here MUST match the docker-compose defaults so the out-of-the-box local stack works with no extra substitution step. When we tackle deploy, this file gets rendered with real credentials sourced from whatever secrets store we pick then.",
+  "identities": [
+    {
+      "name": "learn-api-rw",
+      "credentials": [
+        {
+          "accessKey": "learn_access_key",
+          "secretKey": "learn_secret_key"
+        }
+      ],
+      "actions": [
+        "Admin:learn-uploads",
+        "Admin:learn-vod",
+        "Read:learn-uploads",
+        "Read:learn-vod",
+        "Write:learn-uploads",
+        "Write:learn-vod",
+        "List:learn-uploads",
+        "List:learn-vod",
+        "Tagging:learn-uploads",
+        "Tagging:learn-vod"
+      ]
+    },
+    {
+      "name": "tusd-upload",
+      "credentials": [
+        {
+          "accessKey": "tusd_access_key",
+          "secretKey": "tusd_secret_key"
+        }
+      ],
+      "actions": [
+        "Write:learn-uploads",
+        "Read:learn-uploads",
+        "List:learn-uploads",
+        "Tagging:learn-uploads"
+      ]
+    }
+  ]
+}

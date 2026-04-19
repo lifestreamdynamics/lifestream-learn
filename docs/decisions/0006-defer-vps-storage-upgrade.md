@@ -1,36 +1,34 @@
-# 0006 — Defer VPS storage upgrade to post-MVP
+# 0006 — Storage-conscious guardrails (duration cap + delete raw on transcode)
 
-- **Status:** Accepted (2026-04-19)
+- **Status:** Accepted (2026-04-19, updated to remove deployment framing)
 - **Deciders:** Eric
 
 ## Context
 
-The VPS prerequisite check on 2026-04-18 found 38 GB free on a single 79 GB volume, below the plan's 100 GB target. The recommended mitigation was attaching a Linode Block Storage volume (~$10/mo) before Phase 1. However, MVP content volume will be small — a handful of test/demo videos totalling a few GB at most during the closed beta.
+Wherever this project eventually runs, storage for raw uploads + HLS ladders will be finite. Even at MVP scale, a few carelessly long 1080p uploads can exhaust a small disk. We want storage-conscious behaviour baked into the app's design rather than discovered under pressure.
 
 ## Decision
 
-**Ship MVP on the existing 38 GB free space.** No block-storage volume attached at this phase. Storage scaling — attaching a dedicated SeaweedFS volume — is revisited post-MVP when real content volume or learner traffic justifies the cost and operational change.
+Two guardrails live in the app itself, independent of deployment:
 
-Guardrails for staying inside current headroom:
+1. **Video duration cap at the API layer.** Reject uploads whose metadata declares a duration longer than a configurable cap (default: 180 seconds). Enforced in Phase 3 when `POST /api/videos` lands.
+2. **Delete the raw upload after successful transcode.** The transcode worker removes the source object from `learn-uploads/` once the HLS ladder is published to `learn-vod/`. Re-transcoding a video therefore requires re-upload — acceptable at this scale, and roughly halves per-video storage cost.
 
-- Enforce a conservative video duration cap (e.g. 90-180 seconds) at the API layer; tune as we learn.
-- Keep raw uploads only until a successful transcode, then delete the source (saves ~50% per video).
-- Add a dashboard / alert that flags when `/var/lib/seaweedfs` crosses 25 GB (two-thirds of free space) so we get early warning.
+A third guardrail — a disk-usage alert — lives in `infra/scripts/disk-alert.sh`. It's written and tested but isn't wired into any scheduler today; that's a deployment concern and picks up when we tackle deploy.
 
 ## Consequences
 
-- MVP launch cost stays at current VPS subscription — no incremental infra spend
-- Closed beta capacity ceiling is real: roughly 40-60 short videos depending on duration and ladder. Sufficient for pilot content; insufficient for public launch
-- Post-MVP storage-upgrade work is written down as a follow-up task and sized ahead of time, not discovered under pressure
-- Retaining raw uploads is dropped from the MVP scope; re-transcoding a video requires re-upload. Worth it at this scale
+- App behaviour is self-limiting in storage footprint regardless of the hosting target.
+- Re-transcoding requires re-upload. Accept this for MVP; if it becomes a real pain point, revisit (keep raw for 24h, archive tier, etc.).
+- The duration cap needs a matching client-side hint in the Flutter uploader so designers aren't surprised by a late reject.
 
 ## Alternatives considered
 
-- **Attach Linode Block Storage volume (~$10/mo) now** — recommended by the prereq report. Rejected for MVP given small content volume; keep as the primary upgrade path
-- **Aggressive duration cap + keep raw uploads** — more complexity for marginal gain; cap alone is simpler
-- **Move HLS output to a cheaper cold-storage tier** — premature optimisation for MVP
+- **No app-level guardrails, rely entirely on operator alerts.** Rejected — turns a design problem into a paging problem, and every self-hoster has to solve it themselves.
+- **Keep raw uploads forever, pay for more storage.** Not a design question; defer to whoever runs the instance.
+- **Aggressive transcode tiering / cold storage.** Premature. Revisit only if actual usage makes it worth the complexity.
 
 ## References
 
-- [`ops/vps-prereq-check-2026-04-18.md`](../../ops/vps-prereq-check-2026-04-18.md) — source findings (private)
-- [`IMPLEMENTATION_PLAN.md`](../../IMPLEMENTATION_PLAN.md) §Phase 1
+- [`IMPLEMENTATION_PLAN.md`](../../IMPLEMENTATION_PLAN.md) §Phase 3 (Upload + Transcode Pipeline)
+- [`infra/scripts/disk-alert.sh`](../../infra/scripts/disk-alert.sh) — standalone watchdog, wired later

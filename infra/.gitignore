@@ -2,12 +2,6 @@
 .env.local
 .env.production
 
-# Ansible secrets
-ansible/inventories/*.yml
-!ansible/inventories/example.yml
-ansible/vault-password.txt
-*.retry
-
 # Runtime volumes (docker-compose)
 data/
 volumes/

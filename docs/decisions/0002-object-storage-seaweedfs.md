@@ -6,7 +6,7 @@
 
 ## Context
 
-We need an S3-compatible object store on the VPS to hold raw video uploads and transcoded HLS segments. The abstraction matters: writing against the S3 SDK means we can migrate to AWS S3, Cloudflare R2, or Backblaze B2 later by changing an endpoint rather than refactoring.
+We need an S3-compatible object store (local for now, self-hosted or cloud later) to hold raw video uploads and transcoded HLS segments. The abstraction matters: writing against the S3 SDK means we can migrate between AWS S3, Cloudflare R2, Backblaze B2, or a self-hosted instance by changing an endpoint rather than refactoring.
 
 Originally the plan called for MinIO. MinIO is the most widely deployed self-hosted S3 implementation, well-documented, single-binary, and operationally proven. However:
 
@@ -23,13 +23,13 @@ Originally the plan called for MinIO. MinIO is the most widely deployed self-hos
 - Less industry familiarity than MinIO; fewer Stack Overflow answers and fewer ops-oriented war stories
 - Accept a Phase 1 smoke-test risk: if SeaweedFS proves operationally painful, fall back to filesystem-backed storage behind an S3-compatible shim (same abstraction surface)
 - No AGPL exposure from the storage layer; cleanest legal posture for the hosted service
-- Migration target unchanged: AWS S3 / R2 / B2 whenever we outgrow the VPS
+- Migration target unchanged: AWS S3 / R2 / B2 if and when self-hosting becomes the wrong tradeoff
 
 ## Alternatives considered
 
 - **MinIO** — rejected on licensing risk for a commercial SaaS
 - **Garage** (garagehq.deuxfleurs.fr) — AGPL, community-run, smaller footprint but less mature S3 API coverage
-- **Ceph RGW** — overkill for single-VPS scale; operator burden far exceeds benefit
+- **Ceph RGW** — overkill at MVP scale; operator burden far exceeds benefit
 - **Plain filesystem + S3-compatible shim** (e.g. `s3proxy`) — possible fallback if SeaweedFS underperforms
 
 ## References

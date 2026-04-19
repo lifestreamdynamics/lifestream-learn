@@ -1,33 +1,16 @@
 # Local development stack for Lifestream Learn.
-# Production deployments use the Ansible playbooks in ./ansible/, not this file.
+#
+# Postgres and Redis are NOT defined here — this project shares the
+# accounting-api local stack's `accounting-postgres` and `accounting-redis`
+# containers. Run `./scripts/create-databases.sh` once to provision the
+# learn_api_{production,development,test} DBs + learn_api_user role on the
+# shared Postgres. Redis is used with the `learn:` key prefix for isolation.
+#
+# Deployment is out of scope today. The same shared-resource pattern
+# (learn_api_user on a shared Postgres, learn: prefix on a shared Redis)
+# should carry to whatever host we eventually deploy to.
 
 services:
-  postgres:
-    image: postgres:15-alpine
-    environment:
-      POSTGRES_USER: learn_api_user
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-learn_dev}
-      POSTGRES_DB: learn_api_development
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD", "pg_isready", "-U", "learn_api_user"]
-      interval: 5s
-      retries: 10
-
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      retries: 10
-
   seaweedfs:
     image: chrislusf/seaweedfs:latest
     command: >
@@ -37,16 +20,21 @@ services:
       -filer
       -master.volumeSizeLimitMB=1024
     ports:
-      - "8333:8333"   # S3 API
-      - "9333:9333"   # master
-      - "8888:8888"   # filer
+      - "${SEAWEEDFS_S3_HOST_PORT:-8333}:8333"    # S3 API
+      - "${SEAWEEDFS_MASTER_HOST_PORT:-9333}:9333"  # master
+      - "${SEAWEEDFS_FILER_HOST_PORT:-8888}:8888"   # filer
     volumes:
       - seaweedfs_data:/data
       - ./seaweedfs/s3.json:/config/s3.json:ro
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:9333/cluster/status"]
+      # Probe the S3 API (the port learn-api and tusd actually talk to).
+      # A reachable S3 returns an HTTP status line (403 for anonymous /);
+      # a down server refuses the TCP connection. Use 127.0.0.1 explicitly —
+      # busybox `localhost` resolution isn't guaranteed in every image revision.
+      test: ["CMD-SHELL", "wget -qS --spider http://127.0.0.1:8333/ 2>&1 | grep -qE 'HTTP/1\\.[01] [2-4][0-9][0-9]'"]
       interval: 10s
       retries: 10
+      start_period: 10s
 
   tusd:
     image: tusproject/tusd:latest
@@ -54,18 +42,47 @@ services:
       - "-s3-bucket=learn-uploads"
       - "-s3-endpoint=http://seaweedfs:8333"
       - "-hooks-http=http://api:3011/internal/hooks/tusd"
+      # Only fire hooks for pre-finish (transcode enqueue) and post-finish
+      # (cleanup). Blocking pre-create on a not-yet-running API would make
+      # local smoke-testing impossible; the API's hook handler ships in Phase 2.
+      - "-hooks-enabled-events=pre-finish,post-finish"
       - "-port=1080"
     environment:
-      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY:-learn_access_key}
-      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY:-learn_secret_key}
+      # Scoped to the `tusd-upload` identity in seaweedfs/s3.json —
+      # write-only against learn-uploads/, cannot touch learn-vod/.
+      AWS_ACCESS_KEY_ID: ${TUSD_ACCESS_KEY:-tusd_access_key}
+      AWS_SECRET_ACCESS_KEY: ${TUSD_SECRET_KEY:-tusd_secret_key}
       AWS_REGION: us-east-1
     ports:
-      - "1080:1080"
+      - "${TUSD_HOST_PORT:-1080}:1080"
     depends_on:
       seaweedfs:
         condition: service_healthy
 
+  nginx:
+    # Local-only reverse proxy. No TLS in compose; TLS is a deploy-time concern.
+    # Mounts the same secure_link.conf.inc we'll reuse at deploy time, so
+    # URL-signing behaviour is identical local-vs-later.
+    image: nginx:1.27-alpine
+    ports:
+      - "${NGINX_HOST_PORT:-80}:80"
+    volumes:
+      - ./nginx/local.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/secure_link.conf.inc:/etc/nginx/snippets/secure_link.conf.inc:ro
+      - ./landing:/var/www/learn-landing:ro
+    environment:
+      # Not read by nginx at runtime (the secret is baked into local.conf via
+      # `set`), but kept here so the sign-hls-url.sh helper and nginx stay in
+      # sync for local development.
+      SECURE_LINK_SECRET: ${SECURE_LINK_SECRET:-local_dev_secret_do_not_use_in_prod}
+    depends_on:
+      # service_started (not service_healthy) so nginx boots even if
+      # upstreams are still warming up — a 502 at /hls or /uploads while
+      # dependencies stabilise is far better than a stuck compose up.
+      seaweedfs:
+        condition: service_started
+      tusd:
+        condition: service_started
+
 volumes:
-  postgres_data:
-  redis_data:
   seaweedfs_data:

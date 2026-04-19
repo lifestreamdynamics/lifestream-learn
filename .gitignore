@@ -61,4 +61,4 @@ infra/data/
 infra/volumes/
 
 # ---- Tool state ----
-.claude/settings.local.json
+.claude/
