@@ -1,0 +1,64 @@
+# ============================================================
+# Lifestream Learn — top-level gitignore
+# Goal: never leak secrets, ops content, or environment state.
+# ============================================================
+
+# ---- Private ops directory (NEVER commit) ----
+ops/
+
+# ---- Environment files ----
+.env
+.env.local
+.env.*.local
+.env.production
+.env.staging
+.env.development
+.env.test
+!**/.env.example
+
+# ---- Secrets / credentials ----
+*.pem
+*.key
+*.crt
+*.p12
+*.jks
+*.keystore
+*.asc
+id_rsa*
+id_ed25519*
+credentials.json
+service-account*.json
+**/google-services.json
+**/GoogleService-Info.plist
+
+# ---- Per-sub-project ignores also apply here ----
+node_modules/
+dist/
+build/
+coverage/
+.nyc_output/
+.turbo/
+.next/
+.dart_tool/
+.pub-cache/
+
+# ---- OS / editor ----
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ---- Logs ----
+*.log
+npm-debug.log*
+yarn-error.log
+
+# ---- Runtime volumes (docker-compose, seaweedfs, postgres local) ----
+infra/data/
+infra/volumes/
+
+# ---- Tool state ----
+.claude/settings.local.json
