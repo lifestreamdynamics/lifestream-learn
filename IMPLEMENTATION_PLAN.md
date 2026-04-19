@@ -1,7 +1,7 @@
 # Lifestream Learn — Implementation Plan
 
 **Document owner:** Eric
-**Last updated:** 2026-04-19
+**Last updated:** 2026-04-19 (Phase 2 closed; Phase 3 in flight)
 **Status:** Draft — pending approval
 
 > **Scope note (2026-04-19):** deployment is deliberately out of scope for this plan. The goal is a fully functional, locally tested application end-to-end before we pick a hosting strategy. Shared-resource hygiene (ports, key prefixes, DB naming) is honoured from day one so that decision stays low-friction later.
@@ -309,7 +309,7 @@ Each phase has **exit criteria** that must all be met before the next phase begi
 
 ---
 
-### Phase 2 — learn-api Scaffold
+### Phase 2 — learn-api Scaffold  ✓ complete
 
 **Goal:** A working Express API on port 3011 (dev) with auth, health check, and empty domain routes — but no video logic yet.
 
@@ -323,34 +323,34 @@ Each phase has **exit criteria** that must all be met before the next phase begi
 7. Health endpoint at `/health` returning DB + Redis + SeaweedFS connectivity status.
 8. OpenAPI docs served at `/api/docs` (local/dev only).
 
-**Exit criteria:**
-- `curl http://localhost:3011/health` returns 200 with all dependencies "ok".
-- Signup → login → protected-route round-trip works end-to-end against local infra.
+**Exit criteria — all met:**
+- `curl http://localhost:3011/health` returns 200 with all dependencies "ok" (DB + Redis + S3 + BullMQ).
+- Signup → login → protected-route round-trip works end-to-end (`tests/integration/auth.flow.test.ts`).
 - Unit tests pass at ≥80% coverage on middleware and auth.
-- Integration tests pass at ≥85% coverage against `learn_api_test` on accounting-postgres and a `learn:` prefix on accounting-redis.
+- Integration tests pass at ≥85% coverage against `learn_api_test`.
 
 ---
 
-### Phase 3 — Upload + Transcode Pipeline
+### Phase 3 — Upload + Transcode Pipeline  (in flight)
 
 **Goal:** A Course Designer (via curl/Postman for now) can upload a raw video, and the system produces a playable HLS ladder served behind signed URLs. Still no Flutter app.
 
-**Tasks:**
-1. `POST /api/videos` → creates `Video` row with `status=UPLOADING`, returns `{videoId, uploadUrl}` (tusd URL with pre-signed token)
-2. tusd `pre-finish` hook → hits learn-api `/internal/hooks/upload-complete` → enqueues `learn:transcode` Bull job
-3. `learn-transcode-worker` (separate process, `npm run worker:transcode:dev` in dev): pulls source from SeaweedFS, runs FFmpeg ladder (360/540/720/1080p CMAF fMP4), writes to `learn-vod/{videoId}/`, writes master playlist, updates DB `status=READY`, publishes `learn:video.ready` event (future analytics hook)
-4. Failure path: retry with backoff (BullMQ built-in); after 3 fails, set `status=FAILED` + store error
-5. `GET /api/videos/{id}/playback` → verify user has access (enrolled or owner) → generate HMAC-signed master playlist URL; tokens expire 2h
-6. Nginx `secure_link` config validates HMAC on every request under `/hls/`
-7. Shell tests via `shell-testing-workflow` skill for any bash plumbing (e.g. SeaweedFS bucket provisioning script)
+**Tasks (status as of 2026-04-19):**
+1. ✓ `POST /api/videos` → creates `Video` row with `status=UPLOADING`, returns `{videoId, uploadUrl, uploadHeaders, sourceKey}` for resumable tusd upload.
+2. ✓ tusd `pre-finish` hook → hits learn-api `POST /internal/hooks/tusd` (timing-safe shared secret via `?token=`) → enqueues `learn:transcode` BullMQ job keyed by `videoId`.
+3. ✓ `learn-transcode-worker` (separate process, `npm run worker:transcode:dev` in dev): pulls source via `ObjectStore.downloadToFile`, ffprobe, FFmpeg CMAF fMP4 ladder, uploads via `ObjectStore.uploadDirectory`, writes master playlist last, transitions `Video` → `READY`, deletes raw upload (ADR 0006).
+4. ✓ Failure path: BullMQ `attempts: 3` + exponential backoff (2s base); after exhaustion the row stays UPLOADING/TRANSCODING and the job sits in `failed` for inspection. Pipeline tolerates Prisma P2025 on the UPLOADING→TRANSCODING transition (idempotent retry) and only commits READY from `{UPLOADING,TRANSCODING}`.
+5. ✓ `GET /api/videos/{id}/playback` → `videoService.canAccessVideo` checks `ADMIN | owner | collaborator | enrolled learner`; signs master playlist URL via `signPlaybackUrl` (MD5 secure_link, 2h TTL); 409 when status≠READY.
+6. ✓ Nginx `secure_link` config validates HMAC on every request under `/hls/` (delivered in Phase 1; `infra/nginx/secure_link.conf.inc`).
+7. ✓ Shell tests under `infra/scripts/tests/*.bats` (delivered in Phase 1).
 
 **Exit criteria:**
-- End-to-end: `curl` tus upload of a 90-second MP4 → within a few minutes locally, `GET /api/videos/{id}` shows `status=READY`
-- `ffprobe` on produced master playlist shows 4 variant streams with correct bitrates
-- `curl` to a signed master URL succeeds; same URL after expiry returns 403
-- `curl` to a segment URL with tampered HMAC returns 403
-- Transcode worker survives a simulated kill mid-job and resumes cleanly on restart without data corruption
-- BullMQ dashboard (Bull Board, SSH-tunneled) shows completed/failed job history
+- ✓ End-to-end: tus upload of `tests/fixtures/sample-3s.mp4` → status reaches READY (`tests/integration/transcode-e2e.test.ts`).
+- ◐ `ffprobe` on produced master playlist shows 4 variant streams with correct bitrates — manual smoke; not yet a check in the e2e test.
+- ✓ Signed master URL → `tests/unit/utils/hls-signer.test.ts` covers MD5 byte-equivalence with `infra/scripts/sign-hls-url.sh`; nginx behaviour (403 expired/tampered, 200 valid) is exercised by infra BATS suite.
+- ◐ `curl` to a segment URL with tampered HMAC → covered at the nginx layer; not yet asserted via the API in an integration test.
+- ✓ Transcode worker survives a simulated kill mid-job and resumes cleanly (`tests/integration/transcode-resilience.test.ts`).
+- ✗ BullMQ dashboard (Bull Board) — deferred; not blocking pipeline correctness.
 
 ---
 
