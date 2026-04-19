@@ -273,7 +273,7 @@ Each phase has **exit criteria** that must all be met before the next phase begi
 
 **Tasks:**
 - [ ] Confirm DNS control of `REDACTED-BRAND-DOMAIN` and ability to add `learn.` A record
-- [ ] Confirm VPS disk headroom: at least 100 GB free for SeaweedFS, ideally on a dedicated volume
+- [x] Confirm VPS disk headroom (2026-04-18): 38 GB free on single volume. Storage upgrade **deferred to post-MVP** (ADR 0006). Mitigations: duration cap, delete raw after transcode, free-space alert.
 - [ ] Confirm Flutter dev environment on Eric's machine (Android SDK, device/emulator)
 - [ ] Verify Node 22.12+ available on VPS (`node --version` via SSH); if not, install via NodeSource and validate existing PM2 apps (`accounting-api`, `chatbot-api`) still run — they declare `engines.node >=18` so Node 22 is within range, but run their test suites as a regression check before flipping the default
 - [ ] Create public GitHub org or decide on username for repo hosting; reserve `lifestream-learn-api`, `lifestream-learn-app`, `lifestream-learn-infra` names
@@ -308,6 +308,11 @@ Each phase has **exit criteria** that must all be met before the next phase begi
 9. Nginx: add `/uploads/*` → tusd reverse proxy; add `/hls/*` → SeaweedFS S3 reverse proxy with `secure_link` module
 10. Firewall: ensure only 80/443/22 are externally reachable
 11. Publish `lifestream-learn-infra` repo with docker-compose + ansible equivalent so self-hosters can reproduce this layer
+
+**Storage-constrained MVP guardrails (per ADR 0006):**
+- API-layer video duration cap (default 180s, env-configurable)
+- Transcode worker deletes the raw upload from `learn-uploads` bucket on successful HLS publish
+- Disk alert: script + systemd timer that warns (email or server-monitor integration) when `/var/lib/seaweedfs` exceeds 25 GB
 
 **Exit criteria:**
 - `curl https://learn.REDACTED-BRAND-DOMAIN/` returns the landing page with valid TLS
