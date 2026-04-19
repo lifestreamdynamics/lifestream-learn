@@ -4,7 +4,7 @@ Flutter Android app for Lifestream Learn — learner feed and course-designer au
 
 ## Status
 
-Slice C complete (auth plumbing + Dio HTTP + secure token storage + role-gated go_router + minimal Login/Signup/HomeShell). No feed, no video yet — that lands in Slice D.
+Slice D in-review: vertical feed + video player (no cues; Slice E wires those in). Learners can browse published courses, enroll, and scroll a TikTok-style PageView of videos from their enrolled courses. The player handles tap/double-tap/long-press gestures, signs playback URLs via a short-lived HMAC, and caches controllers in a 3-slot LRU so swipes don't stutter.
 
 Per project CLAUDE.md, this slice is `compiled-and-analyzed-only (device test needed)` until the operator drives on-device verification.
 
@@ -14,8 +14,10 @@ Per project CLAUDE.md, this slice is `compiled-and-analyzed-only (device test ne
 - Android-only (no iOS / web / desktop)
 - `flutter_bloc` for state
 - `dio` for HTTP, `flutter_secure_storage` for token persistence
-- `go_router` for role-gated routing
+- `go_router` (incl. `StatefulShellRoute.indexedStack`) for role-gated routing
 - `freezed` + `json_serializable` for models
+- `video_player` + `fvp` (ffmpeg backend) for HLS playback
+- `visibility_detector` for pause-when-offscreen in the feed
 
 ## Layout
 
@@ -23,20 +25,25 @@ Per project CLAUDE.md, this slice is `compiled-and-analyzed-only (device test ne
 app/
 ├── android/                  # Flutter-generated Android project
 ├── lib/
-│   ├── main.dart             # DI wiring + App root
+│   ├── main.dart             # DI wiring + fvp registration + App root
 │   ├── config/api_config.dart
 │   ├── core/
 │   │   ├── auth/             # TokenStore, AuthBloc, AuthTokens
 │   │   ├── http/             # createDio, AuthInterceptor, ErrorEnvelopeInterceptor
-│   │   ├── routing/          # go_router + role-based redirect
+│   │   ├── routing/          # go_router + StatefulShellRoute
 │   │   └── theme/            # Material 3 light + dark
 │   ├── data/
-│   │   ├── models/           # User (freezed)
-│   │   └── repositories/     # AuthRepository
+│   │   ├── models/           # User, Course, VideoSummary, FeedEntry, Enrollment, ...
+│   │   └── repositories/     # Auth / Course / Feed / Video / Enrollment
 │   └── features/
 │       ├── auth/             # LoginScreen, SignupScreen
-│       └── home/             # HomeShell (placeholder; Slice D replaces)
+│       ├── feed/             # FeedBloc, FeedScreen, VideoControllerCache
+│       ├── player/           # LearnVideoPlayer
+│       ├── courses/          # CoursesBloc, browse / detail / my-courses screens
+│       ├── profile/          # ProfileScreen + designer-application stub
+│       └── home/             # HomeShell (BottomNavigationBar + stubs for designer / admin)
 ├── test/                     # Unit + widget tests, mirrors lib/ layout
+│   └── test_support/         # Shared fake Dio adapter for repository tests
 ├── pubspec.yaml
 ├── .fvmrc                    # 3.41.5
 └── analysis_options.yaml
@@ -63,16 +70,56 @@ cd app
 /home/eric/flutter/bin/flutter build apk --debug
 ```
 
-`flutter test --coverage` writes `coverage/lcov.info`. Target ≥80% line coverage on `lib/core/`; Slice C currently sits at ~92%.
+`flutter test --coverage` writes `coverage/lcov.info`. Slice D line coverage sits at ~68% across hand-written Dart (excluding `*.g.dart` / `*.freezed.dart`); the player (`learn_video_player.dart`) drags this down because the `video_player` platform plugin can't be fully exercised from unit tests.
 
-## Manual-test checklist (operator runs this on a device / emulator)
+## Slice D
 
-- [ ] `flutter run` boots on emulator; lands on `/login`.
-- [ ] Signup with `test@example.com / CorrectHorseBattery1 / Test User` → lands on `HomeShell` showing "Welcome, Test User (LEARNER)".
-- [ ] Kill app, reopen → still on `HomeShell` (token persisted).
-- [ ] With `JWT_ACCESS_TTL=30s` in `api/.env.local` (restart API), log out + log back in, wait 30s, hit the API a few times quickly → interceptor refresh fires exactly once (watch API logs for `/api/auth/refresh`).
-- [ ] `adb logcat | grep -i token` → no token values in output.
-- [ ] Log out button → returns to `/login`.
+### New routes
+
+- `/feed` — TikTok-style vertical `PageView` of videos from enrolled courses. Pull-to-refresh; loads more on approach.
+- `/courses` — browse grid of published courses (all roles).
+- `/courses/:id` — course detail + video list + Enroll CTA.
+- `/my-courses` — learner's enrollments with last-watched position.
+- `/profile` — identity, role, log-out, "apply to become a designer" link.
+- `/designer`, `/admin` — stubs until Slice E / F.
+- `/designer-application` — stub until Slice F.
+
+### Environment
+
+Pass the API base URL via `--dart-define=API_BASE_URL=...`:
+
+- Emulator: `--dart-define=API_BASE_URL=http://10.0.2.2:8090`
+- Physical device: `--dart-define=API_BASE_URL=http://<dev-machine-ip>:8090`
+
+### Dep pins
+
+- `video_player: ^2.9.2` (resolved at `2.11.1`).
+- `fvp: ^0.25.0` (registers the ffmpeg-backed video_player backend on Android).
+- `visibility_detector: ^0.4.0+2`.
+
+### Manual-test checklist (operator runs this on a device / emulator)
+
+Auth regression (Slice C):
+
+- [ ] `flutter run` boots; lands on `/login`.
+- [ ] Signup with `test@example.com / CorrectHorseBattery1 / Test User` → lands on feed.
+- [ ] Kill app, reopen → still on feed (token persisted).
+- [ ] Log out returns to `/login`.
+
+Slice D (new):
+
+- [ ] Browse → tap a course → Enroll → snackbar + "Watch in feed" CTA.
+- [ ] Feed shows your enrolled course's READY videos.
+- [ ] Swipe up → next video plays without visible buffer gap (good network).
+- [ ] Swipe down → previous video resumes from ~start (preload warm).
+- [ ] Tap → play/pause overlay fades in then out.
+- [ ] Double-tap left / right → seeks −10s / +10s.
+- [ ] Long-press → scrubber appears; drag to seek; release hides it.
+- [ ] Set network shaper to 3G → ABR adapts within ~10s, no stalls >3s (Android Studio's network shaper).
+- [ ] Kill app mid-video → reopen → My Courses shows last-watched hint around the same position.
+- [ ] `adb logcat | grep -E 'masterPlaylist|accessToken'` → no matches.
+- [ ] With `API_BASE_URL` pointing at a backend where transcode is still running, navigate to a video whose `status != READY` → "Processing…" overlay + Refresh button.
+- [ ] Tab switches (Feed → Browse → Feed) preserve scroll position.
 
 ## License
 

@@ -18,6 +18,10 @@ dependencies:
   flutter_secure_storage: ^9.2.2
   freezed_annotation: ^2.4.4
   json_annotation: ^4.9.0
+  # Slice D: TikTok-style vertical feed + player.
+  video_player: ^2.9.2
+  fvp: ^0.25.0
+  visibility_detector: ^0.4.0+2
 
 dev_dependencies:
   flutter_test:

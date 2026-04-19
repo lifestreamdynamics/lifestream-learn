@@ -505,8 +505,8 @@ Each slice's execution updates this table. I fill it as I finish; you can spot-c
 |---|---|---|---|
 | A | ✅ verified | Unit + integration | Commit 8f77138. 320 unit + 70 integration green. Grading branch coverage 100%. |
 | B | ✅ verified | Unit + integration | Commit d4f9858. 463 unit + 114 integration green. 4-user smoke scenario in commit. |
-| C | 🟨 in progress | — | — |
-| D | ⬜ not started | — | — |
+| C | 🟩 code complete, tests green | Static + unit + widget | Commit 34d9ea5. 38 tests green, analyze clean, APK builds, core/ coverage 91.8%. On-device verification pending. |
+| D | 🟨 in progress | — | — |
 | E | ⬜ not started | — | — |
 | F | ⬜ not started | — | — |
 
