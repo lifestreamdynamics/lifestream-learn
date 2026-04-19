@@ -1,0 +1,27 @@
+node_modules/
+dist/
+coverage/
+.nyc_output/
+
+# env
+.env
+.env.local
+.env.*.local
+.env.production
+.env.staging
+.env.development
+!.env.example
+
+# logs
+*.log
+npm-debug.log*
+
+# editor
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# prisma
+prisma/.env
+prisma/migrations/dev/

@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# Pre-push secret scan for lifestream-learn.
+# Aims to catch obvious secret leaks before they reach a remote.
+# Upgrade path: install gitleaks (brew install gitleaks / apt install gitleaks)
+# and this hook will prefer it.
+set -euo pipefail
+
+remote="$1"
+url="$2"
+
+# Only scan commits being pushed (not already on remote).
+# Format per line: <local ref> <local sha> <remote ref> <remote sha>
+found=0
+while read -r local_ref local_sha remote_ref remote_sha; do
+  if [ "$local_sha" = "0000000000000000000000000000000000000000" ]; then
+    continue  # branch deletion
+  fi
+  if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
+    # new branch; scan all commits reachable from local_sha not on main
+    range="$(git rev-parse --verify main 2>/dev/null && echo "main..$local_sha" || echo "$local_sha")"
+  else
+    range="$remote_sha..$local_sha"
+  fi
+
+  if command -v gitleaks >/dev/null 2>&1; then
+    if ! gitleaks detect --no-banner --redact --log-level=warn --source . --log-opts="$range" 2>&1; then
+      found=1
+    fi
+  else
+    # Fallback: regex scan of diff
+    patterns=(
+      # AWS
+      'AKIA[0-9A-Z]{16}'
+      'aws_secret_access_key\s*=\s*[A-Za-z0-9/+=]{40}'
+      # Private keys
+      '-----BEGIN (RSA|OPENSSH|DSA|EC|PGP) PRIVATE KEY'
+      # Generic high-entropy patterns (loose, but scoped to assignment form)
+      '(password|passwd|pwd|secret|api[_-]?key|access[_-]?key)["'\'' ]*[:=]["'\'' ]*[A-Za-z0-9/+=_-]{20,}'
+      # GitHub tokens
+      'gh[pousr]_[A-Za-z0-9]{36,}'
+      # Stripe
+      'sk_live_[A-Za-z0-9]{24,}'
+      # Slack
+      'xox[baprs]-[A-Za-z0-9-]{10,}'
+    )
+    diff="$(git diff "$range" -- . ':(exclude).env.example' ':(exclude)**/.env.example' 2>/dev/null || true)"
+    for p in "${patterns[@]}"; do
+      matches="$(printf '%s' "$diff" | grep -E -i "$p" || true)"
+      if [ -n "$matches" ]; then
+        echo "pre-push: possible secret matching /$p/:" >&2
+        printf '%s\n' "$matches" | head -5 >&2
+        found=1
+      fi
+    done
+  fi
+done
+
+if [ $found -ne 0 ]; then
+  echo "" >&2
+  echo "pre-push: BLOCKED. Review the flagged lines above." >&2
+  echo "If the match is a false positive, rewrite the commit or add the pattern to a baseline." >&2
+  echo "Install gitleaks for richer scanning: https://github.com/gitleaks/gitleaks" >&2
+  exit 1
+fi
+
+echo "pre-push: secret scan clean." >&2
+exit 0
