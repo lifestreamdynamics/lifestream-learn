@@ -1,0 +1,35 @@
+# lifestream_learn_app
+# Flutter Android app for Lifestream Learn.
+# License: AGPL-3.0-or-later (see ../LICENSE).
+name: lifestream_learn_app
+description: "Lifestream Learn — Flutter Android app (learner feed + designer authoring)."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.11.3
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_bloc: ^8.1.6
+  dio: ^5.7.0
+  go_router: ^14.2.0
+  flutter_secure_storage: ^9.2.2
+  freezed_annotation: ^2.4.4
+  json_annotation: ^4.9.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+  build_runner: ^2.4.13
+  freezed: ^2.5.7
+  json_serializable: ^6.8.0
+  mocktail: ^1.0.4
+  # Explicitly depended on so tests can substitute an in-memory platform
+  # implementation in place of the real Android Method Channel.
+  flutter_secure_storage_platform_interface: ^1.0.2
+
+flutter:
+  uses-material-design: true
