@@ -137,6 +137,20 @@ Per `CONTRIBUTING.md`:
 - Grading logic for cue types: ≥95% unit coverage (it's security-sensitive — a wrong correct/incorrect leaks the answer or miscredits a learner).
 - Integration tests need a real Postgres + Redis. We share `accounting-postgres` and `accounting-redis` (see `infra/README.md`); our fixtures target `learn_api_test` on that Postgres and use the `learn:` Redis prefix. Tests run serially (`maxWorkers: 1`).
 
+## Flutter app development (overrides default "test UI before done" rule)
+
+Claude Code's built-in system prompt says: *"For UI or frontend changes, start the dev server and use the feature in a browser before reporting the task as complete."* **That rule does not apply to `app/`** — Claude cannot launch an Android emulator or install an APK on a physical device from its sandbox, and attempting to gate Flutter work on that would make all UI work unshippable.
+
+**For `app/` (Flutter) work, a task is considered complete when all of the following pass:**
+1. `flutter analyze` → 0 issues.
+2. `flutter test` → green (unit + widget tests for the feature, coverage targets met).
+3. `flutter build apk --debug` → succeeds (no build-time errors, proves the tree links).
+4. The commit message includes a **manual-test checklist** for the human operator to run on a real device/emulator, and explicitly marks the slice as `✎ compiled-and-analyzed-only (device test needed)` rather than `✓ verified`.
+
+The operator (Eric) drives the final on-device verification and promotes the slice to `✓ verified` in the progress ledger. Do not claim device behaviour was verified when it wasn't. If a behaviour cannot be asserted via `flutter test` (e.g. actual playback jitter, ABR, `adb logcat` inspection), say so — don't hand-wave.
+
+Everything else in the repo (`api/`, `infra/`, `docs/`) still follows the default verification rule: tests pass, code runs locally, changes are proven before they're reported done.
+
 ## Phase awareness
 
 The project is pre-alpha. Current phase: **Phase 3 (upload → transcode → playback pipeline)** — Phases 0, 1, and 2 are complete. The pipeline is wired end-to-end: `POST /api/videos` issues tusd upload coordinates, the tusd `pre-finish` hook enqueues a `learn:transcode` BullMQ job, the worker produces a CMAF fMP4 HLS ladder, and `GET /api/videos/:id/playback` returns a short-lived MD5 secure_link URL. The `transcode-e2e` and `transcode-resilience` integration tests cover the happy path and a kill-and-resume scenario respectively. Remaining Phase 3 polish (Bull Board dashboard, an integration assertion for tampered-HMAC at the segment layer) is non-blocking. Before implementing anything, check `IMPLEMENTATION_PLAN.md` §5 to confirm:
