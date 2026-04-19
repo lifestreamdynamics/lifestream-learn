@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import type { Role } from '@prisma/client';
+import type { CueType, Role } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/config/prisma';
 import { hashPassword } from '@/utils/password';
 import { signAccessToken } from '@/utils/jwt';
@@ -73,4 +74,27 @@ export async function createVideoDirect(
     },
   });
   return { id: video.id };
+}
+
+export async function createCueDirect(
+  videoId: string,
+  opts: {
+    type: CueType;
+    payload: Prisma.InputJsonValue;
+    atMs?: number;
+    pause?: boolean;
+    orderIndex?: number;
+  },
+): Promise<{ id: string; type: CueType }> {
+  const cue = await prisma.cue.create({
+    data: {
+      videoId,
+      atMs: opts.atMs ?? 0,
+      pause: opts.pause ?? true,
+      type: opts.type,
+      payload: opts.payload,
+      orderIndex: opts.orderIndex ?? 0,
+    },
+  });
+  return { id: cue.id, type: cue.type };
 }

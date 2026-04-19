@@ -20,6 +20,9 @@ module.exports = {
     'src/controllers/**/*.ts',
     'src/services/auth.service.ts',
     'src/services/video.service.ts',
+    'src/services/cue.service.ts',
+    'src/services/attempt.service.ts',
+    'src/services/grading/**/*.ts',
     'src/services/ffmpeg/**/*.ts',
     'src/services/object-store.ts',
     'src/validators/**/*.ts',
@@ -40,6 +43,15 @@ module.exports = {
       functions: 80,
       lines: 80,
       statements: 80,
+    },
+    // Grading logic is security-sensitive (CLAUDE.md: "a wrong correct/
+    // incorrect leaks the answer or miscredits a learner"). Enforce ≥95%
+    // on branches/lines/functions/statements for this subtree.
+    'src/services/grading/**/*.ts': {
+      branches: 95,
+      functions: 95,
+      lines: 95,
+      statements: 95,
     },
   },
 };
