@@ -507,8 +507,8 @@ Each slice's execution updates this table. I fill it as I finish; you can spot-c
 | B | ✅ verified | Unit + integration | Commit d4f9858. 463 unit + 114 integration green. 4-user smoke scenario in commit. |
 | C | 🟩 code complete, tests green | Static + unit + widget | Commit 34d9ea5. 38 tests green, analyze clean, APK builds, core/ coverage 91.8%. On-device verification pending. |
 | D | 🟩 code complete, tests green | Static + unit + widget | Commit e3c8e31. 98 tests green, analyze clean, APK builds (212MB debug). On-device verification pending. |
-| E | 🟨 in progress | — | — |
-| F | ⬜ not started | — | — |
+| E | 🟩 code complete, tests green | Static + unit + widget | Commit 20be263. 175 tests green, analyze clean, APK builds (204MB debug). cue_validators 97.6% / cue_scheduler 94.9%. On-device verification pending. |
+| F | 🟨 in progress | — | — |
 
 Status values: `⬜ not started`, `🟨 in progress`, `🟩 code complete, tests green`, `✅ verified (where possible)`, `⚠️ blocked`.
 

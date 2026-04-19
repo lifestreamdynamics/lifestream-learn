@@ -17,12 +17,16 @@ class MatchingCueWidget extends StatefulWidget {
     required this.cue,
     required this.attemptRepo,
     required this.onDone,
+    this.onAnswered,
     super.key,
   });
 
   final Cue cue;
   final AttemptRepository attemptRepo;
   final VoidCallback onDone;
+
+  /// See `McqCueWidget.onAnswered`.
+  final void Function(bool correct)? onAnswered;
 
   @override
   State<MatchingCueWidget> createState() => _MatchingCueWidgetState();
@@ -103,6 +107,7 @@ class _MatchingCueWidgetState extends State<MatchingCueWidget> {
         _submitting = false;
         _result = result;
       });
+      widget.onAnswered?.call(result.correct);
     } catch (e) {
       if (!mounted) return;
       setState(() {

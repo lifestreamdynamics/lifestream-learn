@@ -9,6 +9,16 @@
 # packages, and plugins designed to encourage good coding practices.
 include: package:flutter_lints/flutter.yaml
 
+# Slice F: silence `invalid_annotation_target` for freezed constructor
+# parameters that use `@JsonKey(name: ...)`. This pattern is explicitly
+# supported by freezed 2.x and json_serializable, but the analyzer
+# still emits the warning because `JsonKey` isn't declared with the
+# target set that freezed then forwards it to. This is the workaround
+# the freezed maintainers recommend in the README.
+analyzer:
+  errors:
+    invalid_annotation_target: ignore
+
 linter:
   # The lint rules applied to this project can be customized in the
   # section below to disable rules from the `package:flutter_lints/flutter.yaml`

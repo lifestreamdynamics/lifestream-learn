@@ -69,25 +69,6 @@ class ProfileScreen extends StatelessWidget {
   }
 }
 
-/// Stub for the designer-application route. Slice F replaces with a real
-/// form + submission UI.
-class DesignerApplicationStubScreen extends StatelessWidget {
-  const DesignerApplicationStubScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Become a designer')),
-      body: const Center(
-        child: Padding(
-          padding: EdgeInsets.all(24),
-          child: Text(
-            'Coming in Slice F — the designer application flow will live '
-            'here.',
-            textAlign: TextAlign.center,
-          ),
-        ),
-      ),
-    );
-  }
-}
+// Slice F: DesignerApplicationStubScreen has been replaced by the real
+// `DesignerApplicationScreen` in `features/designer/designer_application_screen.dart`.
+// The router points `/designer-application` at the real implementation.

@@ -174,6 +174,112 @@ Extra smoke tests added by this slice:
 
 Per project CLAUDE.md, this slice is **✎ compiled-and-analyzed-only (device test needed)** until the operator drives on-device verification. `flutter analyze` clean (0 issues), `flutter test` green (175 tests), `flutter build apk --debug` succeeds (~204 MB).
 
+## Slice F
+
+### What lands
+
+- **Designer application flow** (`lib/features/designer/designer_application_screen.dart`) — four-state screen (form / PENDING / APPROVED / REJECTED) driven by `GET /api/designer-applications/me` (new endpoint added in this slice) and `POST /api/designer-applications`.
+- **Admin review** (`lib/features/admin/`) — `AdminHomeScreen` (Applications / Analytics tabs), `DesignerApplicationsScreen` (paginated PENDING list with Approve / Reject + reviewer-note dialog), `CourseAnalyticsScreen` (picker + `totalViews` + `completionRate` + per-cue-type accuracy `DataTable`).
+- **Analytics batching** (`lib/core/analytics/`) — offline-survivable `AnalyticsBuffer` that persists to `${applicationDocumentsDirectory}/analytics_buffer.json`, flushes every 30s, on app-paused, and when it crosses 50 events. 5xx / network errors schedule exponential backoff capped at 5 minutes; 4xx drops the batch with a `debugPrint`. A compile-time privacy guard rejects any event whose `payload` contains one of `{answer, response, input, text, content}` or any String value longer than 128 chars.
+- **Polish** — FLAG_SECURE on cue overlays + admin screens via a Kotlin `MethodChannel`, Material 3 theme rooted at Indigo-600 (`#4F46E5`), `flutter_launcher_icons` + `flutter_native_splash` generated from a placeholder `assets/icon/app_icon.png`, friendly error screens (`FriendlyErrorScreen` / `FriendlyErrorBody`) that never expose stack traces, Skeletonizer loading placeholders on list screens, and `dev` / `prod` build flavors.
+
+### New routes
+
+- `/admin` — admin landing (tab bar: Applications + Analytics). Gated to `UserRole.admin` by the router.
+- `/designer-application` — real designer-application screen (replaces the Slice D stub).
+
+### Build flavors
+
+Two flavors:
+
+| Flavor | Cleartext HTTP | R8/minify | `applicationId` suffix |
+|---|---|---|---|
+| `dev` | **yes** (via `android/app/src/dev/AndroidManifest.xml` overlay) | off on debug | `.dev` |
+| `prod` | no | on (release) | (none) |
+
+Run / build examples:
+
+```bash
+# Dev, emulator
+flutter run --flavor dev --dart-define=API_BASE_URL=http://10.0.2.2:8090
+
+# Prod release APK (universal — the one the Phase 6 exit criteria ask for)
+flutter build apk --flavor prod --release --dart-define=API_BASE_URL=https://learn.example.com
+
+# Prod release, split per ABI (each APK lands under 50 MB)
+flutter build apk --flavor prod --release --split-per-abi
+```
+
+The release build signs with the debug keystore for now (TODO: production signing). Both flavors share the same Dart tree; the only difference at the platform level is the cleartext-HTTP allowance.
+
+### FLAG_SECURE
+
+Android's `WindowManager.LayoutParams.FLAG_SECURE` blocks screenshot, screen-recording, and Recents thumbnails. We enable it in two places:
+
+- **Cue overlays** — `CueOverlayHost` flips it on when `activeCueNotifier` goes non-null and off when it goes null again. Prevents a learner from screenshotting the MCQ/BLANKS/MATCHING answer screen.
+- **Admin screens** — `DesignerApplicationsScreen` and `CourseAnalyticsScreen` enable it in `initState` and disable in `dispose`. Both surfaces contain PII (user ids, aggregate analytics).
+
+The Dart surface is `core/platform/flag_secure.dart`; the Kotlin bridge is `android/app/src/main/kotlin/.../FlagSecureBridge.kt` registered from `MainActivity.configureFlutterEngine`. Tests substitute the method channel via `FlagSecure.testChannel = ...`.
+
+### Analytics events
+
+| `eventType` | Emit site | Payload |
+|---|---|---|
+| `session_start` | `main.dart` after `hydrate()`+`startPeriodic()` | `{}` |
+| `session_end` | `AppLifecycleState.detached` (best-effort) | `{durationMs}` |
+| `video_view` | First `_onControllerTick` where `isPlaying == true` | `{}` |
+| `video_complete` | Position reaches 90% of duration (once per mount) | `{durationMs}` |
+| `cue_shown` | `CueScheduler.activeCueNotifier` flips non-null | `{cueType}` |
+| `cue_answered` | Cue widget receives a graded `AttemptResult` | `{cueType, correct}` |
+
+**Privacy guard**: events with a `payload` containing any of `answer`, `response`, `input`, `text`, `content`, or any string value longer than 128 chars are silently dropped with a `debugPrint` warning. The guard is a seatbelt — the emit sites must never hand those keys over in the first place.
+
+### Dep pins (Slice F)
+
+- `path_provider: ^2.1.4` (resolves 2.1.5) — persists the analytics buffer under the app's private documents directory. Never uses external storage (would leak on shared SD cards).
+- `skeletonizer: ^2.1.3` — Skeletonizer-style list-loading placeholders. **Must be 2.x**: the 1.4 series doesn't implement `Canvas.drawRSuperellipse` which Flutter 3.41's `ui.Canvas` adds, so 1.4.3 fails to compile under this SDK.
+- `flutter_launcher_icons: ^0.14.1` (dev) — launcher-icon generation.
+- `flutter_native_splash: ^2.4.1` (dev) — splash screen generation.
+
+### Placeholder assets
+
+`assets/icon/app_icon.png` is a **placeholder** 1024×1024 gradient generated by a small Python script at slice time. Replace with a designer-provided PNG and re-run:
+
+```bash
+dart run flutter_launcher_icons
+dart run flutter_native_splash:create
+```
+
+### Manual-test checklist (operator runs this on a device / emulator)
+
+Verbatim from the roadmap's Phase 6 exit criteria:
+
+- [ ] User A signs up → applies to be designer.
+- [ ] User B (admin, seeded) approves A.
+- [ ] A (now designer) creates course "Spanish 101" → uploads fixture → authors 3 cues → publishes.
+- [ ] User C enrolls → watches → answers all cues → completes.
+- [ ] B views admin analytics for the course → sees 1 view, 100% completion, correct accuracy.
+- [ ] Analytics batching: disconnect device from Wi-Fi → watch a video → swipe up 3 times → reconnect → events are POSTed on next flush (watch `adb logcat | grep /api/events`).
+- [ ] `flutter build apk --flavor prod --release` then install on a clean Android 10+ device → full journey works.
+
+Extra smoke tests added by this slice:
+
+- [ ] Screenshot during a cue overlay → OS shows "screenshots are disabled by the app" (or Recents shows a grey tile).
+- [ ] Admin screens present the same screenshot block.
+- [ ] Airplane-mode during a cue-heavy session → analytics buffer keeps growing (check `/data/data/.../files/analytics_buffer.json` via `adb shell run-as`) → reconnect → buffer drains on next periodic tick.
+- [ ] Install prod + dev APKs simultaneously (`.dev` applicationId suffix keeps them coexisting).
+- [ ] Rejected applicant re-submits → server resurrects the row back to PENDING (not a new row).
+
+### Status
+
+Per project CLAUDE.md, this slice is **✎ compiled-and-analyzed-only (device test needed)** until the operator drives on-device verification.
+
+- `flutter analyze` → 0 issues.
+- `flutter test` → **222 passed** (175 from previous slices + 47 new).
+- `flutter build apk --debug --flavor dev` → succeeds.
+- `flutter build apk --flavor prod --release` → succeeds (universal APK 90.8 MB; `--split-per-abi` drops each ABI slice under the 50 MB target — arm64-v8a: 31.7 MB, armeabi-v7a: 26.1 MB, x86_64: 34.3 MB).
+- Backend added `GET /api/designer-applications/me` with 4 new integration tests (all green).
+
 ## License
 
 AGPL-3.0. See [`../LICENSE`](../LICENSE).

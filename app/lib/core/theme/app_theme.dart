@@ -1,23 +1,25 @@
 import 'package:flutter/material.dart';
 
-/// Material 3 light + dark themes. Kept intentionally minimal for Slice C —
-/// Slice D will revisit once the feed UI has real chrome.
+/// Material 3 light + dark themes.
+///
+/// The seed color is Indigo-600 (`#4F46E5`) — placeholder that matches the
+/// adaptive-icon background. Designer can override later by editing this
+/// file and the splash/launcher-icon YAML side-by-side (both read the
+/// same hex so the app's chrome stays in sync with its icon).
 class AppTheme {
   const AppTheme._();
 
+  static const Color seed = Color(0xFF4F46E5);
+
   static ThemeData get light => ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF5E60CE),
-          brightness: Brightness.light,
-        ),
+        colorSchemeSeed: seed,
+        brightness: Brightness.light,
         useMaterial3: true,
       );
 
   static ThemeData get dark => ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF5E60CE),
-          brightness: Brightness.dark,
-        ),
+        colorSchemeSeed: seed,
+        brightness: Brightness.dark,
         useMaterial3: true,
       );
 }

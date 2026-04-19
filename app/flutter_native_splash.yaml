@@ -1,0 +1,11 @@
+# Slice F: splash screen generation config. Run:
+#   dart run flutter_native_splash:create
+# to regenerate the drawable/colors resources.
+flutter_native_splash:
+  color: "#FFFFFF"
+  color_dark: "#000000"
+  image: "assets/icon/app_icon.png"
+  android_12:
+    color: "#FFFFFF"
+    color_dark: "#000000"
+    image: "assets/icon/app_icon.png"

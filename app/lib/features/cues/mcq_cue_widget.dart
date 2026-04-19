@@ -18,12 +18,19 @@ class McqCueWidget extends StatefulWidget {
     required this.cue,
     required this.attemptRepo,
     required this.onDone,
+    this.onAnswered,
     super.key,
   });
 
   final Cue cue;
   final AttemptRepository attemptRepo;
   final VoidCallback onDone;
+
+  /// Optional telemetry hook — fires once per cue, with the server-
+  /// graded correctness. The overlay host wires this to
+  /// `CueScheduler.reportAnswered` so analytics get an event per
+  /// completed attempt. Never exposed to the grading path.
+  final void Function(bool correct)? onAnswered;
 
   @override
   State<McqCueWidget> createState() => _McqCueWidgetState();
@@ -58,6 +65,7 @@ class _McqCueWidgetState extends State<McqCueWidget> {
         _submitting = false;
         _result = result;
       });
+      widget.onAnswered?.call(result.correct);
     } catch (e) {
       if (!mounted) return;
       setState(() {

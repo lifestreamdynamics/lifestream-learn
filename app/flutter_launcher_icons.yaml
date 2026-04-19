@@ -1,0 +1,12 @@
+# Slice F: launcher icon generation config. Run:
+#   dart run flutter_launcher_icons
+# to regenerate the mipmap PNGs under android/app/src/main/res/.
+#
+# The source image is a placeholder gradient+L mark — designer should
+# replace `assets/icon/app_icon.png` with a production logo and re-run.
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/icon/app_icon.png"
+  adaptive_icon_background: "#4F46E5"
+  adaptive_icon_foreground: "assets/icon/app_icon.png"

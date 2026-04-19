@@ -30,6 +30,14 @@ dependencies:
   # Transitive of tus_client_dart / file_picker; declare directly so our
   # use of `XFile` in the designer flow passes lint.
   cross_file: ^0.3.4+1
+  # Slice F: offline-survivable analytics buffer persists to a JSON file
+  # under the app's private documents directory.
+  path_provider: ^2.1.4
+  # Slice F: Skeletonizer-style loading placeholders on list screens.
+  # 2.x is required because Flutter 3.41's ui.Canvas adds
+  # `drawRSuperellipse` which skeletonizer 1.x doesn't implement in its
+  # painting-context shim (compile-time abstract-member error).
+  skeletonizer: ^2.1.3
 
 dev_dependencies:
   flutter_test:
@@ -44,6 +52,12 @@ dev_dependencies:
   flutter_secure_storage_platform_interface: ^1.0.2
   # Slice E: deterministic virtual clock for cue scheduler timing tests.
   fake_async: ^1.3.1
+  # Slice F: launcher icon + splash generation. Tools only — never imported
+  # in library code.
+  flutter_launcher_icons: ^0.14.1
+  flutter_native_splash: ^2.4.1
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/icon/

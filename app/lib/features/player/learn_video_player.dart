@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:video_player/video_player.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 
+import '../../core/analytics/analytics_sinks.dart';
 import '../../core/http/error_envelope.dart';
 import '../../data/models/video.dart';
 import '../../data/repositories/enrollment_repository.dart';
@@ -32,6 +33,7 @@ class LearnVideoPlayer extends StatefulWidget {
     required this.controllerCache,
     this.onError,
     this.autoPlayWhenVisible = true,
+    this.analyticsSink,
     super.key,
   });
 
@@ -46,6 +48,12 @@ class LearnVideoPlayer extends StatefulWidget {
   /// widget tests and by future (Slice E) designer preview that wants
   /// manual play control.
   final bool autoPlayWhenVisible;
+
+  /// Optional analytics hook. When provided, emits `video_view` on the
+  /// first playback start and `video_complete` once per video per
+  /// instance at 90% watched. Defaults to no-op — existing tests don't
+  /// need to wire it up.
+  final VideoAnalyticsSink? analyticsSink;
 
   @override
   State<LearnVideoPlayer> createState() => _LearnVideoPlayerState();
@@ -72,6 +80,13 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
   /// Debounced progress ping.
   DateTime _lastProgressSent = DateTime.fromMillisecondsSinceEpoch(0);
   static const Duration _progressInterval = Duration(seconds: 5);
+
+  /// Latch: fire `video_view` exactly once per mount, on the first tick
+  /// where the controller reports `isPlaying` true.
+  bool _viewLogged = false;
+
+  /// Latch: fire `video_complete` exactly once per mount, at 90%.
+  bool _completeLogged = false;
 
   @override
   void initState() {
@@ -160,6 +175,15 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
       _scrubberPos = value.position.inMilliseconds.toDouble();
     }
     if (value.isPlaying) {
+      // One-shot view log on the first tick that reports playing.
+      if (!_viewLogged) {
+        _viewLogged = true;
+        try {
+          widget.analyticsSink?.onVideoView(widget.video.id);
+        } catch (_) {
+          /* telemetry never breaks playback */
+        }
+      }
       final now = DateTime.now();
       if (now.difference(_lastProgressSent) >= _progressInterval) {
         _lastProgressSent = now;
@@ -169,6 +193,19 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
           widget.video.id,
           value.position.inMilliseconds,
         ));
+      }
+    }
+    // video_complete at >= 90%, debounced to once per mount.
+    if (!_completeLogged) {
+      final durMs = value.duration.inMilliseconds;
+      final posMs = value.position.inMilliseconds;
+      if (durMs > 0 && posMs >= (durMs * 0.9).floor()) {
+        _completeLogged = true;
+        try {
+          widget.analyticsSink?.onVideoComplete(widget.video.id, durMs);
+        } catch (_) {
+          /* telemetry never breaks playback */
+        }
       }
     }
   }
