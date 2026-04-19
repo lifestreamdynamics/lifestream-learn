@@ -2,13 +2,7 @@ import request from 'supertest';
 import { getTestApp } from '@tests/integration/helpers/test-app';
 import { closeConnections } from '@tests/integration/helpers/teardown';
 
-const STUB_PATHS = [
-  '/api/courses',
-  '/api/voice-attempts',
-  '/api/feed',
-  '/api/designer-applications',
-  '/api/events',
-] as const;
+const STUB_PATHS = ['/api/voice-attempts'] as const;
 
 describe('Phase 2 stub routes', () => {
   afterAll(async () => {

@@ -503,8 +503,8 @@ Each slice's execution updates this table. I fill it as I finish; you can spot-c
 
 | Slice | Status | Verified | Notes |
 |---|---|---|---|
-| A | ⬜ not started | — | — |
-| B | ⬜ not started | — | — |
+| A | ✅ verified | Unit + integration | Commit 8f77138. 320 unit + 70 integration green. Grading branch coverage 100%. |
+| B | 🟨 in progress | — | — |
 | C | ⬜ not started | — | — |
 | D | ⬜ not started | — | — |
 | E | ⬜ not started | — | — |
