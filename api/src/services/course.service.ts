@@ -88,11 +88,6 @@ export interface CourseService {
     role: Role,
     targetUserId: string,
   ): Promise<void>;
-  isCourseOwnerOrAdminOrCollaborator(
-    courseId: string,
-    userId: string,
-    role: Role,
-  ): Promise<boolean>;
 }
 
 // ----- auth helpers -----
@@ -410,19 +405,7 @@ export function createCourseService(
         where: { courseId, userId: targetUserId },
       });
     },
-
-    async isCourseOwnerOrAdminOrCollaborator(courseId, userId, role) {
-      if (role === 'ADMIN') return true;
-      const course = await loadCourseAuth(prisma, courseId, userId);
-      if (!course) return false;
-      if (course.ownerId === userId) return true;
-      if (course.collaborators.length > 0) return true;
-      return false;
-    },
   };
 }
 
 export const courseService = createCourseService();
-
-// Re-export the types for consumer convenience (controller, tests).
-export type { Course, CourseCollaborator };

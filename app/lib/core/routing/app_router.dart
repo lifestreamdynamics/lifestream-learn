@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
+import '../analytics/analytics_sinks.dart';
 import '../../data/models/user.dart';
 import '../../data/repositories/admin_analytics_repository.dart';
 import '../../data/repositories/admin_designer_application_repository.dart';
@@ -30,6 +31,7 @@ import '../../features/feed/feed_screen.dart';
 import '../../features/home/home_shell.dart';
 import '../../features/player/video_with_cues_screen.dart';
 import '../../features/profile/profile_screen.dart';
+import '../../features/shared/friendly_error_screen.dart';
 import '../auth/auth_bloc.dart';
 import '../auth/auth_state.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -47,6 +49,8 @@ GoRouter createRouter(
   required DesignerApplicationRepository designerAppRepo,
   required AdminDesignerApplicationRepository adminDesignerAppRepo,
   required AdminAnalyticsRepository adminAnalyticsRepo,
+  CueAnalyticsSink cueAnalyticsSink = const NoopCueAnalyticsSink(),
+  VideoAnalyticsSink videoAnalyticsSink = const NoopVideoAnalyticsSink(),
 }) {
   final shellNavigatorKey = GlobalKey<NavigatorState>();
 
@@ -55,6 +59,13 @@ GoRouter createRouter(
   return GoRouter(
     initialLocation: '/login',
     refreshListenable: _GoRouterRefreshStream(authBloc.stream),
+    // Route-level fallback for any unmatched or unresolvable location —
+    // keeps the user off a raw go_router "Page not found" red screen.
+    errorBuilder: (context, state) => FriendlyErrorScreen(
+      title: 'Page not found',
+      message: "We couldn't find that screen. Head home and try again.",
+      debugError: state.error,
+    ),
     redirect: (context, routerState) {
       final authState = authBloc.state;
 
@@ -142,6 +153,8 @@ GoRouter createRouter(
           cueRepo: cueRepo,
           attemptRepo: attemptRepo,
           enrollmentRepo: enrollmentRepo,
+          cueAnalyticsSink: cueAnalyticsSink,
+          videoAnalyticsSink: videoAnalyticsSink,
         ),
       ),
       StatefulShellRoute.indexedStack(
@@ -160,6 +173,7 @@ GoRouter createRouter(
                   child: FeedScreen(
                     videoRepo: videoRepo,
                     enrollmentRepo: enrollmentRepo,
+                    videoAnalyticsSink: videoAnalyticsSink,
                   ),
                 ),
               ),

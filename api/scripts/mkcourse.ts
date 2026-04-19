@@ -19,7 +19,6 @@ async function main(): Promise<void> {
 main()
   .then(() => prisma.$disconnect().then(() => process.exit(0)))
   .catch(async (err) => {
-    // eslint-disable-next-line no-console
     console.error(err);
     await prisma.$disconnect();
     process.exit(1);
