@@ -504,8 +504,8 @@ Each slice's execution updates this table. I fill it as I finish; you can spot-c
 | Slice | Status | Verified | Notes |
 |---|---|---|---|
 | A | ✅ verified | Unit + integration | Commit 8f77138. 320 unit + 70 integration green. Grading branch coverage 100%. |
-| B | 🟨 in progress | — | — |
-| C | ⬜ not started | — | — |
+| B | ✅ verified | Unit + integration | Commit d4f9858. 463 unit + 114 integration green. 4-user smoke scenario in commit. |
+| C | 🟨 in progress | — | — |
 | D | ⬜ not started | — | — |
 | E | ⬜ not started | — | — |
 | F | ⬜ not started | — | — |

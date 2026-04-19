@@ -6,9 +6,7 @@
 .pub-cache/
 .pub/
 build/
-pubspec.lock
-# keep pubspec.lock in VCS for apps — uncomment next line only if this is a pure library
-# pubspec.lock
+# pubspec.lock is committed — this is an app, not a library.
 
 # FVM
 .fvm/flutter_sdk
