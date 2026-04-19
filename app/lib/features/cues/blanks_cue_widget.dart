@@ -14,12 +14,17 @@ class BlanksCueWidget extends StatefulWidget {
     required this.cue,
     required this.attemptRepo,
     required this.onDone,
+    this.onAnswered,
     super.key,
   });
 
   final Cue cue;
   final AttemptRepository attemptRepo;
   final VoidCallback onDone;
+
+  /// See `McqCueWidget.onAnswered`. Fires once with server-graded
+  /// correctness so the overlay host can ping analytics.
+  final void Function(bool correct)? onAnswered;
 
   @override
   State<BlanksCueWidget> createState() => _BlanksCueWidgetState();
@@ -68,6 +73,7 @@ class _BlanksCueWidgetState extends State<BlanksCueWidget> {
         _submitting = false;
         _result = result;
       });
+      widget.onAnswered?.call(result.correct);
     } catch (e) {
       if (!mounted) return;
       setState(() {

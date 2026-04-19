@@ -157,23 +157,6 @@ List<HomeTabSpec> tabsForRole(UserRole role) {
   }
 }
 
-/// Stub admin screen — full panel arrives in Slice F.
-class AdminStubScreen extends StatelessWidget {
-  const AdminStubScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Admin')),
-      body: const Center(
-        child: Padding(
-          padding: EdgeInsets.all(24),
-          child: Text(
-            'Admin panel — coming in Slice F.',
-            textAlign: TextAlign.center,
-          ),
-        ),
-      ),
-    );
-  }
-}
+// Slice F: AdminStubScreen has been replaced by `AdminHomeScreen` in
+// `features/admin/admin_home_screen.dart`. The router points `/admin`
+// at the real implementation.

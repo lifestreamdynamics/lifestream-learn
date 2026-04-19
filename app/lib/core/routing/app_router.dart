@@ -4,12 +4,16 @@ import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../data/models/user.dart';
+import '../../data/repositories/admin_analytics_repository.dart';
+import '../../data/repositories/admin_designer_application_repository.dart';
 import '../../data/repositories/attempt_repository.dart';
 import '../../data/repositories/course_repository.dart';
 import '../../data/repositories/cue_repository.dart';
+import '../../data/repositories/designer_application_repository.dart';
 import '../../data/repositories/enrollment_repository.dart';
 import '../../data/repositories/feed_repository.dart';
 import '../../data/repositories/video_repository.dart';
+import '../../features/admin/admin_home_screen.dart';
 import '../../features/auth/login_screen.dart';
 import '../../features/auth/signup_screen.dart';
 import '../../features/courses/course_detail_screen.dart';
@@ -17,6 +21,7 @@ import '../../features/courses/courses_browse_screen.dart';
 import '../../features/courses/my_courses_screen.dart';
 import '../../features/designer/course_editor_screen.dart';
 import '../../features/designer/create_course_screen.dart';
+import '../../features/designer/designer_application_screen.dart';
 import '../../features/designer/designer_home_screen.dart';
 import '../../features/designer/video_editor_screen.dart';
 import '../../features/feed/feed_bloc.dart';
@@ -39,6 +44,9 @@ GoRouter createRouter(
   required EnrollmentRepository enrollmentRepo,
   required CueRepository cueRepo,
   required AttemptRepository attemptRepo,
+  required DesignerApplicationRepository designerAppRepo,
+  required AdminDesignerApplicationRepository adminDesignerAppRepo,
+  required AdminAnalyticsRepository adminAnalyticsRepo,
 }) {
   final shellNavigatorKey = GlobalKey<NavigatorState>();
 
@@ -103,7 +111,7 @@ GoRouter createRouter(
       ),
       GoRoute(
         path: '/designer-application',
-        builder: (_, __) => const DesignerApplicationStubScreen(),
+        builder: (_, __) => DesignerApplicationScreen(repo: designerAppRepo),
       ),
       GoRoute(
         path: '/designer/courses/new',
@@ -174,7 +182,11 @@ GoRouter createRouter(
               ),
               GoRoute(
                 path: '/admin',
-                builder: (_, __) => const AdminStubScreen(),
+                builder: (_, __) => AdminHomeScreen(
+                  adminDesignerAppsRepo: adminDesignerAppRepo,
+                  adminAnalyticsRepo: adminAnalyticsRepo,
+                  courseRepo: courseRepo,
+                ),
               ),
             ],
           ),

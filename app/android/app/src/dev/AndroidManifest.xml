@@ -1,0 +1,13 @@
+<!--
+  Dev flavor manifest overlay. Allows cleartext HTTP so
+  API_BASE_URL=http://10.0.2.2:8090 can reach the local learn-api
+  without provisioning TLS certificates on the dev machine.
+
+  Android merges this with the main manifest when the dev flavor is
+  assembled. The main manifest intentionally omits usesCleartextTraffic
+  so the prod flavor denies cleartext; HTTPS is required in production.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application
+        android:usesCleartextTraffic="true" />
+</manifest>

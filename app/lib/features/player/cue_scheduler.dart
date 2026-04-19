@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:video_player/video_player.dart';
 
+import '../../core/analytics/analytics_sinks.dart';
 import '../../data/models/cue.dart';
 
 /// Persistent checkpoint for a cue that was active when the app went to
@@ -67,6 +68,7 @@ class CueScheduler with WidgetsBindingObserverMixin {
     required this.videoId,
     ValueNotifier<Cue?>? activeCueNotifier,
     CueCheckpointStore? checkpointStore,
+    CueAnalyticsSink? analyticsSink,
     Duration pollInterval = const Duration(milliseconds: 50),
     // 50ms poll + 200ms lead time gives ±50ms worst-case cue-trigger
     // jitter on low-end devices. Don't bump either without testing.
@@ -76,7 +78,8 @@ class CueScheduler with WidgetsBindingObserverMixin {
         _pollInterval = pollInterval,
         _leadTime = leadTime,
         activeCueNotifier = activeCueNotifier ?? ValueNotifier<Cue?>(null),
-        _checkpointStore = checkpointStore ?? InMemoryCueCheckpointStore();
+        _checkpointStore = checkpointStore ?? InMemoryCueCheckpointStore(),
+        analyticsSink = analyticsSink ?? const NoopCueAnalyticsSink();
 
   static List<Cue> _sortedByAtMs(List<Cue> cues) {
     final list = List<Cue>.of(cues);
@@ -89,6 +92,11 @@ class CueScheduler with WidgetsBindingObserverMixin {
   final Duration _pollInterval;
   final Duration _leadTime;
   final CueCheckpointStore _checkpointStore;
+
+  /// Analytics hook — fires `cue_shown` when an overlay mounts and
+  /// `cue_answered` when [onCueAnswered] is invoked by the widget host.
+  /// Defaults to a no-op so existing tests don't need to pass one.
+  final CueAnalyticsSink analyticsSink;
 
   /// Which video this scheduler is bound to. Lifecycle restore is only
   /// performed when the persisted checkpoint's `videoId` matches — swap
@@ -219,8 +227,43 @@ class CueScheduler with WidgetsBindingObserverMixin {
         CueCheckpoint(cueId: cue.id, videoId: videoId),
       );
       activeCueNotifier.value = cue;
+      // Fire telemetry AFTER the notifier flip so that any exception
+      // from the sink can't prevent the overlay from showing.
+      try {
+        analyticsSink.onCueShown(cue.id, _cueTypeString(cue.type));
+      } catch (e) {
+        if (kDebugMode) debugPrint('cue_shown sink failed: $e');
+      }
     } finally {
       _ticking = false;
+    }
+  }
+
+  /// Called by the cue widget host when the learner submits and the
+  /// server returns a graded attempt. Forwards to the analytics sink.
+  /// `correct` comes from the server, never from the client.
+  void reportAnswered({
+    required String cueId,
+    required CueType cueType,
+    required bool correct,
+  }) {
+    try {
+      analyticsSink.onCueAnswered(cueId, _cueTypeString(cueType), correct);
+    } catch (e) {
+      if (kDebugMode) debugPrint('cue_answered sink failed: $e');
+    }
+  }
+
+  String _cueTypeString(CueType t) {
+    switch (t) {
+      case CueType.mcq:
+        return 'MCQ';
+      case CueType.blanks:
+        return 'BLANKS';
+      case CueType.matching:
+        return 'MATCHING';
+      case CueType.voice:
+        return 'VOICE';
     }
   }
 
