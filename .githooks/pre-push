@@ -45,7 +45,9 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     )
     diff="$(git diff "$range" -- . ':(exclude).env.example' ':(exclude)**/.env.example' 2>/dev/null || true)"
     for p in "${patterns[@]}"; do
-      matches="$(printf '%s' "$diff" | grep -E -i "$p" || true)"
+      # `-- $p` prevents grep from treating a pattern that starts with `-`
+      # (e.g. the private-key `-----BEGIN...` regex) as a command-line flag.
+      matches="$(printf '%s' "$diff" | grep -E -i -- "$p" || true)"
       if [ -n "$matches" ]; then
         echo "pre-push: possible secret matching /$p/:" >&2
         printf '%s\n' "$matches" | head -5 >&2
