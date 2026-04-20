@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { Server } from 'node:http';
 import type { Express } from 'express';
 import request from 'supertest';
-import { HeadObjectCommand } from '@aws-sdk/client-s3';
+import { GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { getTestApp } from '@tests/integration/helpers/test-app';
 import { resetDb, resetRedisKeys } from '@tests/integration/helpers/reset-db';
 import { closeConnections } from '@tests/integration/helpers/teardown';
@@ -136,6 +136,78 @@ describe('Transcode end-to-end (real tusd + worker)', () => {
         }),
       );
       expect(head.$metadata.httpStatusCode).toBe(200);
+
+      // Slice G3: programmatic assertion that the master playlist
+      // conforms to the HLS authoring spec AND advertises the right
+      // ladder. Pre-G3 this was a "run ffprobe by hand" smoke in the
+      // plan file; now it's a hard test.
+      //
+      // IMPORTANT: DEFAULT_LADDER in src/services/ffmpeg/ladder.ts is
+      // filtered by source resolution (`rung.height <= probe.height`)
+      // so upscaling is never attempted. Our fixture sample-3s.mp4 is
+      // 640×360, so only the 360p rung survives the filter. A future
+      // higher-resolution fixture would exercise more variants; this
+      // assertion reads the ladder dynamically rather than hard-coding
+      // a count so the test stays honest about what the pipeline
+      // actually produced.
+      const masterObj = await s3Client.send(
+        new GetObjectCommand({
+          Bucket: env.S3_VOD_BUCKET,
+          Key: `vod/${videoId}/master.m3u8`,
+        }),
+      );
+      const masterText = await masterObj.Body!.transformToString();
+
+      // Structural checks.
+      expect(masterText.startsWith('#EXTM3U')).toBe(true);
+      expect(masterText).toMatch(/#EXT-X-VERSION:\s*[67]/);
+
+      // Parse every #EXT-X-STREAM-INF rendition into a structured
+      // record. Failing this parse means ffmpeg's hls muxer emitted
+      // something the authoring spec disallows.
+      const lines = masterText.split(/\r?\n/);
+      const variants: Array<{
+        bandwidth: number;
+        resolution: { w: number; h: number } | null;
+        codecs: string | null;
+        uri: string;
+      }> = [];
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (!line.startsWith('#EXT-X-STREAM-INF:')) continue;
+        const attrs = line.slice('#EXT-X-STREAM-INF:'.length);
+        const bwMatch = /(?:^|,)BANDWIDTH=(\d+)/.exec(attrs);
+        const resMatch = /(?:^|,)RESOLUTION=(\d+)x(\d+)/.exec(attrs);
+        const codecsMatch = /(?:^|,)CODECS="([^"]+)"/.exec(attrs);
+        expect(bwMatch).not.toBeNull();
+        const next = lines[i + 1]?.trim() ?? '';
+        expect(next.length).toBeGreaterThan(0);
+        expect(next.startsWith('#')).toBe(false); // URI line, not a directive
+        variants.push({
+          bandwidth: Number(bwMatch![1]),
+          resolution: resMatch ? { w: Number(resMatch[1]), h: Number(resMatch[2]) } : null,
+          codecs: codecsMatch?.[1] ?? null,
+          uri: next,
+        });
+      }
+      expect(variants.length).toBeGreaterThan(0);
+
+      // Every advertised variant must have a real index.m3u8 in the
+      // bucket — no dangling URIs.
+      for (const v of variants) {
+        await s3Client.send(
+          new HeadObjectCommand({
+            Bucket: env.S3_VOD_BUCKET,
+            // Variant URIs in the master are relative (e.g. v_0/index.m3u8).
+            Key: `vod/${videoId}/${v.uri}`,
+          }),
+        );
+        // HeadObject throws on 404; reaching here means the variant
+        // playlist exists.
+        expect(v.bandwidth).toBeGreaterThan(0);
+        expect(v.codecs).toMatch(/avc1\./); // H.264 Main per ADR 0004 scope
+        expect(v.codecs).toMatch(/mp4a\./); // AAC
+      }
 
       const playback = await request(app)
         .get(`/api/videos/${videoId}/playback`)
