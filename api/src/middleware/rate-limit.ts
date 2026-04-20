@@ -1,5 +1,6 @@
 import rateLimit from 'express-rate-limit';
 import { RedisStore } from 'rate-limit-redis';
+import { env } from '@/config/env';
 import { redis } from '@/config/redis';
 
 const makeStore = (prefix: string) =>
@@ -14,8 +15,8 @@ const makeStore = (prefix: string) =>
   });
 
 export const signupLimiter = rateLimit({
-  windowMs: 10 * 60 * 1000,
-  limit: 10,
+  windowMs: env.RATE_LIMIT_SIGNUP_WINDOW_MS,
+  limit: env.RATE_LIMIT_SIGNUP_MAX,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   store: makeStore('rl:auth:signup:'),
@@ -23,8 +24,8 @@ export const signupLimiter = rateLimit({
 });
 
 export const loginLimiter = rateLimit({
-  windowMs: 5 * 60 * 1000,
-  limit: 5,
+  windowMs: env.RATE_LIMIT_LOGIN_WINDOW_MS,
+  limit: env.RATE_LIMIT_LOGIN_MAX,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   store: makeStore('rl:auth:login:'),
@@ -32,8 +33,8 @@ export const loginLimiter = rateLimit({
 });
 
 export const refreshLimiter = rateLimit({
-  windowMs: 5 * 60 * 1000,
-  limit: 30,
+  windowMs: env.RATE_LIMIT_REFRESH_WINDOW_MS,
+  limit: env.RATE_LIMIT_REFRESH_MAX,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   store: makeStore('rl:auth:refresh:'),

@@ -124,6 +124,39 @@ describe('observability/metrics', () => {
       expect(counter.values[0].labels.status).toBe('404');
     });
 
+    it('canonicalises UUIDs in baseUrl to prevent nested-router fan-out', async () => {
+      // Nested routers with `mergeParams` expose req.baseUrl with the
+      // OUTER router's concrete param value. Left as-is, this fans the
+      // `route` label out once per video — fatal at 200 VUs.
+      const metrics = buildMetrics();
+      const mw = httpMetricsMiddleware(metrics);
+      const uuidA = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
+      const uuidB = 'b2c3d4e5-f6a7-8901-bcde-f12345678901';
+      const mkReq = (uuid: string): Request =>
+        ({
+          method: 'GET',
+          baseUrl: `/api/videos/${uuid}/cues`,
+          route: { path: '/' },
+        }) as unknown as Request;
+      const next = jest.fn() as unknown as NextFunction;
+
+      for (const uuid of [uuidA, uuidB, uuidA]) {
+        const { res, fire } = mockResWithFinish();
+        mw(mkReq(uuid), res, next);
+        fire();
+      }
+
+      const snapshot = await metrics.registry.getMetricsAsJSON();
+      const counter = snapshot.find((x) => x.name === 'learn_http_requests_total') as {
+        values: Array<{ labels: Record<string, string>; value: number }>;
+      };
+      // Three requests should collapse into ONE labelled series, not two
+      // (one per distinct UUID).
+      expect(counter.values).toHaveLength(1);
+      expect(counter.values[0].labels.route).toBe('/api/videos/:id/cues/');
+      expect(counter.values[0].value).toBe(3);
+    });
+
     it('records a duration observation per request', async () => {
       const metrics = buildMetrics();
       const mw = httpMetricsMiddleware(metrics);

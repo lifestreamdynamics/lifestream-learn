@@ -93,6 +93,20 @@ export function resetMetricsForTests(): void {
   cached = null;
 }
 
+// Canonical UUID pattern. When nested routers `mergeParams`, `req.baseUrl`
+// carries the CONCRETE param value (the outer router's matched segment),
+// not a pattern. Without this substitution, a UUID-keyed nested route
+// like `/api/videos/<uuid>/cues/` fans out the `route` label once per
+// video — catastrophic at 200 VUs × M videos.
+const UUID_RE = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
+
+function canonicaliseRoute(baseUrl: string, routePath: string | undefined): string {
+  if (!routePath) return 'unmatched';
+  const combined = `${baseUrl}${routePath}`;
+  if (!combined) return 'unmatched';
+  return combined.replace(UUID_RE, ':id');
+}
+
 /**
  * Express middleware that records duration + count for every response.
  * Registered unconditionally when `METRICS_ENABLED=true`; when the flag is
@@ -106,10 +120,7 @@ export function httpMetricsMiddleware(metrics: LearnMetrics): RequestHandler {
       // that didn't match (and for the 404 middleware) it's undefined — we
       // collapse those to a constant label so 404-spamming crawlers can't
       // explode cardinality.
-      const routePattern = req.route?.path ?? 'unmatched';
-      // The baseUrl (e.g. "/api") prefixes the sub-router's local pattern
-      // to give us the useful `/api/videos/:id/playback` view.
-      const route = `${req.baseUrl}${routePattern}` || 'unmatched';
+      const route = canonicaliseRoute(req.baseUrl, req.route?.path);
       const labels = {
         route,
         method: req.method,
