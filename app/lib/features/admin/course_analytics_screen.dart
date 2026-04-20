@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:skeletonizer/skeletonizer.dart';
 
+import '../../config/app_constants.dart';
 import '../../core/platform/flag_secure.dart';
 import '../../data/models/course.dart';
 import '../../data/models/course_analytics.dart';
@@ -68,7 +69,7 @@ class _CourseAnalyticsScreenState extends State<CourseAnalyticsScreen> {
       // the wider list. (The underlying `/api/courses` route serves the
       // admin the full set when authenticated.)
       final page = await widget.courseRepo.published(
-        limit: 50,
+        limit: AppConstants.designerListLimit,
         publishedFilter: false,
       );
       if (!mounted) return;

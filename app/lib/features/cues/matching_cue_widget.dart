@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/widgets/cue_submission_mixin.dart';
 import '../../data/models/cue.dart';
 import '../../data/repositories/attempt_repository.dart';
 import 'cue_overlay.dart';
@@ -32,16 +33,13 @@ class MatchingCueWidget extends StatefulWidget {
   State<MatchingCueWidget> createState() => _MatchingCueWidgetState();
 }
 
-class _MatchingCueWidgetState extends State<MatchingCueWidget> {
+class _MatchingCueWidgetState extends State<MatchingCueWidget>
+    with CueSubmissionMixin<MatchingCueWidget> {
   /// Map of left-index → right-index. The 1:1 invariant is enforced by
   /// construction: a left can only map to one right (Map), and we
   /// explicitly evict any prior owner of a selected right.
   final Map<int, int> _pairs = <int, int>{};
   int? _selectedLeft;
-
-  bool _submitting = false;
-  AttemptResult? _result;
-  String? _submitError;
 
   List<String> get _left => ((widget.cue.payload['left'] as List?) ?? const [])
       .map((e) => e.toString())
@@ -55,7 +53,7 @@ class _MatchingCueWidgetState extends State<MatchingCueWidget> {
   bool get _hasPairs => _pairs.isNotEmpty;
 
   void _onLeftTap(int i) {
-    if (_result != null || _submitting) return;
+    if (result != null || submitting) return;
     setState(() {
       // Tapping a left card that already has a pair: unpair + select.
       if (_pairs.containsKey(i)) {
@@ -70,7 +68,7 @@ class _MatchingCueWidgetState extends State<MatchingCueWidget> {
   }
 
   void _onRightTap(int j) {
-    if (_result != null || _submitting) return;
+    if (result != null || submitting) return;
     // Tapping a right card that's already paired unpairs it (regardless
     // of whether we have a left selected).
     final owner =
@@ -90,43 +88,36 @@ class _MatchingCueWidgetState extends State<MatchingCueWidget> {
   }
 
   Future<void> _submit() async {
-    setState(() {
-      _submitting = true;
-      _submitError = null;
-    });
-    try {
-      final userPairs = _pairs.entries
-          .map((e) => <int>[e.key, e.value])
-          .toList(growable: false);
-      final result = await widget.attemptRepo.submit(
+    final userPairs = _pairs.entries
+        .map((e) => <int>[e.key, e.value])
+        .toList(growable: false);
+    await runSubmission(
+      () => widget.attemptRepo.submit(
         cueId: widget.cue.id,
         response: <String, dynamic>{'userPairs': userPairs},
-      );
-      if (!mounted) return;
-      setState(() {
-        _submitting = false;
-        _result = result;
-      });
-      widget.onAnswered?.call(result.correct);
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _submitting = false;
-        _submitError = e.toString();
-      });
-    }
+      ),
+      onAnswered: widget.onAnswered,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final result = _result;
+    final res = result;
     return CueOverlay(
       cueType: widget.cue.type,
       submitEnabled: _hasPairs,
-      submitting: _submitting,
+      submitting: submitting,
       onSubmit: _submit,
       onContinue: widget.onDone,
-      resultBanner: result == null ? null : _buildResultBanner(result),
+      resultBanner: res == null
+          ? null
+          : buildResultBanner(
+              result: res,
+              correctText: 'Correct!',
+              incorrectText: 'Not quite.',
+              key: const Key('matching.result'),
+              trailing: _pairCountTrailing(res),
+            ),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
@@ -171,10 +162,10 @@ class _MatchingCueWidgetState extends State<MatchingCueWidget> {
               ),
             ],
           ),
-          if (_submitError != null) ...[
+          if (submitError != null) ...[
             const SizedBox(height: 8),
             Text(
-              _submitError!,
+              submitError!,
               key: const Key('matching.error'),
               style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
@@ -215,31 +206,13 @@ class _MatchingCueWidgetState extends State<MatchingCueWidget> {
     );
   }
 
-  Widget _buildResultBanner(AttemptResult result) {
-    final correctPairs = result.scoreJson?['correctPairs'];
-    final totalPairs = result.scoreJson?['totalPairs'];
-    return Column(
-      key: const Key('matching.result'),
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(
-              result.correct ? Icons.check_circle : Icons.cancel,
-              color: result.correct ? Colors.green : Colors.red,
-            ),
-            const SizedBox(width: 8),
-            Text(
-              result.correct ? 'Correct!' : 'Not quite.',
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ],
-        ),
-        if (correctPairs != null && totalPairs != null) ...[
-          const SizedBox(height: 4),
-          Text('$correctPairs / $totalPairs pairs matched.'),
-        ],
-      ],
+  Widget? _pairCountTrailing(AttemptResult res) {
+    final correctPairs = res.scoreJson?['correctPairs'];
+    final totalPairs = res.scoreJson?['totalPairs'];
+    if (correctPairs == null || totalPairs == null) return null;
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Text('$correctPairs / $totalPairs pairs matched.'),
     );
   }
 }

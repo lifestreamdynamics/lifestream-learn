@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
 import '../analytics/analytics_sinks.dart';
+import '../crash/crash_consent_bloc.dart';
 import '../../data/models/user.dart';
 import '../../data/repositories/admin_analytics_repository.dart';
 import '../../data/repositories/admin_designer_application_repository.dart';
@@ -29,6 +30,7 @@ import '../../features/feed/feed_bloc.dart';
 import '../../features/feed/feed_event.dart';
 import '../../features/feed/feed_screen.dart';
 import '../../features/home/home_shell.dart';
+import '../../features/onboarding/crash_consent_screen.dart';
 import '../../features/player/video_with_cues_screen.dart';
 import '../../features/profile/profile_screen.dart';
 import '../../features/shared/friendly_error_screen.dart';
@@ -51,6 +53,8 @@ GoRouter createRouter(
   required AdminAnalyticsRepository adminAnalyticsRepo,
   CueAnalyticsSink cueAnalyticsSink = const NoopCueAnalyticsSink(),
   VideoAnalyticsSink videoAnalyticsSink = const NoopVideoAnalyticsSink(),
+  CrashConsentBloc? crashConsentBloc,
+  List<NavigatorObserver> observers = const [],
 }) {
   final shellNavigatorKey = GlobalKey<NavigatorState>();
 
@@ -58,7 +62,11 @@ GoRouter createRouter(
 
   return GoRouter(
     initialLocation: '/login',
-    refreshListenable: _GoRouterRefreshStream(authBloc.stream),
+    observers: observers,
+    refreshListenable: _CombinedRefresh(<Stream<dynamic>>[
+      authBloc.stream,
+      if (crashConsentBloc != null) crashConsentBloc.stream,
+    ]),
     // Route-level fallback for any unmatched or unresolvable location —
     // keeps the user off a raw go_router "Page not found" red screen.
     errorBuilder: (context, state) => FriendlyErrorScreen(
@@ -66,44 +74,11 @@ GoRouter createRouter(
       message: "We couldn't find that screen. Head home and try again.",
       debugError: state.error,
     ),
-    redirect: (context, routerState) {
-      final authState = authBloc.state;
-
-      // Still initializing → don't redirect.
-      if (authState is AuthInitial || authState is AuthAuthenticating) {
-        return null;
-      }
-
-      final location = routerState.uri.path;
-      final onAuthRoute = location == '/login' || location == '/signup';
-
-      if (authState is Unauthenticated) {
-        return onAuthRoute ? null : '/login';
-      }
-
-      if (authState is Authenticated) {
-        if (onAuthRoute) return _roleHome(authState.user.role);
-
-        // Role gating for the tab-anchored routes. Non-tabs (e.g. course
-        // detail, designer-application) are allowed for any authed user.
-        final role = authState.user.role;
-        if (location == '/admin' && role != UserRole.admin) {
-          return _roleHome(role);
-        }
-        if (location == '/designer' && role == UserRole.learner) {
-          return _roleHome(role);
-        }
-        if (location == '/my-courses' && role != UserRole.learner) {
-          return _roleHome(role);
-        }
-        if (location == '/browse' && role != UserRole.learner) {
-          return _roleHome(role);
-        }
-        return null;
-      }
-
-      return null;
-    },
+    redirect: (context, routerState) => resolveRedirect(
+      authState: authBloc.state,
+      consentStatus: crashConsentBloc?.state,
+      location: routerState.uri.path,
+    ),
     routes: <RouteBase>[
       GoRoute(
         path: '/login',
@@ -112,6 +87,10 @@ GoRouter createRouter(
       GoRoute(
         path: '/signup',
         builder: (_, __) => const SignupScreen(),
+      ),
+      GoRoute(
+        path: '/crash-consent',
+        builder: (_, __) => const CrashConsentScreen(),
       ),
       GoRoute(
         path: '/courses/:id',
@@ -229,6 +208,69 @@ GoRouter createRouter(
   );
 }
 
+/// Pure function implementing the router's redirect rule. Exposed so
+/// it can be unit-tested in isolation without a live `GoRouter` +
+/// navigator tree. Returns `null` when no redirect is needed, or the
+/// target path string otherwise.
+///
+/// Inputs:
+/// - [authState] — the current [AuthBloc] state.
+/// - [consentStatus] — the current [CrashConsentBloc] state, or `null`
+///   when crash-consent gating is disabled.
+/// - [location] — the path the router is about to navigate to.
+@visibleForTesting
+String? resolveRedirect({
+  required AuthState authState,
+  required CrashConsentStatus? consentStatus,
+  required String location,
+}) {
+  // Still initializing → don't redirect.
+  if (authState is AuthInitial || authState is AuthAuthenticating) {
+    return null;
+  }
+
+  final onAuthRoute = location == '/login' || location == '/signup';
+  final onConsentRoute = location == '/crash-consent';
+
+  if (authState is Unauthenticated) {
+    return onAuthRoute ? null : '/login';
+  }
+
+  if (authState is Authenticated) {
+    // Gate authed traffic on the first-launch crash-consent decision.
+    // This check runs BEFORE the onAuthRoute → role-home redirect so
+    // a user landing on `/login` while still undecided goes straight
+    // to the consent screen rather than flashing through their role
+    // home. Once the bloc emits `granted` or `denied` the
+    // refreshListenable fires and this redirect bounces them on to
+    // their role home.
+    if (consentStatus == CrashConsentStatus.undecided) {
+      return onConsentRoute ? null : '/crash-consent';
+    }
+    if (onAuthRoute) return _roleHome(authState.user.role);
+    if (onConsentRoute) return _roleHome(authState.user.role);
+
+    // Role gating for the tab-anchored routes. Non-tabs (e.g. course
+    // detail, designer-application) are allowed for any authed user.
+    final role = authState.user.role;
+    if (location == '/admin' && role != UserRole.admin) {
+      return _roleHome(role);
+    }
+    if (location == '/designer' && role == UserRole.learner) {
+      return _roleHome(role);
+    }
+    if (location == '/my-courses' && role != UserRole.learner) {
+      return _roleHome(role);
+    }
+    if (location == '/browse' && role != UserRole.learner) {
+      return _roleHome(role);
+    }
+    return null;
+  }
+
+  return null;
+}
+
 String _roleHome(UserRole role) {
   switch (role) {
     case UserRole.admin:
@@ -240,20 +282,25 @@ String _roleHome(UserRole role) {
   }
 }
 
-/// Adapts a broadcast `Stream` into a `Listenable` the router can watch.
-class _GoRouterRefreshStream extends ChangeNotifier {
-  _GoRouterRefreshStream(Stream<dynamic> stream) {
+/// Adapts one or more broadcast `Stream`s into a `Listenable` the
+/// router can watch. Fires on every event from every input stream so
+/// the router re-runs its redirect rule when any of the underlying
+/// blocs emits.
+class _CombinedRefresh extends ChangeNotifier {
+  _CombinedRefresh(List<Stream<dynamic>> streams) {
     notifyListeners();
-    _subscription = stream.asBroadcastStream().listen(
-          (_) => notifyListeners(),
-        );
+    _subscriptions = streams
+        .map((s) => s.asBroadcastStream().listen((_) => notifyListeners()))
+        .toList(growable: false);
   }
 
-  late final StreamSubscription<dynamic> _subscription;
+  late final List<StreamSubscription<dynamic>> _subscriptions;
 
   @override
   void dispose() {
-    _subscription.cancel();
+    for (final sub in _subscriptions) {
+      sub.cancel();
+    }
     super.dispose();
   }
 }

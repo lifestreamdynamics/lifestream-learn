@@ -38,6 +38,14 @@ dependencies:
   # `drawRSuperellipse` which skeletonizer 1.x doesn't implement in its
   # painting-context shim (compile-time abstract-member error).
   skeletonizer: ^2.1.3
+  # Post-Slice-F: crash reporting to Lifestream Vault. Pure Dart SDK
+  # (no Flutter deps of its own) — we wire it into `lib/core/crash/`
+  # with a SecureStorageBackend adapter so offline-queued reports use
+  # the same encrypted storage as the auth tokens. `hasCrashReportingConfig`
+  # gates uploads: when LEARN_CRASH_API_KEY is absent the SDK is in
+  # `enabled: false` mode and all capture calls are no-ops. See
+  # `lib/config/crash_reporting_config.dart` for the key-rotation flow.
+  lifestream_doctor: ^1.0.2
 
 dev_dependencies:
   flutter_test:
@@ -56,6 +64,11 @@ dev_dependencies:
   # in library code.
   flutter_launcher_icons: ^0.14.1
   flutter_native_splash: ^2.4.1
+  # Post-Slice-F: crash reporter tests mock `http.Client` to exercise
+  # the enabled-mode capture path without touching the network.
+  # `http` is a transitive dep of `lifestream_doctor`, declared here
+  # directly so the test imports pass lint.
+  http: ^1.2.0
 
 flutter:
   uses-material-design: true

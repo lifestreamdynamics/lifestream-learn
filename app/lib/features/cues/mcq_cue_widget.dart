@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/widgets/cue_submission_mixin.dart';
 import '../../data/models/cue.dart';
 import '../../data/repositories/attempt_repository.dart';
 import 'cue_overlay.dart';
@@ -36,11 +37,9 @@ class McqCueWidget extends StatefulWidget {
   State<McqCueWidget> createState() => _McqCueWidgetState();
 }
 
-class _McqCueWidgetState extends State<McqCueWidget> {
+class _McqCueWidgetState extends State<McqCueWidget>
+    with CueSubmissionMixin<McqCueWidget> {
   int? _selected;
-  bool _submitting = false;
-  AttemptResult? _result;
-  String? _submitError;
 
   String get _question => (widget.cue.payload['question'] as String?) ?? '';
   List<String> get _choices =>
@@ -51,41 +50,40 @@ class _McqCueWidgetState extends State<McqCueWidget> {
   Future<void> _submit() async {
     final sel = _selected;
     if (sel == null) return;
-    setState(() {
-      _submitting = true;
-      _submitError = null;
-    });
-    try {
-      final result = await widget.attemptRepo.submit(
+    await runSubmission(
+      () => widget.attemptRepo.submit(
         cueId: widget.cue.id,
         response: <String, dynamic>{'choiceIndex': sel},
-      );
-      if (!mounted) return;
-      setState(() {
-        _submitting = false;
-        _result = result;
-      });
-      widget.onAnswered?.call(result.correct);
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _submitting = false;
-        _submitError = e.toString();
-      });
-    }
+      ),
+      onAnswered: widget.onAnswered,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final choices = _choices;
-    final result = _result;
+    final res = result;
+    final explanation = res?.explanation;
     return CueOverlay(
       cueType: widget.cue.type,
       submitEnabled: _selected != null,
-      submitting: _submitting,
+      submitting: submitting,
       onSubmit: _submit,
       onContinue: widget.onDone,
-      resultBanner: result == null ? null : _buildResultBanner(result),
+      resultBanner: res == null
+          ? null
+          : buildResultBanner(
+              result: res,
+              correctText: 'Correct!',
+              incorrectText: 'Incorrect.',
+              key: const Key('mcq.result'),
+              trailing: (explanation != null && explanation.isNotEmpty)
+                  ? Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(explanation),
+                    )
+                  : null,
+            ),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
@@ -104,47 +102,21 @@ class _McqCueWidgetState extends State<McqCueWidget> {
               // ignore: deprecated_member_use
               groupValue: _selected,
               // ignore: deprecated_member_use
-              onChanged: result == null && !_submitting
+              onChanged: res == null && !submitting
                   ? (v) => setState(() => _selected = v)
                   : null,
               title: Text(choices[i]),
             ),
-          if (_submitError != null) ...[
+          if (submitError != null) ...[
             const SizedBox(height: 8),
             Text(
-              _submitError!,
+              submitError!,
               key: const Key('mcq.error'),
               style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
           ],
         ],
       ),
-    );
-  }
-
-  Widget _buildResultBanner(AttemptResult result) {
-    return Column(
-      key: const Key('mcq.result'),
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(
-              result.correct ? Icons.check_circle : Icons.cancel,
-              color: result.correct ? Colors.green : Colors.red,
-            ),
-            const SizedBox(width: 8),
-            Text(
-              result.correct ? 'Correct!' : 'Incorrect.',
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ],
-        ),
-        if (result.explanation != null && result.explanation!.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          Text(result.explanation!),
-        ],
-      ],
     );
   }
 }

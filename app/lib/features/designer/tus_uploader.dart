@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:cross_file/cross_file.dart';
 import 'package:tus_client_dart/tus_client_dart.dart';
 
+import '../../config/app_constants.dart';
 import '../../data/models/video.dart';
 
 /// Signature for the TUS client factory. Production wires this to
@@ -30,7 +31,7 @@ class TusUploader {
   final TusClientFactory _factory;
 
   static TusClient _defaultFactory({required XFile file}) {
-    return TusClient(file, maxChunkSize: 5 * 1024 * 1024);
+    return TusClient(file, maxChunkSize: AppConstants.tusMaxChunkBytes);
   }
 
   /// Uploads [file] using [ticket] and reports progress in [0, 1].
