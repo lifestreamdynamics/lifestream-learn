@@ -3,6 +3,7 @@ import { ZodError } from 'zod';
 import { Prisma } from '@prisma/client';
 import { AppError } from '@/utils/errors';
 import { logger } from '@/config/logger';
+import { getDoctorReporter } from '@/observability/doctor-reporter';
 
 export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   if (err instanceof ZodError) {
@@ -30,5 +31,11 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
     return;
   }
   logger.error({ err, reqId: req.id }, 'unhandled error');
+  // Forward to the crash-reporting seam. When CRASH_REPORTING_ENABLED is
+  // false (the default, including tests) this is a no-op beyond a debug log
+  // line — no network call, no exception escape.
+  getDoctorReporter().captureException(err, {
+    reqId: typeof req.id === 'string' || typeof req.id === 'number' ? req.id : undefined,
+  });
   res.status(500).json({ error: 'INTERNAL_ERROR', message: 'Internal server error' });
 };

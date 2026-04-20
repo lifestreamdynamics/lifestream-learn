@@ -4,6 +4,11 @@ import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 import { errorHandler } from '@/middleware/error-handler';
 import { UnauthorizedError, AppError } from '@/utils/errors';
+import {
+  resetDoctorReporterForTests,
+  setDoctorReporterForTests,
+  type DoctorReporter,
+} from '@/observability/doctor-reporter';
 
 function makeRes(): Response {
   const res = {} as Response;
@@ -108,6 +113,65 @@ describe('errorHandler middleware', () => {
     expect(res.json).toHaveBeenCalledWith({
       error: 'INTERNAL_ERROR',
       message: 'Internal server error',
+    });
+  });
+
+  describe('doctor-reporter integration', () => {
+    let fake: DoctorReporter;
+
+    beforeEach(() => {
+      fake = {
+        initialise: jest.fn(),
+        captureException: jest.fn(),
+        flush: jest.fn().mockResolvedValue(undefined),
+      };
+      setDoctorReporterForTests(fake);
+    });
+
+    afterEach(() => {
+      resetDoctorReporterForTests();
+    });
+
+    it('forwards unhandled errors to the doctor reporter with reqId context', () => {
+      const req = makeReq();
+      const res = makeRes();
+      const next = jest.fn() as unknown as NextFunction;
+      const err = new Error('kaboom');
+
+      errorHandler(err, req, res, next);
+
+      expect(fake.captureException).toHaveBeenCalledTimes(1);
+      expect(fake.captureException).toHaveBeenCalledWith(
+        err,
+        expect.objectContaining({ reqId: 'req-123' }),
+      );
+    });
+
+    it('does not forward handled (Zod) validation errors to the reporter', () => {
+      const schema = z.object({ email: z.string().email() });
+      let zerr: z.ZodError | null = null;
+      try {
+        schema.parse({ email: 'not-an-email' });
+      } catch (err) {
+        zerr = err as z.ZodError;
+      }
+      const req = makeReq();
+      const res = makeRes();
+      const next = jest.fn() as unknown as NextFunction;
+
+      errorHandler(zerr, req, res, next);
+
+      expect(fake.captureException).not.toHaveBeenCalled();
+    });
+
+    it('does not forward AppError subclasses to the reporter (they are expected)', () => {
+      const req = makeReq();
+      const res = makeRes();
+      const next = jest.fn() as unknown as NextFunction;
+
+      errorHandler(new UnauthorizedError('bad creds'), req, res, next);
+
+      expect(fake.captureException).not.toHaveBeenCalled();
     });
   });
 });
