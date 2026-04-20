@@ -3,6 +3,10 @@ import { env } from '@/config/env';
 import { logger } from '@/config/logger';
 import { prisma } from '@/config/prisma';
 import { redis } from '@/config/redis';
+import {
+  startQueueDepthSampler,
+  stopQueueDepthSampler,
+} from '@/observability/queue-depth-sampler';
 
 async function main(): Promise<void> {
   await prisma.$connect();
@@ -13,8 +17,13 @@ async function main(): Promise<void> {
     logger.info({ port: env.PORT, env: env.NODE_ENV }, 'learn-api listening');
   });
 
+  if (env.METRICS_ENABLED) {
+    startQueueDepthSampler();
+  }
+
   const shutdown = async (signal: string): Promise<void> => {
     logger.info({ signal }, 'shutting down');
+    stopQueueDepthSampler();
     server.close();
     await Promise.allSettled([prisma.$disconnect(), redis.quit()]);
     process.exit(0);

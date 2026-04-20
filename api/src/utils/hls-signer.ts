@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { env } from '@/config/env';
+import { getMetrics } from '@/observability/metrics';
 
 /**
  * Byte-exact Node equivalent of `infra/scripts/sign-hls-url.sh` and the
@@ -52,6 +53,7 @@ export function signPlaybackUrl(
   // HLS_BASE_URL may already include `/hls`; strip it if so to avoid a double
   // prefix, since the signed path starts with `/hls/...`.
   const origin = base.replace(/\/hls$/, '');
+  getMetrics().playbackSignedUrlsTotal.inc();
   return {
     url: `${origin}${uriPath}?md5=${md5}&expires=${expires}`,
     expiresAt: new Date(expires * 1000),
