@@ -16,6 +16,10 @@ async function main(): Promise<void> {
   const server = app.listen(env.PORT, () => {
     logger.info({ port: env.PORT, env: env.NODE_ENV }, 'learn-api listening');
   });
+  // Bump Node's defaults so nginx can actually re-use upstream sockets.
+  // See HTTP_KEEPALIVE_MS / HTTP_HEADERS_TIMEOUT_MS in config/env.ts.
+  server.keepAliveTimeout = env.HTTP_KEEPALIVE_MS;
+  server.headersTimeout = env.HTTP_HEADERS_TIMEOUT_MS;
 
   if (env.METRICS_ENABLED) {
     startQueueDepthSampler();

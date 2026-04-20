@@ -59,6 +59,28 @@ const EnvSchema = z.object({
   CRASH_REPORTING_ENABLED: z.coerce.boolean().default(false),
   LEARN_CRASH_API_KEY: z.string().default(''),
   LEARN_CRASH_ENDPOINT: z.string().default(''),
+
+  // ---------- HTTP server tuning (Slice G2) ----------
+  // Node's default `server.keepAliveTimeout` is 5s, which is shorter than
+  // nginx's default upstream keepalive (75s). Requests that land in the
+  // gap cause nginx to mint a new TCP connection on every call — fine at
+  // low load, murder at 200 VUs. Bump both to sit above the reverse-proxy
+  // keepalive. `headersTimeout` must be > keepAliveTimeout or Node rejects
+  // the config.
+  HTTP_KEEPALIVE_MS: z.coerce.number().int().positive().default(65_000),
+  HTTP_HEADERS_TIMEOUT_MS: z.coerce.number().int().positive().default(66_000),
+
+  // ---------- Auth rate-limit ceilings (Slice G2) ----------
+  // Prod defaults (keep these modest — they exist to throttle credential
+  // stuffing). Operators running k6 from a single loopback IP will need
+  // to raise RATE_LIMIT_LOGIN_MAX for the duration of the baseline run.
+  // See api/load/README.md §3 for the mechanics.
+  RATE_LIMIT_SIGNUP_MAX: z.coerce.number().int().positive().default(10),
+  RATE_LIMIT_SIGNUP_WINDOW_MS: z.coerce.number().int().positive().default(10 * 60 * 1000),
+  RATE_LIMIT_LOGIN_MAX: z.coerce.number().int().positive().default(5),
+  RATE_LIMIT_LOGIN_WINDOW_MS: z.coerce.number().int().positive().default(5 * 60 * 1000),
+  RATE_LIMIT_REFRESH_MAX: z.coerce.number().int().positive().default(30),
+  RATE_LIMIT_REFRESH_WINDOW_MS: z.coerce.number().int().positive().default(5 * 60 * 1000),
 });
 
 const parsed = EnvSchema.safeParse(process.env);
