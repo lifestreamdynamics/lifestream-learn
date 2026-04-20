@@ -51,6 +51,14 @@ const EnvSchema = z.object({
   FFMPEG_BIN: z.string().default('ffmpeg'),
   FFPROBE_BIN: z.string().default('ffprobe'),
   VIDEO_MAX_DURATION_MS: z.coerce.number().int().positive().default(180_000),
+
+  // ---------- Observability (Slice G1) ----------
+  // Both flags default false so the test suite + fresh dev clones open no
+  // network sockets and expose no new surface until an operator opts in.
+  METRICS_ENABLED: z.coerce.boolean().default(false),
+  CRASH_REPORTING_ENABLED: z.coerce.boolean().default(false),
+  LEARN_CRASH_API_KEY: z.string().default(''),
+  LEARN_CRASH_ENDPOINT: z.string().default(''),
 });
 
 const parsed = EnvSchema.safeParse(process.env);

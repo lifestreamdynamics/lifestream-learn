@@ -123,11 +123,12 @@ Code in `api/`, `app/`, `infra/`, `docs/` is published publicly under AGPL-3.0. 
 
 Even though deployment is out of scope today, this project will eventually run on a machine shared with other Lifestream services. Design as if that's already true:
 
-- **Ports:** dev port `3011`, reserved prod port `3101` (see §3 of IMPLEMENTATION_PLAN.md). Never bind `:3000`, `:3100`, `:3177`, `:5432`, `:6379`, `:80` in anything we own — those belong to the rest of the ecosystem.
+- **Ports:** dev port `3011`, reserved prod port `3101` (see §3 of IMPLEMENTATION_PLAN.md). Never bind `:3000`, `:3100`, `:3177`, `:5432`, `:6379`, `:80` in anything we own — those belong to the rest of the ecosystem. The Slice-G1 `/metrics` endpoint shares `:3011` (gated by `METRICS_ENABLED`) — it does NOT claim a new port like `:9090`, since that could collide with a future Prometheus server on the same host. IP-allowlist this path at the reverse proxy before any deployment.
 - **Redis:** every key prefixed with `learn:`. No unprefixed keys. Ever.
 - **Postgres:** our DBs are `learn_api_{production,development,test}`; our only role is `learn_api_user`. Never reach into another project's schema.
 - **BullMQ queue names:** prefixed `learn:` as well (e.g. `learn:transcode`).
 - **Object storage bucket names:** `learn-uploads`, `learn-vod`, `learn-backups`.
+- **Prom-client metric names:** every series prefixed `learn_` (including the default Node process metrics). Default labels include `service="learn-api"` so multi-service scrapes stay distinguishable.
 
 ## Testing expectations
 
