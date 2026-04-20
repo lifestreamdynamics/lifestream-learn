@@ -1,5 +1,6 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../config/app_constants.dart';
 import '../../core/http/error_envelope.dart';
 import '../../data/repositories/feed_repository.dart';
 import 'feed_event.dart';
@@ -20,7 +21,7 @@ import 'feed_state.dart';
 ///   inline banner.
 /// - `FeedErrorClearRequested` → clears `loadMoreError`.
 class FeedBloc extends Bloc<FeedEvent, FeedState> {
-  FeedBloc({required this.feedRepo, this.pageSize = 20})
+  FeedBloc({required this.feedRepo, this.pageSize = AppConstants.feedPageSize})
       : super(const FeedInitial()) {
     on<FeedLoadRequested>(_onLoad);
     on<FeedRefreshRequested>(_onRefresh);

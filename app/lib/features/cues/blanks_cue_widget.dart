@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/widgets/cue_submission_mixin.dart';
 import '../../data/models/cue.dart';
 import '../../data/repositories/attempt_repository.dart';
 import 'cue_overlay.dart';
@@ -30,13 +31,11 @@ class BlanksCueWidget extends StatefulWidget {
   State<BlanksCueWidget> createState() => _BlanksCueWidgetState();
 }
 
-class _BlanksCueWidgetState extends State<BlanksCueWidget> {
+class _BlanksCueWidgetState extends State<BlanksCueWidget>
+    with CueSubmissionMixin<BlanksCueWidget> {
   late final List<TextEditingController> _fields;
   late final List<_TemplateSegment> _segments;
   late final int _blankCount;
-  bool _submitting = false;
-  AttemptResult? _result;
-  String? _submitError;
 
   @override
   void initState() {
@@ -58,41 +57,33 @@ class _BlanksCueWidgetState extends State<BlanksCueWidget> {
   }
 
   Future<void> _submit() async {
-    setState(() {
-      _submitting = true;
-      _submitError = null;
-    });
-    try {
-      final answers = _fields.map((c) => c.text).toList(growable: false);
-      final result = await widget.attemptRepo.submit(
+    final answers = _fields.map((c) => c.text).toList(growable: false);
+    await runSubmission(
+      () => widget.attemptRepo.submit(
         cueId: widget.cue.id,
         response: <String, dynamic>{'answers': answers},
-      );
-      if (!mounted) return;
-      setState(() {
-        _submitting = false;
-        _result = result;
-      });
-      widget.onAnswered?.call(result.correct);
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _submitting = false;
-        _submitError = e.toString();
-      });
-    }
+      ),
+      onAnswered: widget.onAnswered,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final result = _result;
-    final perBlank = result?.scoreJson?['perBlank'] as List<dynamic>? ?? [];
+    final res = result;
+    final perBlank = res?.scoreJson?['perBlank'] as List<dynamic>? ?? [];
     return CueOverlay(
       cueType: widget.cue.type,
-      submitting: _submitting,
+      submitting: submitting,
       onSubmit: _submit,
       onContinue: widget.onDone,
-      resultBanner: result == null ? null : _buildResultBanner(result),
+      resultBanner: res == null
+          ? null
+          : buildResultBanner(
+              result: res,
+              correctText: 'Correct!',
+              incorrectText: 'Some blanks are wrong.',
+              key: const Key('blanks.result'),
+            ),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
@@ -104,10 +95,10 @@ class _BlanksCueWidgetState extends State<BlanksCueWidget> {
               for (final seg in _segments) _renderSegment(seg, perBlank),
             ],
           ),
-          if (_submitError != null) ...[
+          if (submitError != null) ...[
             const SizedBox(height: 8),
             Text(
-              _submitError!,
+              submitError!,
               key: const Key('blanks.error'),
               style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
@@ -125,9 +116,9 @@ class _BlanksCueWidgetState extends State<BlanksCueWidget> {
       );
     }
     final bSeg = seg as _BlankSegment;
-    final result = _result;
+    final res = result;
     Color? borderColor;
-    if (result != null && bSeg.index < perBlank.length) {
+    if (res != null && bSeg.index < perBlank.length) {
       final ok = perBlank[bSeg.index] == true;
       borderColor = ok ? Colors.green : Colors.red;
     }
@@ -138,7 +129,7 @@ class _BlanksCueWidgetState extends State<BlanksCueWidget> {
         child: TextField(
           key: Key('blanks.field.${bSeg.index}'),
           controller: _fields[bSeg.index],
-          enabled: result == null && !_submitting,
+          enabled: res == null && !submitting,
           decoration: InputDecoration(
             isDense: true,
             contentPadding:
@@ -161,28 +152,6 @@ class _BlanksCueWidgetState extends State<BlanksCueWidget> {
           ),
         ),
       ),
-    );
-  }
-
-  Widget _buildResultBanner(AttemptResult result) {
-    return Column(
-      key: const Key('blanks.result'),
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(
-              result.correct ? Icons.check_circle : Icons.cancel,
-              color: result.correct ? Colors.green : Colors.red,
-            ),
-            const SizedBox(width: 8),
-            Text(
-              result.correct ? 'Correct!' : 'Some blanks are wrong.',
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ],
-        ),
-      ],
     );
   }
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../config/app_constants.dart';
 import '../../core/http/error_envelope.dart';
 import '../../data/models/course.dart';
 import '../../data/repositories/course_repository.dart';
@@ -71,7 +72,7 @@ class CoursesError extends CoursesState {
 /// Paginated browse-courses BLoC. Mirrors `FeedBloc` but for published
 /// courses (the browse-anyone-can-see view).
 class CoursesBloc extends Bloc<CoursesEvent, CoursesState> {
-  CoursesBloc({required this.repo, this.pageSize = 20})
+  CoursesBloc({required this.repo, this.pageSize = AppConstants.feedPageSize})
       : super(const CoursesInitial()) {
     on<CoursesLoadRequested>(_onLoad);
     on<CoursesRefreshRequested>(_onRefresh);

@@ -1,3 +1,4 @@
+import '../utils/date_formatters.dart';
 import 'analytics_buffer.dart';
 import 'analytics_event.dart';
 
@@ -59,7 +60,7 @@ class AnalyticsBufferCueSink implements CueAnalyticsSink {
   void onCueShown(String cueId, String cueType) {
     _buffer.log(AnalyticsEvent(
       eventType: AnalyticsEventTypes.cueShown,
-      occurredAt: DateTime.now().toUtc().toIso8601String(),
+      occurredAt: DateTime.now().toUtcIso8601(),
       cueId: cueId,
       payload: <String, dynamic>{'cueType': cueType},
     ));
@@ -69,7 +70,7 @@ class AnalyticsBufferCueSink implements CueAnalyticsSink {
   void onCueAnswered(String cueId, String cueType, bool correct) {
     _buffer.log(AnalyticsEvent(
       eventType: AnalyticsEventTypes.cueAnswered,
-      occurredAt: DateTime.now().toUtc().toIso8601String(),
+      occurredAt: DateTime.now().toUtcIso8601(),
       cueId: cueId,
       payload: <String, dynamic>{'cueType': cueType, 'correct': correct},
     ));
@@ -84,7 +85,7 @@ class AnalyticsBufferVideoSink implements VideoAnalyticsSink {
   void onVideoView(String videoId) {
     _buffer.log(AnalyticsEvent(
       eventType: AnalyticsEventTypes.videoView,
-      occurredAt: DateTime.now().toUtc().toIso8601String(),
+      occurredAt: DateTime.now().toUtcIso8601(),
       videoId: videoId,
       payload: const <String, dynamic>{},
     ));
@@ -94,7 +95,7 @@ class AnalyticsBufferVideoSink implements VideoAnalyticsSink {
   void onVideoComplete(String videoId, int durationMs) {
     _buffer.log(AnalyticsEvent(
       eventType: AnalyticsEventTypes.videoComplete,
-      occurredAt: DateTime.now().toUtc().toIso8601String(),
+      occurredAt: DateTime.now().toUtcIso8601(),
       videoId: videoId,
       payload: <String, dynamic>{'durationMs': durationMs},
     ));

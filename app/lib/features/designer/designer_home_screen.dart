@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../config/app_constants.dart';
 import '../../data/models/course.dart';
 import '../../data/repositories/course_repository.dart';
 
@@ -27,7 +28,11 @@ class _DesignerHomeScreenState extends State<DesignerHomeScreen> {
   void _reload() {
     setState(() {
       _future = widget.courseRepo
-          .published(owned: true, publishedFilter: false, limit: 50)
+          .published(
+            owned: true,
+            publishedFilter: false,
+            limit: AppConstants.designerListLimit,
+          )
           .then((page) => page.items);
     });
   }
