@@ -1,5 +1,7 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile, mkdtemp, rm } from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
+import { spawn } from 'node:child_process';
 import type { Server } from 'node:http';
 import type { Express } from 'express';
 import request from 'supertest';
@@ -19,6 +21,13 @@ import { s3Client } from '@/config/s3';
 const API_PORT = 3011;
 
 const FIXTURE = path.resolve(__dirname, '..', 'fixtures', 'sample-3s.mp4');
+const FIXTURE_ROTATED = path.resolve(
+  __dirname,
+  '..',
+  'fixtures',
+  'sample-rotated-portrait.mp4',
+);
+const FIXTURE_VP9 = path.resolve(__dirname, '..', 'fixtures', 'sample-vp9.webm');
 const TUSD_URL = env.TUSD_PUBLIC_URL; // e.g. http://localhost:1081/files
 
 async function tusUpload(uploadUrl: string, videoId: string, bytes: Buffer): Promise<void> {
@@ -265,4 +274,209 @@ describe('Transcode end-to-end (real tusd + worker)', () => {
     },
     90_000,
   );
+
+  it(
+    'generates a poster.jpg alongside the HLS tree and serves it via the playback response',
+    async () => {
+      const app = await getTestApp();
+      const designer = await createUser({ role: 'COURSE_DESIGNER' });
+      const course = await createCourse(designer.id);
+
+      const create = await request(app)
+        .post('/api/videos')
+        .set('authorization', `Bearer ${designer.accessToken}`)
+        .send({ courseId: course.id, title: 'e2e-poster', orderIndex: 0 });
+      expect(create.status).toBe(201);
+      const videoId: string = create.body.videoId;
+
+      const bytes = await readFile(FIXTURE);
+      await tusUpload(TUSD_URL, videoId, bytes);
+      await pollStatus(app, designer.accessToken, videoId, 'READY', 60_000);
+
+      // The poster must live at the canonical key.
+      const posterHead = await s3Client.send(
+        new HeadObjectCommand({
+          Bucket: env.S3_VOD_BUCKET,
+          Key: `vod/${videoId}/poster.jpg`,
+        }),
+      );
+      expect(posterHead.$metadata.httpStatusCode).toBe(200);
+      // A 3s 640x360 testsrc encodes to a small JPEG, but "small" here
+      // just means >0 bytes — a truncated poster is the failure mode.
+      expect(Number(posterHead.ContentLength ?? 0)).toBeGreaterThan(1024);
+
+      const playback = await request(app)
+        .get(`/api/videos/${videoId}/playback`)
+        .set('authorization', `Bearer ${designer.accessToken}`);
+      expect(playback.status).toBe(200);
+      expect(playback.body.posterUrl).toMatch(/\/poster\.jpg$/);
+
+      // Fetch the signed poster URL through nginx — same secure_link
+      // signature that guards the master playlist must authorise this
+      // path.
+      const posterFetch = await fetch(playback.body.posterUrl);
+      expect(posterFetch.status).toBe(200);
+    },
+    90_000,
+  );
+
+  it(
+    'accepts a rotated phone-capture source and outputs an upright HLS ladder',
+    async () => {
+      const app = await getTestApp();
+      const designer = await createUser({ role: 'COURSE_DESIGNER' });
+      const course = await createCourse(designer.id);
+
+      const create = await request(app)
+        .post('/api/videos')
+        .set('authorization', `Bearer ${designer.accessToken}`)
+        .send({ courseId: course.id, title: 'e2e-rotated', orderIndex: 0 });
+      const videoId: string = create.body.videoId;
+
+      const bytes = await readFile(FIXTURE_ROTATED);
+      await tusUpload(TUSD_URL, videoId, bytes);
+      await pollStatus(app, designer.accessToken, videoId, 'READY', 60_000);
+
+      // The source is 640×360 frames with a rotation=90 matrix → display
+      // width 360, display height 640. The pipeline pre-rotates the
+      // pixels and clears the rotation tag, so the RAW decoded frames
+      // at the 360p rung should be 640×360 again (same as the coded
+      // frames of a landscape source, not portrait). Fetch the init
+      // segment of v_0 and probe it.
+      const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'e2e-rot-'));
+      try {
+        const initObj = await s3Client.send(
+          new GetObjectCommand({
+            Bucket: env.S3_VOD_BUCKET,
+            Key: `vod/${videoId}/v_0/init_0.mp4`,
+          }),
+        );
+        const initBytes = Buffer.from(await initObj.Body!.transformToByteArray());
+        const seg1Obj = await s3Client.send(
+          new GetObjectCommand({
+            Bucket: env.S3_VOD_BUCKET,
+            Key: `vod/${videoId}/v_0/seg_001.m4s`,
+          }),
+        );
+        const seg1Bytes = Buffer.from(await seg1Obj.Body!.transformToByteArray());
+        // Concatenate init + first segment so ffprobe can parse a
+        // self-contained stream. fmp4 init alone is not decodable; a
+        // segment alone has no sample table.
+        const full = Buffer.concat([initBytes, seg1Bytes]);
+        const localPath = path.join(tmpDir, 'v_0.mp4');
+        await writeFile(localPath, full);
+
+        const probe = await probeWithFfprobe(localPath);
+        // Our canonical ladder's 360p rung is 640×360 landscape, so a
+        // correctly rotated output has width > height.
+        expect(probe.width).toBeGreaterThan(probe.height);
+        // And the rotation side-data / tag must be absent (or 0) — a
+        // residual tag would make compliant players double-rotate.
+        expect(probe.rotation).toBe(0);
+      } finally {
+        await rm(tmpDir, { recursive: true, force: true });
+      }
+    },
+    120_000,
+  );
+
+  it(
+    'accepts a VP9/WebM source and transcodes it into the canonical H.264 HLS ladder',
+    async () => {
+      const app = await getTestApp();
+      const designer = await createUser({ role: 'COURSE_DESIGNER' });
+      const course = await createCourse(designer.id);
+
+      const create = await request(app)
+        .post('/api/videos')
+        .set('authorization', `Bearer ${designer.accessToken}`)
+        .send({ courseId: course.id, title: 'e2e-vp9', orderIndex: 0 });
+      const videoId: string = create.body.videoId;
+
+      const bytes = await readFile(FIXTURE_VP9);
+      await tusUpload(TUSD_URL, videoId, bytes);
+      await pollStatus(app, designer.accessToken, videoId, 'READY', 60_000);
+
+      // Master landed; codec string in the variant is H.264 + AAC
+      // regardless of the VP9/Opus source — this is the "mono-codec
+      // output" guarantee.
+      const masterObj = await s3Client.send(
+        new GetObjectCommand({
+          Bucket: env.S3_VOD_BUCKET,
+          Key: `vod/${videoId}/master.m3u8`,
+        }),
+      );
+      const masterText = await masterObj.Body!.transformToString();
+      const streamInf = masterText
+        .split(/\r?\n/)
+        .find((l) => l.startsWith('#EXT-X-STREAM-INF:'));
+      expect(streamInf).toBeDefined();
+      expect(streamInf!).toMatch(/CODECS="[^"]*avc1\./);
+      expect(streamInf!).toMatch(/CODECS="[^"]*mp4a\./);
+    },
+    120_000,
+  );
 });
+
+/**
+ * Thin wrapper around `ffprobe` for a single local file. Returns the
+ * first video stream's width, height, and normalized rotation (0 if
+ * neither side-data nor tags.rotate is set). The e2e rotation test
+ * uses this to prove the pipeline's transpose + metadata-clear path
+ * produces the right output on a real transcode.
+ */
+function probeWithFfprobe(
+  localPath: string,
+): Promise<{ width: number; height: number; rotation: number }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn('ffprobe', [
+      '-v', 'error',
+      '-print_format', 'json',
+      '-show_streams',
+      localPath,
+    ], { stdio: ['ignore', 'pipe', 'pipe'] });
+    const out: Buffer[] = [];
+    const errBuf: Buffer[] = [];
+    child.stdout.on('data', (c: Buffer) => out.push(c));
+    child.stderr.on('data', (c: Buffer) => errBuf.push(c));
+    child.on('close', (code: number | null) => {
+      if (code !== 0) {
+        reject(new Error(`ffprobe failed: ${Buffer.concat(errBuf).toString('utf8').slice(-200)}`));
+        return;
+      }
+      try {
+        interface ProbeSide { rotation?: number }
+        interface ProbeStream {
+          codec_type?: string;
+          width?: number;
+          height?: number;
+          tags?: { rotate?: string | number };
+          side_data_list?: ProbeSide[];
+        }
+        const parsed = JSON.parse(Buffer.concat(out).toString('utf8')) as {
+          streams?: ProbeStream[];
+        };
+        const v = parsed.streams?.find((s) => s.codec_type === 'video');
+        if (!v || typeof v.width !== 'number' || typeof v.height !== 'number') {
+          reject(new Error('ffprobe: no video stream'));
+          return;
+        }
+        const sideRot = v.side_data_list?.find(
+          (s) => typeof s.rotation === 'number',
+        )?.rotation;
+        let rot = typeof sideRot === 'number' ? sideRot : 0;
+        if (!rot && v.tags?.rotate != null) {
+          const parsed = parseInt(String(v.tags.rotate), 10);
+          rot = Number.isFinite(parsed) ? parsed : 0;
+        }
+        resolve({
+          width: v.width,
+          height: v.height,
+          rotation: ((rot % 360) + 360) % 360,
+        });
+      } catch (err) {
+        reject(err instanceof Error ? err : new Error(String(err)));
+      }
+    });
+  });
+}

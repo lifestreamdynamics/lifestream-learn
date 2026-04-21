@@ -57,6 +57,30 @@ export async function handleTusdHook(req: Request, res: Response): Promise<void>
   const body = tusdHookBodySchema.parse(req.body);
   const type = body.Type;
 
+  if (type === 'pre-create') {
+    // tusd forwards any non-2xx response to the client as the upload
+    // rejection. We cap the declared Upload-Length at env.VIDEO_MAX_BYTES
+    // to stop oversized byte streams at the edge rather than after the
+    // bytes are already on disk. A deferred-length upload (Size=0 or
+    // missing) cannot be checked here — the pipeline re-runs the size
+    // check against the downloaded source in transcode.pipeline.ts.
+    const declaredSize = body.Event.Upload.Size ?? 0;
+    if (declaredSize > env.VIDEO_MAX_BYTES) {
+      logger.warn(
+        { declaredSize, cap: env.VIDEO_MAX_BYTES },
+        'tusd pre-create: rejecting oversized upload',
+      );
+      res.status(413).json({
+        ok: false,
+        code: 'INPUT_TOO_LARGE',
+        message: `Upload size ${declaredSize}B exceeds cap ${env.VIDEO_MAX_BYTES}B`,
+      });
+      return;
+    }
+    res.status(200).json({ ok: true, accepted: true });
+    return;
+  }
+
   if (type === 'pre-finish') {
     const videoId = body.Event.Upload.MetaData?.videoId;
     if (!videoId) throw new ValidationError('Missing videoId in Upload-Metadata');

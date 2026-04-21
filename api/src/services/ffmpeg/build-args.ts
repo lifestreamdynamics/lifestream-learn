@@ -1,6 +1,46 @@
 import path from 'node:path';
 import type { LadderRung } from '@/queues/transcode.types';
 
+export interface BuildArgsOptions {
+  /**
+   * Clockwise rotation in degrees as reported by ffprobe (normalised to
+   * 0 / 90 / 180 / 270 by `probe.ts`). When non-zero, each per-rung
+   * scale branch gets a `transpose` filter prepended so the output
+   * frames are upright. We also strip the rotation tag on the output so
+   * a player that would otherwise auto-rotate doesn't rotate twice.
+   * Default: 0 (no rotation).
+   */
+  rotationDegrees?: 0 | 90 | 180 | 270;
+  /**
+   * When false, the builder drops every audio-related flag (no `-map
+   * 0:a`, no `-c:a`, no `-b:a`, no `-ac`, no `-ar`, no `-af`) and emits
+   * a video-only `var_stream_map`. This lets silent sources flow
+   * through the same pipeline without ffmpeg erroring on a missing
+   * audio input. Default: true.
+   */
+  hasAudio?: boolean;
+}
+
+/**
+ * Map a 0 / 90 / 180 / 270 clockwise rotation to the `transpose=` /
+ * `hflip,vflip` filter chain ffmpeg understands.
+ *
+ *   transpose=1 — 90° clockwise
+ *   transpose=2 — 90° counter-clockwise (270° CW)
+ *   hflip,vflip — 180°
+ *
+ * Returns an empty string when rotation is 0 so callers can splice the
+ * result into the filtergraph unconditionally.
+ */
+function rotationFilter(deg: 0 | 90 | 180 | 270): string {
+  switch (deg) {
+    case 90: return 'transpose=1';
+    case 180: return 'hflip,vflip';
+    case 270: return 'transpose=2';
+    default: return '';
+  }
+}
+
 /**
  * Build the argv passed to `ffmpeg` for a multi-rung HLS+fMP4 transcode.
  *
@@ -12,22 +52,45 @@ import type { LadderRung } from '@/queues/transcode.types';
  * Pure function — no side effects. The caller is responsible for creating
  * `outputDir` and the per-variant `v_<i>/` subdirectories before invoking
  * ffmpeg (FFmpeg's `%v` expansion does not create them).
+ *
+ * What the output is guaranteed to look like regardless of the input:
+ *   - H.264 Main @ L4.0, CBR-ish with a 1.07× maxrate / 2× bufsize
+ *   - 8-bit 4:2:0 chroma (`yuv420p`) — universal Android decoder path
+ *   - BT.709 primaries/transfer/matrix with limited (`tv`) range —
+ *     HDR-tagged inputs land as well-behaved SDR on the phone
+ *   - AAC 48 kHz stereo, EBU R128 loudness-normalised to −16 LUFS
+ *   - 4-second independent CMAF fMP4 segments, GOP = 48 frames
+ *   - Any rotation metadata on the source is applied to the pixels and
+ *     cleared from the output tags so a downstream player doesn't
+ *     double-rotate.
  */
 export function buildFfmpegArgs(
   ladder: LadderRung[],
   inputPath: string,
   outputDir: string,
+  opts: BuildArgsOptions = {},
 ): string[] {
   if (ladder.length === 0) {
     throw new Error('buildFfmpegArgs: ladder must not be empty');
   }
+  const rotation = opts.rotationDegrees ?? 0;
+  const hasAudio = opts.hasAudio ?? true;
+  const rotate = rotationFilter(rotation);
 
-  // filter_complex: split the source video N ways and scale each branch.
-  //   [0:v]split=N[v0][v1]...; [v0]scale=w=W0:h=H0[v0out]; [v1]scale=...
+  // filter_complex: split the source video N ways and (optionally rotate
+  // then) scale each branch. The rotation filter is inserted between the
+  // split and the scale so the scaled dimensions are always relative to
+  // the post-rotate frame — a portrait source with rotation=90 stored as
+  // 1080×1920 becomes an upright 1920×1080 frame before scaling.
   const splitLabels = ladder.map((_, i) => `[v${i}]`).join('');
   const splitClause = `[0:v]split=${ladder.length}${splitLabels}`;
   const scaleClauses = ladder
-    .map((rung, i) => `[v${i}]scale=w=${rung.width}:h=${rung.height}[v${i}out]`)
+    .map((rung, i) => {
+      const chain = rotate
+        ? `${rotate},scale=w=${rung.width}:h=${rung.height}`
+        : `scale=w=${rung.width}:h=${rung.height}`;
+      return `[v${i}]${chain}[v${i}out]`;
+    })
     .join('; ');
   const filterComplex = `${splitClause}; ${scaleClauses}`;
 
@@ -39,27 +102,61 @@ export function buildFfmpegArgs(
     const bufsizeKbps = rung.videoBitrateKbps * 2;
     args.push(
       '-map', `[v${i}out]`,
-      '-map', '0:a:0?',
+    );
+    if (hasAudio) {
+      args.push('-map', '0:a:0?');
+    }
+    args.push(
       `-c:v:${i}`, 'libx264',
       '-preset', 'veryfast',
       `-profile:v:${i}`, 'main',
       `-level:v:${i}`, '4.0',
+      `-pix_fmt:v:${i}`, 'yuv420p',
       `-b:v:${i}`, `${rung.videoBitrateKbps}k`,
       `-maxrate:v:${i}`, `${maxrateKbps}k`,
       `-bufsize:v:${i}`, `${bufsizeKbps}k`,
-      `-c:a:${i}`, 'aac',
-      `-b:a:${i}`, '96k',
+      // Anchor colour metadata on the H.264 bitstream (BT.709, limited
+      // range). Inputs tagged as HDR / BT.2020 get flattened to SDR; SDR
+      // inputs become explicit BT.709. Android's default decoder path
+      // interprets untagged streams inconsistently — making this
+      // deterministic avoids "greyscale-looking" playback on some OEMs.
+      `-colorspace:v:${i}`, 'bt709',
+      `-color_primaries:v:${i}`, 'bt709',
+      `-color_trc:v:${i}`, 'bt709',
+      `-color_range:v:${i}`, 'tv',
+      // Clear any rotation tag on the output. The pixels were already
+      // rotated in the filtergraph; a residual tag would make compliant
+      // players double-rotate.
+      `-metadata:s:v:${i}`, 'rotate=0',
     );
+    if (hasAudio) {
+      args.push(
+        `-c:a:${i}`, 'aac',
+        `-b:a:${i}`, '96k',
+      );
+    }
   });
 
-  // Global audio params (one set), GOP, and HLS packaging.
+  // Global audio params + HLS packaging.
+  if (hasAudio) {
+    args.push(
+      // EBU R128 loudness normalisation. −16 LUFS is the mobile target
+      // (Apple Podcasts, YouTube, Spotify all hover around −14 to −16);
+      // LRA=11 / TP=−1.5 are loudnorm's documented streaming defaults.
+      // One-pass is accurate enough for our source lengths (≤3 min cap).
+      '-af', 'loudnorm=I=-16:LRA=11:TP=-1.5',
+      '-ac', '2',
+      '-ar', '48000',
+    );
+  }
   args.push(
-    '-ac', '2',
-    '-ar', '48000',
     '-g', '48',
     '-keyint_min', '48',
     '-sc_threshold', '0',
-    '-var_stream_map', ladder.map((_, i) => `v:${i},a:${i}`).join(' '),
+    '-var_stream_map',
+    ladder
+      .map((_, i) => (hasAudio ? `v:${i},a:${i}` : `v:${i}`))
+      .join(' '),
     '-hls_time', '4',
     '-hls_playlist_type', 'vod',
     '-hls_segment_type', 'fmp4',

@@ -15,6 +15,10 @@ jest.mock('@/utils/hls-signer', () => ({
     url: 'http://signed.example/hls/sig/1/v/master.m3u8',
     expiresAt: new Date(0),
   }),
+  signPosterUrl: jest.fn().mockReturnValue({
+    url: 'http://signed.example/hls/sig/1/v/poster.jpg',
+    expiresAt: new Date(0),
+  }),
 }));
 
 import type { Request, Response } from 'express';
@@ -160,7 +164,13 @@ describe('videos.controller', () => {
     it('returns a signed master playlist URL when the video is READY', async () => {
       (videoService.canAccessVideo as jest.Mock).mockResolvedValueOnce({
         allowed: true,
-        video: { id: VIDEO_ID, status: 'READY', hlsPrefix: 'vod/x', courseId: COURSE_ID },
+        video: {
+          id: VIDEO_ID,
+          status: 'READY',
+          hlsPrefix: 'vod/x',
+          posterKey: null,
+          courseId: COURSE_ID,
+        },
       });
 
       const req = makeReq({ params: { id: VIDEO_ID } });
@@ -173,6 +183,27 @@ describe('videos.controller', () => {
       const payload = (res.json as jest.Mock).mock.calls[0][0];
       expect(payload.masterPlaylistUrl).toContain('master.m3u8');
       expect(typeof payload.expiresAt).toBe('string');
+      // No posterKey persisted → posterUrl is null in the response.
+      expect(payload.posterUrl).toBeNull();
+    });
+
+    it('returns a posterUrl when the video has a posterKey', async () => {
+      (videoService.canAccessVideo as jest.Mock).mockResolvedValueOnce({
+        allowed: true,
+        video: {
+          id: VIDEO_ID,
+          status: 'READY',
+          hlsPrefix: 'vod/x',
+          posterKey: `vod/${VIDEO_ID}/poster.jpg`,
+          courseId: COURSE_ID,
+        },
+      });
+
+      const req = makeReq({ params: { id: VIDEO_ID } });
+      const res = makeRes();
+      await videosController.getPlayback(req, res);
+      const payload = (res.json as jest.Mock).mock.calls[0][0];
+      expect(payload.posterUrl).toContain('poster.jpg');
     });
 
     it.each(['UPLOADING', 'TRANSCODING', 'FAILED'] as const)(

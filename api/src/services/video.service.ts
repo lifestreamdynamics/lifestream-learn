@@ -15,7 +15,10 @@ export interface PublicVideo {
   updatedAt: Date;
 }
 
-export type VideoAccessSummary = Pick<Video, 'id' | 'status' | 'hlsPrefix' | 'courseId'>;
+export type VideoAccessSummary = Pick<
+  Video,
+  'id' | 'status' | 'hlsPrefix' | 'posterKey' | 'courseId'
+>;
 
 export interface VideoService {
   createVideo(input: {
@@ -92,6 +95,7 @@ export function createVideoService(prisma: PrismaClient = defaultPrisma): VideoS
           id: true,
           status: true,
           hlsPrefix: true,
+          posterKey: true,
           courseId: true,
           course: {
             select: {
@@ -108,6 +112,7 @@ export function createVideoService(prisma: PrismaClient = defaultPrisma): VideoS
         id: video.id,
         status: video.status,
         hlsPrefix: video.hlsPrefix,
+        posterKey: video.posterKey,
         courseId: video.courseId,
       };
 

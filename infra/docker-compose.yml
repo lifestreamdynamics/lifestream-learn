@@ -54,10 +54,16 @@ services:
       # The API's /internal/hooks/tusd handler accepts ?token=<secret> as a
       # fallback path; we pass the token via the URL. TUSD_HOOK_SECRET must
       # match api/.env.local → api/src/config/env.ts.
-      # Only fire hooks for pre-finish (transcode enqueue) and post-finish
-      # (cleanup). Blocking pre-create on a not-yet-running API would make
-      # local smoke-testing impossible.
-      - "-hooks-enabled-events=pre-finish,post-finish"
+      # Slice V1: pre-create rejects oversized uploads at the edge. If the
+      # API is unreachable during local smoke, tusd fails the create with a
+      # 500 and the operator notices immediately — better than writing 5GiB
+      # of garbage to SeaweedFS before the pipeline refuses it.
+      - "-hooks-enabled-events=pre-create,pre-finish,post-finish"
+      # Hard byte cap enforced by tusd itself. The API's pre-create check is
+      # authoritative (it uses the exact env value), but this gives us a
+      # second layer at the upload endpoint in case the hook ever fails
+      # open. 2 GiB default matches VIDEO_MAX_BYTES in api/src/config/env.ts.
+      - "-max-size=${TUSD_MAX_SIZE_BYTES:-2147483648}"
       - "-port=1080"
     environment:
       # Scoped to the `tusd-upload` identity in seaweedfs/s3.json —

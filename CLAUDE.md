@@ -9,8 +9,11 @@ This is a **single working directory that will split into multiple public repos*
 | Path | Sub-project | Status |
 |---|---|---|
 | `api/` | Node 22 / TypeScript / Express / Prisma / Postgres / Redis / BullMQ REST API. Dev port 3011, prod 3101. | Phase 3 (pipeline) |
-| `app/` | Flutter Android app (learner feed + designer authoring). | Phase 4 (not yet initialised) |
+| `app/` | Flutter Android app — learner feed, player + cue engine, designer authoring, admin, analytics. BLoC state, Dio HTTP, GoRouter, `video_player` + `fvp` (ffmpeg backend). Dev/prod flavors. | Phases 4–6 (in flight) |
 | `infra/` | Docker Compose for local dev (seaweedfs, tusd, nginx). Postgres + Redis are borrowed from accounting-api's local stack. | Phase 1 (complete for MVP scope) |
+| `Makefile` | Top-level dev task runner. `make bootstrap` writes env files; `make up` brings up infra + DBs + buckets + migrate + seed; `make api` / `make worker` / `make app` are the three dev terminals. `make status` prints a health line. Prefer these over per-subproject commands unless you need finer control. | — |
+| `scripts/bootstrap-dev.sh` | First-time setup: writes `infra/.env` + `api/.env.local` with random secrets. Invoked by `make bootstrap`. | — |
+| `.github/workflows/` | CI: `api-ci` (lint + typecheck + unit + integration), `app-ci` (analyze + test + codegen-freshness check), `secret-scan` (gitleaks). Compose-dependent API suites (`transcode-e2e`, `transcode-resilience`, `secure-link`, `health`) are **excluded from CI** and must be run locally. | — |
 | `ops/` | **Private, git-ignored at top level.** Phase reports, environment snapshots, future deployment notes. Never commit anything here through the public monorepo. | — |
 | `docs/decisions/` | ADRs — numbered `NNNN-slug.md`. Edit when reality changes; add a new one when a fundamentally different direction is chosen. | — |
 | `IMPLEMENTATION_PLAN.md` | Canonical phase-by-phase plan with exit criteria. Always check §5 before starting work to confirm which phase gates apply. | — |
@@ -21,9 +24,25 @@ This is a **single working directory that will split into multiple public repos*
 - **ADRs in `docs/decisions/`** record *why* decisions were made (AGPL license, SeaweedFS over MinIO, BullMQ over Bull, VOICE cue deferred, monorepo layout). They're living documents — update them when the rationale or reality shifts.
 - **Architecture docs** in `docs/architecture/` will describe *what is*, not what was — rewrite rather than append when reality changes. (Currently empty — populated starting Phase 3.)
 
+## Commands (top-level Makefile)
+
+The top-level `Makefile` is the recommended entrypoint for local dev — it encodes the shared-service preflight check, the healthcheck wait, and the DB/bucket provisioning order so you don't have to remember them. `make help` lists targets.
+
+```bash
+make bootstrap   # one-time: writes infra/.env + api/.env.local with random secrets
+make up          # compose up + create-databases + create-buckets + prisma migrate + seed
+make api         # terminal 1: API hot-reload on :3011
+make worker      # terminal 2: BullMQ transcode worker
+make app         # terminal 3: launches AVD (if needed) + flutter run --flavor dev
+make status      # one-line health check (API / nginx / adb devices)
+make reset       # DESTRUCTIVE: drops SeaweedFS volumes then re-ups (prompts for yes)
+```
+
+`make up` requires the `accounting-api` compose stack to already be running (Postgres :5432 + Redis :6379). `make app` reads `NGINX_HOST_PORT` from `infra/.env` and passes `API_BASE_URL=http://10.0.2.2:<port>` via `--dart-define` so the Android emulator can reach the host-side nginx. Seeded dev users (password `Dev12345!Pass` unless `SEED_DEV_USER_PASSWORD` is set): `admin@example.local` (ADMIN), `designer@example.local` (COURSE_DESIGNER), `learner@example.local` (LEARNER).
+
 ## Commands (api/)
 
-Run from `api/`. Node 22.12+ required (pinned in `.nvmrc` and `engines`).
+Run from `api/`. Node 22.12+ required (pinned in `.nvmrc` and `engines`). Use these when you need finer control than the Makefile provides.
 
 ```bash
 nvm use                           # Node 22
@@ -117,7 +136,7 @@ Code in `api/`, `app/`, `infra/`, `docs/` is published publicly under AGPL-3.0. 
 - **Never commit** real hostnames, internal paths (e.g. `/home/eric/...`), production secrets, or third-party API keys to these directories. Anything environment-specific lives in `ops/` only.
 - `.githooks/pre-push` runs a secret scan (gitleaks if installed, regex fallback otherwise). Don't bypass with `--no-verify`.
 - `ops/` is `.gitignore`d at the top level — anything inside is invisible to the monorepo and that's the point.
-- Signed commits (`git commit -S`) are required on protected `main`.
+- Signed commits are a pre-publish goal: set up signing + branch protection before the repo split. Until then, the pre-push gitleaks scan is the enforced gate; don't let this become a habit once the repo goes public.
 
 ## Shared-resource discipline
 
@@ -145,7 +164,7 @@ Claude Code's built-in system prompt says: *"For UI or frontend changes, start t
 **For `app/` (Flutter) work, a task is considered complete when all of the following pass:**
 1. `flutter analyze` → 0 issues.
 2. `flutter test` → green (unit + widget tests for the feature, coverage targets met).
-3. `flutter build apk --debug` → succeeds (no build-time errors, proves the tree links).
+3. `flutter build apk --debug --flavor dev` → succeeds (no build-time errors, proves the tree links). The app has `dev` and `prod` Android flavors — always pass `--flavor` on build/run; a flavorless invocation will fail.
 4. The commit message includes a **manual-test checklist** for the human operator to run on a real device/emulator, and explicitly marks the slice as `✎ compiled-and-analyzed-only (device test needed)` rather than `✓ verified`.
 
 The operator (Eric) drives the final on-device verification and promotes the slice to `✓ verified` in the progress ledger. Do not claim device behaviour was verified when it wasn't. If a behaviour cannot be asserted via `flutter test` (e.g. actual playback jitter, ABR, `adb logcat` inspection), say so — don't hand-wave.
@@ -154,6 +173,8 @@ Everything else in the repo (`api/`, `infra/`, `docs/`) still follows the defaul
 
 ## Phase awareness
 
-The project is pre-alpha. Current phase: **Phase 3 (upload → transcode → playback pipeline)** — Phases 0, 1, and 2 are complete. The pipeline is wired end-to-end: `POST /api/videos` issues tusd upload coordinates, the tusd `pre-finish` hook enqueues a `learn:transcode` BullMQ job, the worker produces a CMAF fMP4 HLS ladder, and `GET /api/videos/:id/playback` returns a short-lived MD5 secure_link URL. The `transcode-e2e` and `transcode-resilience` integration tests cover the happy path and a kill-and-resume scenario respectively. Remaining Phase 3 polish (Bull Board dashboard, an integration assertion for tampered-HMAC at the segment layer) is non-blocking. Before implementing anything, check `IMPLEMENTATION_PLAN.md` §5 to confirm:
+The project is pre-alpha. Current phase: **Phase 3 (upload → transcode → playback pipeline)** — Phases 0, 1, and 2 are complete. The pipeline is wired end-to-end: `POST /api/videos` issues tusd upload coordinates, the tusd `pre-finish` hook enqueues a `learn:transcode` BullMQ job, the worker produces a CMAF fMP4 HLS ladder, and `GET /api/videos/:id/playback` returns a short-lived MD5 secure_link URL. The `transcode-e2e` and `transcode-resilience` integration tests cover the happy path and a kill-and-resume scenario; `transcode-e2e` asserts the ffprobe-level ladder variants, and tampered-HMAC / expired-URL behaviour is now covered at the API boundary. Bull Board dashboard is the only remaining Phase 3 polish item and is non-blocking.
+
+Flutter work (Phases 4–6) has advanced in parallel: auth, feed, player + cue engine (MCQ/BLANKS/MATCHING), designer authoring, admin, and an offline-survivable analytics buffer are all present under `app/lib/features/`. `IMPLEMENTATION_PLAN.md` §5 remains the source of truth for per-slice exit criteria — check it before implementing anything to confirm:
 - Which phase you're in and its exit criteria
 - Whether the task is listed as a **parallel-subagent split point** (§6) — if so, spawn subagents per the prescribed split rather than doing the work sequentially.
