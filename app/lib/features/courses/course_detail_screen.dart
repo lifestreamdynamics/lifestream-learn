@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/auth/auth_bloc.dart';
+import '../../core/auth/auth_state.dart';
 import '../../core/http/error_envelope.dart';
+import '../../core/utils/duration_formatters.dart';
 import '../../data/models/course.dart';
+import '../../data/models/user.dart';
 import '../../data/models/video.dart';
 import '../../data/repositories/course_repository.dart';
 
@@ -127,6 +132,28 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
         const SizedBox(height: 8),
         Text(course.description),
         const SizedBox(height: 16),
+        // Owner/admin-only: jump to the editor. This is how designers
+        // reach the editor now that the dedicated `/designer` tab is
+        // gone — the Courses list lives on one tab for every role, and
+        // edit-affordances surface contextually on the course they own.
+        Builder(builder: (ctx) {
+          final authState = ctx.watch<AuthBloc>().state;
+          if (authState is! Authenticated) return const SizedBox.shrink();
+          final user = authState.user;
+          final canEdit =
+              user.role == UserRole.admin || user.id == course.ownerId;
+          if (!canEdit) return const SizedBox.shrink();
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: OutlinedButton.icon(
+              key: const Key('detail.edit'),
+              onPressed: () => GoRouter.of(ctx)
+                  .push('/designer/courses/${course.id}'),
+              icon: const Icon(Icons.edit),
+              label: const Text('Edit course'),
+            ),
+          );
+        }),
         if (_enrolled)
           Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -167,17 +194,10 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
               leading: const Icon(Icons.play_circle_outline),
               title: Text(v.title),
               subtitle: v.durationMs != null
-                  ? Text(_formatDuration(v.durationMs!))
+                  ? Text(formatDurationMs(v.durationMs!))
                   : null,
             )),
       ],
     );
-  }
-
-  String _formatDuration(int ms) {
-    final secs = ms ~/ 1000;
-    final mm = (secs ~/ 60).toString().padLeft(2, '0');
-    final ss = (secs % 60).toString().padLeft(2, '0');
-    return '$mm:$ss';
   }
 }

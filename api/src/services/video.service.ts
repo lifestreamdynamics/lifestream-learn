@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { PrismaClient, Role, Video, VideoStatus } from '@prisma/client';
 import { prisma as defaultPrisma } from '@/config/prisma';
 import { ForbiddenError, NotFoundError } from '@/utils/errors';
+import { hasCourseAccess } from '@/services/course-access';
 
 export interface PublicVideo {
   id: string;
@@ -62,10 +63,7 @@ export function createVideoService(prisma: PrismaClient = defaultPrisma): VideoS
       });
       if (!course) throw new NotFoundError('Course not found');
 
-      const isAdmin = role === 'ADMIN';
-      const isOwner = course.ownerId === userId;
-      const isCollaborator = course.collaborators.length > 0;
-      if (!isAdmin && !isOwner && !isCollaborator) {
+      if (!hasCourseAccess(role, userId, course, 'WRITE')) {
         throw new ForbiddenError('Not authorized to create videos in this course');
       }
 
@@ -113,11 +111,8 @@ export function createVideoService(prisma: PrismaClient = defaultPrisma): VideoS
         courseId: video.courseId,
       };
 
-      if (role === 'ADMIN') return { allowed: true, video: summary };
-      if (video.course.ownerId === userId) return { allowed: true, video: summary };
-      if (video.course.collaborators.length > 0) return { allowed: true, video: summary };
-      if (video.course.enrollments.length > 0) return { allowed: true, video: summary };
-      return { allowed: false, video: summary };
+      const allowed = hasCourseAccess(role, userId, video.course, 'READ');
+      return { allowed, video: summary };
     },
 
     async getVideoById(videoId, userId, role) {

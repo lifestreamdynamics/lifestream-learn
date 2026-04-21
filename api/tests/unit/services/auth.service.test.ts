@@ -1,8 +1,15 @@
 import '@tests/unit/setup';
+
+jest.mock('@/services/refresh-token-store', () => ({
+  tryRevokeRefreshJti: jest.fn().mockResolvedValue(true),
+  isRefreshJtiRevoked: jest.fn().mockResolvedValue(false),
+}));
+
 import { Prisma } from '@prisma/client';
 import { createAuthService } from '@/services/auth.service';
 import { ConflictError, UnauthorizedError } from '@/utils/errors';
 import { hashPassword } from '@/utils/password';
+import { tryRevokeRefreshJti } from '@/services/refresh-token-store';
 
 type MockPrisma = {
   user: {
@@ -131,14 +138,19 @@ describe('auth.service', () => {
   });
 
   describe('refresh', () => {
-    it('issues a new token pair', async () => {
+    beforeEach(() => {
+      (tryRevokeRefreshJti as jest.Mock).mockReset().mockResolvedValue(true);
+    });
+
+    it('issues a new token pair when the revoke wins the race', async () => {
       const prisma = buildMockPrisma();
       prisma.user.findUnique.mockResolvedValue(fakeUser);
       const svc = createAuthService(prisma as unknown as import('@prisma/client').PrismaClient);
 
-      const tokens = await svc.refresh(fakeUser.id);
+      const tokens = await svc.refresh({ userId: fakeUser.id, oldJti: 'old-jti-1' });
       expect(tokens.accessToken).toEqual(expect.any(String));
       expect(tokens.refreshToken).toEqual(expect.any(String));
+      expect(tryRevokeRefreshJti).toHaveBeenCalledWith('old-jti-1');
     });
 
     it('throws when user missing', async () => {
@@ -146,7 +158,23 @@ describe('auth.service', () => {
       prisma.user.findUnique.mockResolvedValue(null);
       const svc = createAuthService(prisma as unknown as import('@prisma/client').PrismaClient);
 
-      await expect(svc.refresh('missing')).rejects.toBeInstanceOf(UnauthorizedError);
+      await expect(
+        svc.refresh({ userId: 'missing', oldJti: 'j' }),
+      ).rejects.toBeInstanceOf(UnauthorizedError);
+    });
+
+    it('rejects when the old jti was already revoked (replay loses the atomic race)', async () => {
+      (tryRevokeRefreshJti as jest.Mock).mockResolvedValue(false);
+      const prisma = buildMockPrisma();
+      prisma.user.findUnique.mockResolvedValue(fakeUser);
+      const svc = createAuthService(prisma as unknown as import('@prisma/client').PrismaClient);
+
+      await expect(
+        svc.refresh({ userId: fakeUser.id, oldJti: 'already-used' }),
+      ).rejects.toBeInstanceOf(UnauthorizedError);
+      // Guard runs before the user lookup so a confirmed replay doesn't
+      // touch Prisma at all.
+      expect(prisma.user.findUnique).not.toHaveBeenCalled();
     });
   });
 

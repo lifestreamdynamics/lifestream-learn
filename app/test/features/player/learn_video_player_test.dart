@@ -53,6 +53,11 @@ Widget _wrap(Widget child) {
         path: '/feed',
         builder: (_, __) => const Scaffold(body: Text('feed')),
       ),
+      GoRoute(
+        path: '/courses',
+        builder: (_, __) =>
+            const Scaffold(body: Text('courses', key: Key('test.courses'))),
+      ),
     ],
   );
   return MaterialApp.router(routerConfig: router);
@@ -178,5 +183,41 @@ void main() {
 
     // The fake controller reports isInitialized=false → unknown-error path.
     expect(find.byKey(const Key('player.error')), findsOneWidget);
+    // Back button MUST be rendered alongside Retry — earlier versions
+    // only offered Retry, trapping the user on a failed video when the
+    // feed has no appbar.
+    expect(find.byKey(const Key('player.error.back')), findsOneWidget);
+    expect(find.text('Retry'), findsOneWidget);
+  });
+
+  testWidgets('tapping Back on unknown-error deep-linked screen falls through '
+      'to /courses (no parent route to pop)', (tester) async {
+    when(() => videoRepo.playback(any())).thenAnswer((_) async => PlaybackInfo(
+          masterPlaylistUrl: 'http://cdn/master.m3u8',
+          expiresAt: DateTime.utc(2030, 1, 1),
+        ));
+
+    final cache = VideoControllerCache(
+      capacity: 3,
+      factory: (_) async => _UninitializedController(),
+    );
+
+    // The default _wrap() hosts the player at `/` with nothing beneath it,
+    // so `Navigator.canPop()` is false and the Back handler must fall
+    // through to GoRouter.go('/courses').
+    await tester.pumpWidget(_wrap(LearnVideoPlayer(
+      video: _sampleVideo(),
+      courseId: 'c1',
+      videoRepo: videoRepo,
+      enrollmentRepo: enrollmentRepo,
+      controllerCache: cache,
+      autoPlayWhenVisible: false,
+    )));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('player.error.back')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('test.courses')), findsOneWidget);
   });
 }

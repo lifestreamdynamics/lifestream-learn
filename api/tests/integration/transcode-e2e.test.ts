@@ -213,7 +213,55 @@ describe('Transcode end-to-end (real tusd + worker)', () => {
         .get(`/api/videos/${videoId}/playback`)
         .set('authorization', `Bearer ${designer.accessToken}`);
       expect(playback.status).toBe(200);
-      expect(playback.body.masterPlaylistUrl).toMatch(/\?md5=.+&expires=\d+$/);
+      // URL shape: /hls/<sig>/<expires>/<videoId>/master.m3u8 (path-embedded token).
+      expect(playback.body.masterPlaylistUrl).toMatch(
+        /\/hls\/[A-Za-z0-9_-]+\/\d+\/[A-Za-z0-9-]+\/master\.m3u8$/,
+      );
+
+      // End-to-end playback verification: fetch the signed master URL
+      // through nginx, then fetch the variant playlist + a segment using
+      // the exact same path-embedded token — proving that a single
+      // signature authorizes every URL under /hls/<sig>/<expires>/<id>/.
+      // This mirrors what an HLS player (fvp, ExoPlayer) actually does
+      // when it resolves relative URIs from inside the master playlist.
+      const masterUrl: string = playback.body.masterPlaylistUrl;
+      const masterFetch = await fetch(masterUrl);
+      expect(masterFetch.status).toBe(200);
+      const masterBody = await masterFetch.text();
+      expect(masterBody.startsWith('#EXTM3U')).toBe(true);
+
+      // Derive the base that a player would resolve relative URIs against
+      // — the parent "directory" of the master URL, including the token.
+      const masterBase = masterUrl.replace(/master\.m3u8$/, '');
+
+      const firstVariantUri = variants[0]!.uri; // e.g. v_0/index.m3u8
+      const variantFetch = await fetch(`${masterBase}${firstVariantUri}`);
+      expect(variantFetch.status).toBe(200);
+      const variantBody = await variantFetch.text();
+      expect(variantBody).toMatch(/#EXTINF:/);
+
+      // Pull a segment URI from the variant playlist and fetch it. The
+      // variant's URIs are relative to the variant playlist's own URL,
+      // which is one path level below master — so the token is still in
+      // the resolved segment URL.
+      const segLine = variantBody
+        .split(/\r?\n/)
+        .find((l) => /\.m4s$/.test(l.trim()));
+      expect(segLine).toBeDefined();
+      const variantDir = firstVariantUri.replace(/\/[^/]+$/, '');
+      const segFetch = await fetch(`${masterBase}${variantDir}/${segLine!.trim()}`);
+      expect(segFetch.status).toBe(200);
+
+      // Negative: tamper the sig segment of the path — nginx must reject.
+      const tampered = masterUrl.replace(
+        /\/hls\/([^/]+)\//,
+        (_m, sig: string) => {
+          const swap = sig[0] === 'a' ? 'b' : 'a';
+          return `/hls/${swap}${sig.slice(1)}/`;
+        },
+      );
+      const tamperedFetch = await fetch(tampered);
+      expect(tamperedFetch.status).toBe(403);
     },
     90_000,
   );

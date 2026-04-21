@@ -40,3 +40,12 @@ export const refreshLimiter = rateLimit({
   store: makeStore('rl:auth:refresh:'),
   message: { error: 'RATE_LIMITED', message: 'Too many refresh attempts' },
 });
+
+export const tusdHookLimiter = rateLimit({
+  windowMs: env.RATE_LIMIT_TUSD_HOOK_WINDOW_MS,
+  limit: env.RATE_LIMIT_TUSD_HOOK_MAX,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  store: makeStore('rl:hooks:tusd:'),
+  message: { error: 'RATE_LIMITED', message: 'Too many tusd hook deliveries' },
+});

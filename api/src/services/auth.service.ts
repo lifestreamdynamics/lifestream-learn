@@ -3,6 +3,7 @@ import { prisma as defaultPrisma } from '@/config/prisma';
 import { hashPassword, verifyPassword } from '@/utils/password';
 import { signAccessToken, signRefreshToken } from '@/utils/jwt';
 import { ConflictError, UnauthorizedError } from '@/utils/errors';
+import { tryRevokeRefreshJti } from '@/services/refresh-token-store';
 
 // Dummy hash used when the user lookup misses, so bcrypt runs in both paths
 // and login latency can't be used to distinguish "no such user" from "wrong
@@ -21,17 +22,28 @@ export interface PublicUser {
   createdAt: Date;
 }
 
+export interface AuthTokens {
+  accessToken: string;
+  refreshToken: string;
+}
+
 export interface AuthService {
   signup(input: {
     email: string;
     password: string;
     displayName: string;
-  }): Promise<{ user: PublicUser; accessToken: string; refreshToken: string }>;
+  }): Promise<{ user: PublicUser } & AuthTokens>;
   login(input: {
     email: string;
     password: string;
-  }): Promise<{ user: PublicUser; accessToken: string; refreshToken: string }>;
-  refresh(userId: string): Promise<{ accessToken: string; refreshToken: string }>;
+  }): Promise<{ user: PublicUser } & AuthTokens>;
+  /**
+   * Rotate a refresh token. The old `jti` is moved to the revocation set
+   * so a second attempt with the same token fails even before the TTL
+   * expires. Caller must have already verified the refresh token's
+   * signature+audience before calling.
+   */
+  refresh(input: { userId: string; oldJti: string }): Promise<AuthTokens>;
   findById(id: string): Promise<PublicUser>;
 }
 
@@ -45,6 +57,11 @@ function toPublic(u: User): PublicUser {
   };
 }
 
+function issueTokens(user: User): AuthTokens {
+  const { token: refreshToken } = signRefreshToken(user);
+  return { accessToken: signAccessToken(user), refreshToken };
+}
+
 export function createAuthService(prisma: PrismaClient = defaultPrisma): AuthService {
   return {
     async signup({ email, password, displayName }) {
@@ -53,11 +70,7 @@ export function createAuthService(prisma: PrismaClient = defaultPrisma): AuthSer
         const user = await prisma.user.create({
           data: { email, passwordHash, displayName, role: 'LEARNER' },
         });
-        return {
-          user: toPublic(user),
-          accessToken: signAccessToken(user),
-          refreshToken: signRefreshToken(user),
-        };
+        return { user: toPublic(user), ...issueTokens(user) };
       } catch (err) {
         if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
           throw new ConflictError('Email already registered');
@@ -76,20 +89,23 @@ export function createAuthService(prisma: PrismaClient = defaultPrisma): AuthSer
       if (!user || !passwordMatches) {
         throw new UnauthorizedError('Invalid credentials');
       }
-      return {
-        user: toPublic(user),
-        accessToken: signAccessToken(user),
-        refreshToken: signRefreshToken(user),
-      };
+      return { user: toPublic(user), ...issueTokens(user) };
     },
 
-    async refresh(userId) {
+    async refresh({ userId, oldJti }) {
+      // Atomic revoke: only the first caller with this jti wins the
+      // SET NX and gets fresh tokens. A concurrent replay (or an
+      // attacker racing a stolen token with the legitimate user)
+      // loses the race and hits 401. This is the only correct way to
+      // implement rotation — a separate `isRevoked → revoke` sequence
+      // is a TOCTOU that lets both callers succeed.
+      const claimed = await tryRevokeRefreshJti(oldJti);
+      if (!claimed) {
+        throw new UnauthorizedError('Invalid or expired token');
+      }
       const user = await prisma.user.findUnique({ where: { id: userId } });
       if (!user) throw new UnauthorizedError('Invalid or expired token');
-      return {
-        accessToken: signAccessToken(user),
-        refreshToken: signRefreshToken(user),
-      };
+      return issueTokens(user);
     },
 
     async findById(id) {

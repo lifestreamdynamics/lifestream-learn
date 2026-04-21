@@ -171,7 +171,10 @@ describe('Videos API (integration)', () => {
         .set('authorization', `Bearer ${admin.accessToken}`);
 
       expect(res.status).toBe(200);
-      expect(res.body.masterPlaylistUrl).toMatch(/\?md5=[A-Za-z0-9_-]+&expires=\d+$/);
+      // URL shape: /hls/<sig>/<expires>/<videoId>/master.m3u8
+      expect(res.body.masterPlaylistUrl).toMatch(
+        /\/hls\/[A-Za-z0-9_-]+\/\d+\/[A-Za-z0-9-]+\/master\.m3u8$/,
+      );
       expect(res.body.expiresAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     });
 
@@ -264,6 +267,26 @@ describe('Videos API (integration)', () => {
         .get('/api/videos/00000000-0000-0000-0000-000000000000/playback')
         .set('authorization', `Bearer ${admin.accessToken}`);
       expect(res.status).toBe(404);
+    });
+
+    it('IDOR: designer A cannot fetch a playback URL for designer B\'s video', async () => {
+      // Two designers each own separate courses. Designer A holds a valid
+      // access token but must not be able to swap in designer B's video id
+      // and receive a signed URL. Core IDOR regression.
+      const app = await getTestApp();
+      const designerA = await createUser({ role: 'COURSE_DESIGNER' });
+      const designerB = await createUser({ role: 'COURSE_DESIGNER' });
+      const courseB = await createCourse(designerB.id);
+      const videoB = await createVideoDirect(courseB.id, {
+        status: 'READY',
+        hlsPrefix: 'vod/b',
+        durationMs: 3000,
+      });
+
+      const res = await request(app)
+        .get(`/api/videos/${videoB.id}/playback`)
+        .set('authorization', `Bearer ${designerA.accessToken}`);
+      expect(res.status).toBe(403);
     });
   });
 });

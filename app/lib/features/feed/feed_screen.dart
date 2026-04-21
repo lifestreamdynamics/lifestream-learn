@@ -16,10 +16,8 @@ import 'video_controller_cache.dart';
 /// Signature for the factory that renders one feed page. The FeedScreen
 /// delegates to this so widget tests can substitute a stub that doesn't
 /// need the platform video plugin.
-typedef FeedItemBuilder = Widget Function(
-  BuildContext context,
-  FeedEntry entry,
-);
+typedef FeedItemBuilder =
+    Widget Function(BuildContext context, FeedEntry entry);
 
 /// Top-level feed screen. Expects a `FeedBloc` to be provided upstream
 /// (from `HomeShell`); constructs its own `PageController` +
@@ -111,131 +109,152 @@ class _FeedScreenState extends State<FeedScreen> {
   @override
   Widget build(BuildContext context) {
     final itemBuilder = widget.itemBuilder ?? _defaultItemBuilder;
-    return BlocBuilder<FeedBloc, FeedState>(
-      builder: (context, state) {
-        if (state is FeedInitial || state is FeedLoading) {
-          return const ColoredBox(
-            color: Colors.black,
-            child: Center(child: CircularProgressIndicator()),
-          );
-        }
-        if (state is FeedError) {
-          return Center(
-            child: Column(
-              key: const Key('feed.error'),
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(state.error.message),
-                const SizedBox(height: 12),
-                ElevatedButton(
-                  onPressed: () =>
-                      context.read<FeedBloc>().add(const FeedLoadRequested()),
-                  child: const Text('Retry'),
-                ),
-              ],
-            ),
-          );
-        }
-        if (state is FeedLoaded) {
-          if (state.items.isEmpty) {
+    return Scaffold(
+      extendBodyBehindAppBar: true,
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        automaticallyImplyLeading: false,
+        title: const Text('Feed'),
+        backgroundColor: Colors.black.withValues(alpha: 0.3),
+        foregroundColor: Colors.white,
+        elevation: 0,
+        actions: [
+          IconButton(
+            key: const Key('feed.appbar.courses'),
+            tooltip: 'Courses',
+            icon: const Icon(Icons.school_outlined),
+            onPressed: () => GoRouter.of(context).go('/courses'),
+          ),
+        ],
+      ),
+      body: BlocBuilder<FeedBloc, FeedState>(
+        builder: (context, state) {
+          if (state is FeedInitial || state is FeedLoading) {
+            return const ColoredBox(
+              color: Colors.black,
+              child: Center(child: CircularProgressIndicator()),
+            );
+          }
+          if (state is FeedError) {
             return Center(
               child: Column(
-                key: const Key('feed.empty'),
+                key: const Key('feed.error'),
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text(
-                    "You're not enrolled in any courses yet.",
-                    textAlign: TextAlign.center,
-                  ),
+                  Text(state.error.message),
                   const SizedBox(height: 12),
                   ElevatedButton(
-                    key: const Key('feed.empty.browse'),
-                    onPressed: () => GoRouter.of(context).go('/courses'),
-                    child: const Text('Browse courses'),
+                    onPressed: () =>
+                        context.read<FeedBloc>().add(const FeedLoadRequested()),
+                    child: const Text('Retry'),
                   ),
                 ],
               ),
             );
           }
-          return RefreshIndicator(
-            onRefresh: () async {
-              final bloc = context.read<FeedBloc>();
-              bloc.add(const FeedRefreshRequested());
-              // Await one state emission so the indicator disappears when
-              // the refresh actually completes.
-              await bloc.stream.firstWhere(
-                (s) =>
-                    s is FeedLoaded && !s.isLoadingMore ||
-                    s is FeedError,
-              );
-            },
-            child: Stack(
-              children: [
-                PageView.builder(
-                  key: const Key('feed.pageview'),
-                  controller: _pageController,
-                  scrollDirection: Axis.vertical,
-                  itemCount: state.items.length,
-                  onPageChanged: (i) => _onPageChanged(i, state),
-                  itemBuilder: (context, i) =>
-                      itemBuilder(context, state.items[i]),
+          if (state is FeedLoaded) {
+            if (state.items.isEmpty) {
+              return Center(
+                child: Column(
+                  key: const Key('feed.empty'),
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      "You're not enrolled in any courses yet.",
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 12),
+                    ElevatedButton(
+                      key: const Key('feed.empty.browse'),
+                      onPressed: () => GoRouter.of(context).go('/browse'),
+                      child: const Text('Browse courses'),
+                    ),
+                  ],
                 ),
-                if (state.loadMoreError != null)
-                  Positioned(
-                    top: MediaQuery.of(context).padding.top + 8,
-                    left: 16,
-                    right: 16,
-                    child: Material(
-                      color: Colors.redAccent.shade200,
-                      borderRadius: BorderRadius.circular(8),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.error_outline,
-                                color: Colors.white),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                state.loadMoreError!.message,
-                                key: const Key('feed.loadMoreError'),
-                                style: const TextStyle(color: Colors.white),
+              );
+            }
+            return RefreshIndicator(
+              onRefresh: () async {
+                final bloc = context.read<FeedBloc>();
+                bloc.add(const FeedRefreshRequested());
+                // Await one state emission so the indicator disappears when
+                // the refresh actually completes.
+                await bloc.stream.firstWhere(
+                  (s) => s is FeedLoaded && !s.isLoadingMore || s is FeedError,
+                );
+              },
+              child: Stack(
+                children: [
+                  PageView.builder(
+                    key: const Key('feed.pageview'),
+                    controller: _pageController,
+                    scrollDirection: Axis.vertical,
+                    itemCount: state.items.length,
+                    onPageChanged: (i) => _onPageChanged(i, state),
+                    itemBuilder: (context, i) =>
+                        itemBuilder(context, state.items[i]),
+                  ),
+                  if (state.loadMoreError != null)
+                    Positioned(
+                      top: MediaQuery.of(context).padding.top + 8,
+                      left: 16,
+                      right: 16,
+                      child: Material(
+                        color: Colors.redAccent.shade200,
+                        borderRadius: BorderRadius.circular(8),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.error_outline,
+                                color: Colors.white,
                               ),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.close,
-                                  color: Colors.white),
-                              onPressed: () => context
-                                  .read<FeedBloc>()
-                                  .add(const FeedErrorClearRequested()),
-                            ),
-                          ],
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  state.loadMoreError!.message,
+                                  key: const Key('feed.loadMoreError'),
+                                  style: const TextStyle(color: Colors.white),
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.close,
+                                  color: Colors.white,
+                                ),
+                                onPressed: () => context.read<FeedBloc>().add(
+                                  const FeedErrorClearRequested(),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                if (state.isLoadingMore)
-                  const Positioned(
-                    bottom: 24,
-                    left: 0,
-                    right: 0,
-                    child: Center(
-                      child: SizedBox(
-                        width: 24,
-                        height: 24,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                  if (state.isLoadingMore)
+                    const Positioned(
+                      bottom: 24,
+                      left: 0,
+                      right: 0,
+                      child: Center(
+                        child: SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
                       ),
                     ),
-                  ),
-              ],
-            ),
-          );
-        }
-        return const SizedBox.shrink();
-      },
+                ],
+              ),
+            );
+          }
+          return const SizedBox.shrink();
+        },
+      ),
     );
   }
 }

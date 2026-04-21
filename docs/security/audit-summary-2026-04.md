@@ -10,18 +10,16 @@ Ran `cd api && npm audit` (full tree, all severities).
 
 | Package | Severity | Path | Disposition |
 |---|---|---|---|
-| `@hono/node-server <1.19.13` | Moderate | `prisma → @prisma/dev → @hono/node-server` | **Deferred.** Fix requires Prisma 7 → 6.19.3 downgrade. ADR 0003 pins this project on Prisma 7 (it's why we're on Node 22 and diverged from accounting-api's Node 20 baseline). Advisory GHSA-92pp-h63x-v22m is a middleware-bypass via repeated slashes in `serveStatic` — we don't use `@hono/node-server` for serving static files; it's a dev-tooling transitive of `prisma migrate`, not a runtime path. |
-| _(transitive duplicates of above)_ | Moderate | Same chain | Deferred with parent. |
+| `@hono/node-server <1.19.13` | Moderate | `prisma → @prisma/dev → @hono/node-server` | **Resolved 2026-04-20** via npm `overrides` in `api/package.json` pinning `@hono/node-server: ^1.19.14`. Prisma 7 kept per ADR 0003. `npm audit` now reports 0 vulnerabilities. Advisory GHSA-92pp-h63x-v22m is a middleware-bypass via repeated slashes in `serveStatic` — not a runtime path for learn-api, but the override closes the audit line. |
 
-**Totals:** 3 moderate, 0 high, 0 critical. Production exposure: none — the
-vulnerable package is in `@prisma/dev`, part of the Prisma toolchain's
-local migration server; it never runs inside `learn-api` at runtime.
-
+**Totals:** 0 moderate, 0 high, 0 critical on the current tree.
 Production-only scope (`npm audit --omit=dev --audit-level=high`): clean.
 
 ### Follow-up
-Track upstream Prisma 8.x release; when `@hono/node-server` bumps past
-1.19.13 in that tree, re-run `npm audit fix` and close this line.
+Drop the `overrides` block in `api/package.json` when Prisma upstream
+bumps `@hono/node-server` past `1.19.14` in its own dependency pin;
+until then the override guards against a regression if the transitive
+drifts back.
 
 ## Flutter app — `flutter pub outdated`
 

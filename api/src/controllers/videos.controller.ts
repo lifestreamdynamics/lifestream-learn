@@ -113,6 +113,6 @@ export async function getPlayback(req: Request, res: Response): Promise<void> {
   if (video.status !== 'READY' || !video.hlsPrefix) {
     throw new ConflictError(`Video is not ready for playback (status=${video.status})`);
   }
-  const { url, expiresAt } = signPlaybackUrl(`/hls/${video.id}/master.m3u8`);
+  const { url, expiresAt } = signPlaybackUrl(video.id);
   res.status(200).json({ masterPlaylistUrl: url, expiresAt: expiresAt.toISOString() });
 }

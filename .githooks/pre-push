@@ -66,4 +66,38 @@ if [ $found -ne 0 ]; then
 fi
 
 echo "pre-push: secret scan clean." >&2
+
+# -----------------------------------------------------------------------------
+# Shellcheck pass on shell scripts in the push range.
+# -----------------------------------------------------------------------------
+# Opt-in: only runs if shellcheck is installed, mirroring the gitleaks pattern
+# above. BATS already exercises the scripts behaviourally; shellcheck is a
+# static-analysis belt-and-braces. Fails the push on any shellcheck error
+# (warnings are non-blocking).
+if command -v shellcheck >/dev/null 2>&1; then
+  shell_found=0
+  # Re-walk the same ref range(s) the secret scan built above.
+  # We accept a slight redundancy reading stdin twice-over by scanning
+  # HEAD's diff instead, which matches what the operator is pushing.
+  changed_shell_files="$(git diff --name-only --diff-filter=ACMR \
+    "$(git merge-base HEAD @{upstream} 2>/dev/null || git rev-parse HEAD~1 2>/dev/null || echo HEAD)" \
+    HEAD 2>/dev/null | grep -E '\.(sh|bash)$' || true)"
+  if [ -n "$changed_shell_files" ]; then
+    while IFS= read -r f; do
+      [ -f "$f" ] || continue
+      # -S error: warnings are informational only. BATS is the
+      # behavioural guarantor; shellcheck here is a static-analysis
+      # belt-and-braces that should never block on style-level hints.
+      if ! shellcheck -S error -x "$f" >&2; then
+        shell_found=1
+      fi
+    done <<< "$changed_shell_files"
+    if [ "$shell_found" -ne 0 ]; then
+      echo "pre-push: BLOCKED on shellcheck errors above." >&2
+      exit 1
+    fi
+    echo "pre-push: shellcheck clean on changed .sh/.bash files." >&2
+  fi
+fi
+
 exit 0

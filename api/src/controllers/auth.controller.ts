@@ -67,7 +67,7 @@ export async function login(req: Request, res: Response): Promise<void> {
 export async function refresh(req: Request, res: Response): Promise<void> {
   const { refreshToken } = refreshSchema.parse(req.body);
   const claims = verifyRefreshToken(refreshToken);
-  const tokens = await authService.refresh(claims.sub);
+  const tokens = await authService.refresh({ userId: claims.sub, oldJti: claims.jti });
   res.status(200).json(tokens);
 }
 

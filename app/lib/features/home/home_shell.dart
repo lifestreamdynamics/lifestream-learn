@@ -13,11 +13,14 @@ import '../../data/models/user.dart';
 ///
 /// Branch layout (fixed across roles so the `IndexedStack` has a stable
 /// index):
-///   0: /feed           (all roles)
-///   1: /browse | /designer | /admin  (role-dependent label + screen)
-///   2: /my-courses     (learner only; filtered out of the nav bar for
-///                       designers + admins — the router redirects too)
-///   3: /profile        (all roles)
+///   0: /feed     (all roles)
+///   1: /courses  (all roles — replaces former /browse, /my-courses, /designer)
+///   2: /admin    (admin only; routed-to-role-home for other roles)
+///   3: /profile  (all roles)
+///
+/// Non-admin roles simply don't render the admin tab in the bottom nav
+/// (see `tabsForRole`); the branch slot still exists so the stack index
+/// stays consistent regardless of role.
 class HomeShell extends StatelessWidget {
   const HomeShell({required this.navigationShell, super.key});
 
@@ -55,9 +58,10 @@ class HomeShell extends StatelessWidget {
                 initialLocation:
                     target.branchIndex == navigationShell.currentIndex,
               );
-              // If a role-switched branch maps to a path that's not the
-              // branch's first route (e.g. designer lands on /designer,
-              // not /browse), force-navigate there.
+              // Force-navigate to the canonical path for the target
+              // branch. Not strictly necessary today — every branch has
+              // exactly one top-level route — but guards against future
+              // drift if a branch gains a sub-route the nav should ignore.
               GoRouter.of(context).go(target.path);
             },
             destinations: [
@@ -107,37 +111,21 @@ List<HomeTabSpec> tabsForRole(UserRole role) {
     selectedIcon: Icons.play_circle,
     label: 'Feed',
   );
-  const browse = HomeTabSpec(
-    key: 'browse',
+  const courses = HomeTabSpec(
+    key: 'courses',
     branchIndex: 1,
-    path: '/browse',
-    icon: Icons.explore_outlined,
-    selectedIcon: Icons.explore,
-    label: 'Browse',
-  );
-  const designer = HomeTabSpec(
-    key: 'designer',
-    branchIndex: 1,
-    path: '/designer',
-    icon: Icons.brush_outlined,
-    selectedIcon: Icons.brush,
-    label: 'Designer',
+    path: '/courses',
+    icon: Icons.school_outlined,
+    selectedIcon: Icons.school,
+    label: 'Courses',
   );
   const admin = HomeTabSpec(
     key: 'admin',
-    branchIndex: 1,
+    branchIndex: 2,
     path: '/admin',
     icon: Icons.admin_panel_settings_outlined,
     selectedIcon: Icons.admin_panel_settings,
     label: 'Admin',
-  );
-  const mine = HomeTabSpec(
-    key: 'my-courses',
-    branchIndex: 2,
-    path: '/my-courses',
-    icon: Icons.library_books_outlined,
-    selectedIcon: Icons.library_books,
-    label: 'My Courses',
   );
   const profile = HomeTabSpec(
     key: 'profile',
@@ -149,14 +137,10 @@ List<HomeTabSpec> tabsForRole(UserRole role) {
   );
   switch (role) {
     case UserRole.learner:
-      return const [feed, browse, mine, profile];
+      return const [feed, courses, profile];
     case UserRole.courseDesigner:
-      return const [feed, designer, profile];
+      return const [feed, courses, profile];
     case UserRole.admin:
-      return const [feed, admin, profile];
+      return const [feed, courses, admin, profile];
   }
 }
-
-// Slice F: AdminStubScreen has been replaced by `AdminHomeScreen` in
-// `features/admin/admin_home_screen.dart`. The router points `/admin`
-// at the real implementation.

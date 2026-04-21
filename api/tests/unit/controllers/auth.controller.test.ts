@@ -113,7 +113,7 @@ describe('auth.controller', () => {
       await authController.refresh(req, res);
 
       expect(verifyRefreshToken).toHaveBeenCalledWith('some-refresh-token');
-      expect(authService.refresh).toHaveBeenCalledWith('u-42');
+      expect(authService.refresh).toHaveBeenCalledWith({ userId: 'u-42', oldJti: 'j' });
       expect(res.status).toHaveBeenCalledWith(200);
       expect(res.json).toHaveBeenCalledWith(fakeTokens);
     });

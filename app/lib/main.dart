@@ -12,6 +12,7 @@ import 'core/analytics/analytics_event.dart';
 import 'core/analytics/analytics_sinks.dart';
 import 'core/auth/auth_bloc.dart';
 import 'core/auth/auth_event.dart';
+import 'core/auth/auth_state.dart';
 import 'core/auth/token_store.dart';
 import 'core/crash/crash_consent_bloc.dart';
 import 'core/crash/crash_reporter.dart';
@@ -78,15 +79,35 @@ void main() {
     final adminAnalyticsRepo = AdminAnalyticsRepository(dio);
     final eventsRepo = EventsRepository(dio);
 
+    authBloc = AuthBloc(authRepo: authRepo, tokenStore: tokenStore)
+      ..add(const AuthStarted());
+
     // Analytics buffer is a per-process singleton. We hydrate from disk
     // before installing the periodic flush so the first tick drains any
     // events the previous session couldn't ship.
-    final analyticsBuffer = AnalyticsBuffer(repo: eventsRepo);
+    //
+    // The flush gate is tied to `authBloc.state is Authenticated` so that
+    // events queued before the user logs in (e.g. a `session_start` fired
+    // from the splash, or left-over events from a prior session that got
+    // hydrated) wait on disk until we have a bearer token. Without this
+    // gate, the first flush after startup races the login and gets
+    // rejected 401 by `/api/events`, dropping otherwise-valid telemetry.
+    final analyticsBuffer = AnalyticsBuffer(
+      repo: eventsRepo,
+      canFlush: () => authBloc.state is Authenticated,
+    );
     final cueAnalyticsSink = AnalyticsBufferCueSink(analyticsBuffer);
     final videoAnalyticsSink = AnalyticsBufferVideoSink(analyticsBuffer);
 
-    authBloc = AuthBloc(authRepo: authRepo, tokenStore: tokenStore)
-      ..add(const AuthStarted());
+    // Kick a flush as soon as the user transitions into `Authenticated`
+    // so the first drain doesn't wait up to 30s for the periodic tick.
+    // Transitions out of `Authenticated` (logout) don't need a kick —
+    // the gate just closes and subsequent ticks short-circuit.
+    authBloc.stream.listen((state) {
+      if (state is Authenticated) {
+        unawaited(analyticsBuffer.flush());
+      }
+    });
 
     // Crash consent bloc rehydrates the persisted decision so the user
     // isn't re-prompted on every launch. The router's redirect rule

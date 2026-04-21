@@ -20,7 +20,7 @@ Map<String, dynamic> _$$AnalyticsEventImplToJson(
 ) => <String, dynamic>{
   'eventType': instance.eventType,
   'occurredAt': instance.occurredAt,
-  'videoId': instance.videoId,
-  'cueId': instance.cueId,
-  'payload': instance.payload,
+  if (instance.videoId case final value?) 'videoId': value,
+  if (instance.cueId case final value?) 'cueId': value,
+  if (instance.payload case final value?) 'payload': value,
 };

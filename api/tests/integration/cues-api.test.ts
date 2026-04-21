@@ -343,5 +343,56 @@ describe('Cues API (integration)', () => {
         .set('authorization', `Bearer ${admin.accessToken}`);
       expect(res.status).toBe(404);
     });
+
+    it('403 when an enrolled learner tries to delete a cue (enrollment implies READ not WRITE)', async () => {
+      // This is the explicit codification of the READ-vs-WRITE split in
+      // hasCourseAccess: a learner who is enrolled can SEE cues but must
+      // NEVER be able to delete them.
+      const app = await getTestApp();
+      const designer = await createUser({ role: 'COURSE_DESIGNER' });
+      const learner = await createUser({ role: 'LEARNER' });
+      const course = await createCourse(designer.id);
+      const video = await createVideoDirect(course.id);
+      const cue = await createCueDirect(video.id, { type: 'MCQ', payload: VALID_MCQ });
+      await enroll(learner.id, course.id);
+
+      const res = await request(app)
+        .delete(`/api/cues/${cue.id}`)
+        .set('authorization', `Bearer ${learner.accessToken}`);
+      expect(res.status).toBe(403);
+    });
+  });
+
+  describe('IDOR regression', () => {
+    it('designer A cannot update designer B\'s cue', async () => {
+      const app = await getTestApp();
+      const designerA = await createUser({ role: 'COURSE_DESIGNER' });
+      const designerB = await createUser({ role: 'COURSE_DESIGNER' });
+      const courseB = await createCourse(designerB.id);
+      const videoB = await createVideoDirect(courseB.id);
+      const cueB = await createCueDirect(videoB.id, { type: 'MCQ', payload: VALID_MCQ });
+
+      const res = await request(app)
+        .patch(`/api/cues/${cueB.id}`)
+        .set('authorization', `Bearer ${designerA.accessToken}`)
+        .send({ atMs: 99 });
+      expect(res.status).toBe(403);
+    });
+
+    it('enrolled learner cannot update a cue even on a course they are enrolled in', async () => {
+      const app = await getTestApp();
+      const designer = await createUser({ role: 'COURSE_DESIGNER' });
+      const learner = await createUser({ role: 'LEARNER' });
+      const course = await createCourse(designer.id);
+      const video = await createVideoDirect(course.id);
+      const cue = await createCueDirect(video.id, { type: 'MCQ', payload: VALID_MCQ });
+      await enroll(learner.id, course.id);
+
+      const res = await request(app)
+        .patch(`/api/cues/${cue.id}`)
+        .set('authorization', `Bearer ${learner.accessToken}`)
+        .send({ atMs: 99 });
+      expect(res.status).toBe(403);
+    });
   });
 });

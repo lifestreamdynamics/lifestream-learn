@@ -12,7 +12,7 @@ jest.mock('@/services/video.service', () => ({
 
 jest.mock('@/utils/hls-signer', () => ({
   signPlaybackUrl: jest.fn().mockReturnValue({
-    url: 'http://signed.example/hls/v/master.m3u8?md5=x&expires=1',
+    url: 'http://signed.example/hls/sig/1/v/master.m3u8',
     expiresAt: new Date(0),
   }),
 }));
@@ -168,7 +168,7 @@ describe('videos.controller', () => {
 
       await videosController.getPlayback(req, res);
 
-      expect(signPlaybackUrl).toHaveBeenCalledWith(`/hls/${VIDEO_ID}/master.m3u8`);
+      expect(signPlaybackUrl).toHaveBeenCalledWith(VIDEO_ID);
       expect(res.status).toHaveBeenCalledWith(200);
       const payload = (res.json as jest.Mock).mock.calls[0][0];
       expect(payload.masterPlaylistUrl).toContain('master.m3u8');

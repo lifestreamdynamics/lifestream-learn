@@ -39,6 +39,32 @@ Open-source core, commercial SaaS. The code is public under AGPL-3.0. The conten
 
 ---
 
+## Local development quickstart
+
+The repo ships a top-level `Makefile` that collapses the multi-step dev workflow into a few targets. Prerequisite: the [`accounting-api`](https://github.com/lifestream-dynamics/accounting-api) compose stack must already be running, since this project shares its Postgres (`:5432`) and Redis (`:6379`).
+
+```bash
+make bootstrap   # one-time: writes infra/.env + api/.env.local with random secrets
+make up          # docker compose up + DB provisioning + bucket creation + prisma migrate + seed
+make api         # terminal 1: API hot-reload on :3011
+make worker      # terminal 2: BullMQ transcode worker
+make app         # terminal 3: launches the Android emulator + flutter run (dev flavor)
+```
+
+`make help` lists every target. `make status` prints a one-line health check. `make reset` is the destructive teardown (prompts for confirmation).
+
+Three users are seeded automatically (all with password `Dev12345!Pass`):
+
+| Email | Role |
+|---|---|
+| `admin@example.local` | ADMIN |
+| `designer@example.local` | COURSE_DESIGNER |
+| `learner@example.local` | LEARNER |
+
+The verbose per-subproject command sequences are still documented in [`api/README.md`](./api), [`infra/README.md`](./infra), and [`app/README.md`](./app) for cases where you need finer control than the Makefile provides.
+
+---
+
 ## Status
 
 Pre-alpha. Phase 0 (decisions + scaffolding) in progress. See [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md) §5 for current phase and exit criteria.

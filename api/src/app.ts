@@ -20,7 +20,34 @@ export function createApp(): Express {
   // when the local nginx fronts the API.
   app.set('trust proxy', 1);
 
-  app.use(helmet());
+  // Helmet defaults are sensible, but we make the security-relevant ones
+  // explicit so a future refactor doesn't silently regress them. CSP is
+  // strict because the API serves JSON only — no inline scripts, no frames,
+  // no cross-origin assets. Swagger-UI is mounted at /api/docs in dev
+  // only (see config/swagger.ts) and its bundled assets are compatible
+  // with the script-src/style-src 'self' directives below; if a future
+  // swagger-ui version requires inline styles, gate it with a per-path
+  // relaxation rather than loosening the global CSP.
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'"],
+          styleSrc: ["'self'"],
+          imgSrc: ["'self'", 'data:'],
+          connectSrc: ["'self'"],
+          frameAncestors: ["'none'"],
+          baseUri: ["'self'"],
+          formAction: ["'self'"],
+          objectSrc: ["'none'"],
+        },
+      },
+      frameguard: { action: 'deny' },
+      referrerPolicy: { policy: 'no-referrer' },
+      crossOriginResourcePolicy: { policy: 'same-origin' },
+    }),
+  );
   app.use(
     cors({
       origin: env.CORS_ALLOWED_ORIGINS.length > 0 ? env.CORS_ALLOWED_ORIGINS : false,

@@ -19,12 +19,10 @@ import '../../features/admin/admin_home_screen.dart';
 import '../../features/auth/login_screen.dart';
 import '../../features/auth/signup_screen.dart';
 import '../../features/courses/course_detail_screen.dart';
-import '../../features/courses/courses_browse_screen.dart';
-import '../../features/courses/my_courses_screen.dart';
+import '../../features/courses/courses_screen.dart';
 import '../../features/designer/course_editor_screen.dart';
 import '../../features/designer/create_course_screen.dart';
 import '../../features/designer/designer_application_screen.dart';
-import '../../features/designer/designer_home_screen.dart';
 import '../../features/designer/video_editor_screen.dart';
 import '../../features/feed/feed_bloc.dart';
 import '../../features/feed/feed_event.dart';
@@ -56,8 +54,6 @@ GoRouter createRouter(
   CrashConsentBloc? crashConsentBloc,
   List<NavigatorObserver> observers = const [],
 }) {
-  final shellNavigatorKey = GlobalKey<NavigatorState>();
-
   final feedBloc = FeedBloc(feedRepo: feedRepo);
 
   return GoRouter(
@@ -103,6 +99,10 @@ GoRouter createRouter(
         path: '/designer-application',
         builder: (_, __) => DesignerApplicationScreen(repo: designerAppRepo),
       ),
+      // The `/designer` top-level tab is gone — its functionality folded
+      // into `/courses`. The editor entry points below stay, reached via
+      // the Course detail screen's owner-only "Edit course" button and
+      // the Courses screen's "Create course" FAB.
       GoRoute(
         path: '/designer/courses/new',
         builder: (_, __) => CreateCourseScreen(courseRepo: courseRepo),
@@ -137,7 +137,6 @@ GoRouter createRouter(
         ),
       ),
       StatefulShellRoute.indexedStack(
-        parentNavigatorKey: shellNavigatorKey,
         builder: (context, _, navigationShell) => HomeShell(
           navigationShell: navigationShell,
         ),
@@ -158,21 +157,22 @@ GoRouter createRouter(
               ),
             ],
           ),
-          // Branch 1 — Browse (learner) / Designer (designer) / Admin (admin).
-          // Route paths are distinct so role-based redirects work; shell
-          // index is the same slot for all three.
+          // Branch 1 — Courses (Enrolled / Available tabs). Shared by
+          // every role; replaces the former role-specific
+          // /browse | /designer | /admin slot.
           StatefulShellBranch(
             routes: <RouteBase>[
               GoRoute(
-                path: '/browse',
-                builder: (_, __) =>
-                    CoursesBrowseScreen(courseRepo: courseRepo),
+                path: '/courses',
+                builder: (_, __) => CoursesScreen(courseRepo: courseRepo),
               ),
-              GoRoute(
-                path: '/designer',
-                builder: (_, __) =>
-                    DesignerHomeScreen(courseRepo: courseRepo),
-              ),
+            ],
+          ),
+          // Branch 2 — Admin (admin only; non-admins redirect at
+          // `resolveRedirect`). HomeShell hides this tab from
+          // non-admins in the bottom nav.
+          StatefulShellBranch(
+            routes: <RouteBase>[
               GoRoute(
                 path: '/admin',
                 builder: (_, __) => AdminHomeScreen(
@@ -180,16 +180,6 @@ GoRouter createRouter(
                   adminAnalyticsRepo: adminAnalyticsRepo,
                   courseRepo: courseRepo,
                 ),
-              ),
-            ],
-          ),
-          // Branch 2 — My Courses (learner only; empty stub for other roles
-          // but redirect keeps them out).
-          StatefulShellBranch(
-            routes: <RouteBase>[
-              GoRoute(
-                path: '/my-courses',
-                builder: (_, __) => MyCoursesScreen(courseRepo: courseRepo),
               ),
             ],
           ),
@@ -250,21 +240,26 @@ String? resolveRedirect({
     if (onAuthRoute) return _roleHome(authState.user.role);
     if (onConsentRoute) return _roleHome(authState.user.role);
 
-    // Role gating for the tab-anchored routes. Non-tabs (e.g. course
-    // detail, designer-application) are allowed for any authed user.
+    // Deprecated paths from the old role-specific shell layout fold
+    // into the unified /courses tab. Keeping these redirects means old
+    // deep-links + shared links keep working.
+    if (location == '/browse' ||
+        location == '/my-courses' ||
+        location == '/designer') {
+      return '/courses';
+    }
+
+    // Role gating for the tab-anchored routes.
     final role = authState.user.role;
     if (location == '/admin' && role != UserRole.admin) {
       return _roleHome(role);
     }
-    if (location == '/designer' && role == UserRole.learner) {
-      return _roleHome(role);
-    }
-    if (location == '/my-courses' && role != UserRole.learner) {
-      return _roleHome(role);
-    }
-    if (location == '/browse' && role != UserRole.learner) {
-      return _roleHome(role);
-    }
+    // `/courses`, `/feed`, `/profile` are open to all authed roles.
+    // Non-tab routes (course detail, designer application, editor
+    // entry points) are intentionally unrestricted here — the server
+    // enforces per-resource authorization, and gating the URL up-front
+    // would break legitimate deep-links (e.g. a designer opening a
+    // course-detail URL for a course they collaborate on).
     return null;
   }
 
@@ -272,13 +267,17 @@ String? resolveRedirect({
 }
 
 String _roleHome(UserRole role) {
+  // Post-Slice G3: all roles land on /courses after login. It's the
+  // only tab that's useful for every role out of the box — feed is
+  // empty for admins (they don't enroll) and profile is a leaf. For
+  // learners, /courses auto-lands on the Enrolled tab (the tabbed
+  // screen defaults to tab 0); admins and designers see an explanatory
+  // empty-state on Enrolled and can swipe to Available.
   switch (role) {
     case UserRole.admin:
-      return '/feed';
     case UserRole.courseDesigner:
-      return '/feed';
     case UserRole.learner:
-      return '/feed';
+      return '/courses';
   }
 }
 

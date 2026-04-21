@@ -132,6 +132,24 @@ void main() {
     expect(find.text('Retry'), findsOneWidget);
   });
 
+  testWidgets('appbar Courses action navigates to /courses', (tester) async {
+    when(() => bloc.state).thenReturn(FeedLoaded(
+      items: [_entry('v1')],
+      hasMore: false,
+    ));
+
+    await tester.pumpWidget(_wrap(bloc, _screen()));
+    await tester.pump();
+
+    final coursesButton = find.byKey(const Key('feed.appbar.courses'));
+    expect(coursesButton, findsOneWidget);
+
+    await tester.tap(coursesButton);
+    await tester.pumpAndSettle();
+
+    expect(find.text('courses page'), findsOneWidget);
+  });
+
   testWidgets('loadMoreError renders inline banner', (tester) async {
     when(() => bloc.state).thenReturn(FeedLoaded(
       items: [_entry('v1')],

@@ -2,22 +2,42 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/http/error_envelope.dart';
+import '../../core/utils/duration_formatters.dart';
 import '../../data/models/enrollment.dart';
+import '../../data/models/user.dart';
 import '../../data/repositories/course_repository.dart';
 
-/// Learner's own enrollments — a single-column list with last-watched
-/// hints. Tapping a card routes to `/feed` (Slice E may add deep-linking
-/// to `lastVideoId` once the feed can position itself on a specific id).
-class MyCoursesScreen extends StatefulWidget {
-  const MyCoursesScreen({required this.courseRepo, super.key});
+/// Body of the "Enrolled" tab inside `CoursesScreen`. Shows the caller's
+/// own enrollments (server-filtered by `req.user.id`); tapping a row
+/// routes to `/feed`, which will position on the last-watched video once
+/// the feed supports deep-linking.
+///
+/// The empty-state copy is role-aware: learners see a "Switch to
+/// Available" prompt; admins and designers — who don't enroll in
+/// practice — see an explanatory blurb directing them to the Available
+/// tab. This is the only role-dependent UI here.
+class EnrolledCoursesBody extends StatefulWidget {
+  const EnrolledCoursesBody({
+    required this.courseRepo,
+    required this.role,
+    this.onSwitchToAvailable,
+    super.key,
+  });
 
   final CourseRepository courseRepo;
+  final UserRole role;
+
+  /// Called when the empty-state CTA is tapped. Parents (the tabbed
+  /// `CoursesScreen`) wire this to a `TabController.animateTo` instead
+  /// of a router navigation — keeps the tab switch snappy and within
+  /// the same shell branch.
+  final VoidCallback? onSwitchToAvailable;
 
   @override
-  State<MyCoursesScreen> createState() => _MyCoursesScreenState();
+  State<EnrolledCoursesBody> createState() => _EnrolledCoursesBodyState();
 }
 
-class _MyCoursesScreenState extends State<MyCoursesScreen> {
+class _EnrolledCoursesBodyState extends State<EnrolledCoursesBody> {
   List<EnrollmentWithCourse>? _rows;
   ApiException? _error;
   bool _loading = true;
@@ -51,13 +71,6 @@ class _MyCoursesScreenState extends State<MyCoursesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('My courses')),
-      body: _buildBody(),
-    );
-  }
-
-  Widget _buildBody() {
     if (_loading) return const Center(child: CircularProgressIndicator());
     if (_error != null) {
       return Center(
@@ -73,18 +86,9 @@ class _MyCoursesScreenState extends State<MyCoursesScreen> {
     }
     final rows = _rows ?? const <EnrollmentWithCourse>[];
     if (rows.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('No enrollments yet.', key: Key('myCourses.empty')),
-            const SizedBox(height: 12),
-            ElevatedButton(
-              onPressed: () => GoRouter.of(context).go('/courses'),
-              child: const Text('Browse courses'),
-            ),
-          ],
-        ),
+      return _EmptyState(
+        role: widget.role,
+        onSwitchToAvailable: widget.onSwitchToAvailable,
       );
     }
     return RefreshIndicator(
@@ -96,7 +100,7 @@ class _MyCoursesScreenState extends State<MyCoursesScreen> {
         itemBuilder: (context, i) {
           final row = rows[i];
           final lastHint = row.lastPosMs != null
-              ? 'Last watched at ${_formatMs(row.lastPosMs!)}'
+              ? 'Last watched at ${formatDurationMs(row.lastPosMs!)}'
               : 'Not started';
           return Card(
             key: Key('myCourses.row.${row.courseId}'),
@@ -127,10 +131,42 @@ class _MyCoursesScreenState extends State<MyCoursesScreen> {
     );
   }
 
-  String _formatMs(int ms) {
-    final secs = ms ~/ 1000;
-    final mm = (secs ~/ 60).toString().padLeft(2, '0');
-    final ss = (secs % 60).toString().padLeft(2, '0');
-    return '$mm:$ss';
+}
+
+class _EmptyState extends StatelessWidget {
+  const _EmptyState({required this.role, required this.onSwitchToAvailable});
+
+  final UserRole role;
+  final VoidCallback? onSwitchToAvailable;
+
+  @override
+  Widget build(BuildContext context) {
+    final isLearner = role == UserRole.learner;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              isLearner
+                  ? 'No enrollments yet.'
+                  : "You don't enroll in courses — "
+                      'use the Available tab to browse the catalog.',
+              key: const Key('myCourses.empty'),
+              textAlign: TextAlign.center,
+            ),
+            if (isLearner) ...[
+              const SizedBox(height: 12),
+              ElevatedButton(
+                key: const Key('myCourses.empty.browse'),
+                onPressed: onSwitchToAvailable,
+                child: const Text('Browse courses'),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 }

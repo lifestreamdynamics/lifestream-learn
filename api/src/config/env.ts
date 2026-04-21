@@ -23,7 +23,31 @@ const EnvSchema = z.object({
   JWT_ACCESS_TTL: z.string().default('15m'),
   JWT_REFRESH_TTL: z.string().default('30d'),
 
-  S3_ENDPOINT: z.string().url(),
+  S3_ENDPOINT: z
+    .string()
+    .url()
+    .refine(
+      (url) => {
+        // In production, reject link-local / loopback / metadata-service
+        // hostnames so a misconfigured env var can't turn the ObjectStore
+        // into an SSRF gadget pointed at 169.254.169.254 (AWS metadata),
+        // ::1, 127.0.0.1, etc. Local dev still needs http://localhost and
+        // http://seaweedfs:8333, so this gate is prod-only.
+        if (process.env.NODE_ENV !== 'production') return true;
+        try {
+          const host = new URL(url).hostname;
+          if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return false;
+          if (/^169\.254\./.test(host)) return false;
+          if (/^10\./.test(host)) return false; // private — opt in by removing this if genuinely needed
+          if (/^172\.(1[6-9]|2\d|3[01])\./.test(host)) return false;
+          if (/^192\.168\./.test(host)) return false;
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      { message: 'S3_ENDPOINT may not resolve to a loopback/link-local/private subnet in production' },
+    ),
   S3_REGION: z.string().default('us-east-1'),
   S3_ACCESS_KEY: z.string().min(1),
   S3_SECRET_KEY: z.string().min(1),
@@ -34,7 +58,9 @@ const EnvSchema = z.object({
   TUSD_PUBLIC_URL: z.string().url(),
 
   HLS_BASE_URL: z.string().url(),
-  HLS_SIGNING_SECRET: z.string().min(16),
+  // 32 bytes (256 bits) minimum. Generate with `openssl rand -base64 48`.
+  // The signer is MD5-based per ADR 0002; strength is gated on the secret.
+  HLS_SIGNING_SECRET: z.string().min(32),
   HLS_SIGNING_TTL_SECONDS: z.coerce.number().int().positive().default(7200),
 
   CORS_ALLOWED_ORIGINS: z
@@ -44,6 +70,17 @@ const EnvSchema = z.object({
 
   SEED_ADMIN_EMAIL: z.string().email().default('admin@example.local'),
   SEED_ADMIN_PASSWORD: z.string().min(12).optional(),
+  SEED_DESIGNER_EMAIL: z.string().email().default('designer@example.local'),
+  SEED_LEARNER_EMAIL: z.string().email().default('learner@example.local'),
+  // Shared password for the designer + learner dev users. The admin keeps its
+  // own variable so an operator can rotate it independently. Optional —
+  // when omitted, seed.ts generates a per-user random password and logs it once.
+  SEED_DEV_USER_PASSWORD: z.string().min(12).optional(),
+  // When true (default), `npm run prisma:seed` creates a "Dev Sample 101"
+  // course owned by the seeded designer and uploads + transcodes a sample
+  // video. Requires the transcode worker to be running. Set to false to
+  // keep the seed DB-only.
+  SEED_SAMPLE_VIDEO: z.coerce.boolean().default(true),
 
   TUSD_HOOK_SECRET: z.string().min(16),
   TRANSCODE_CONCURRENCY: z.coerce.number().int().positive().default(1),
@@ -81,6 +118,14 @@ const EnvSchema = z.object({
   RATE_LIMIT_LOGIN_WINDOW_MS: z.coerce.number().int().positive().default(5 * 60 * 1000),
   RATE_LIMIT_REFRESH_MAX: z.coerce.number().int().positive().default(30),
   RATE_LIMIT_REFRESH_WINDOW_MS: z.coerce.number().int().positive().default(5 * 60 * 1000),
+
+  // tusd-hook limiter. A leaked or brute-forced shared secret should not
+  // translate into unbounded BullMQ enqueues — the limit caps per-IP hook
+  // traffic so one compromised caller can't flood the transcode pipeline.
+  // Pre-finish events are paced by tusd (one per completed upload) so 60/min
+  // leaves plenty of headroom for legitimate traffic and load tests.
+  RATE_LIMIT_TUSD_HOOK_MAX: z.coerce.number().int().positive().default(60),
+  RATE_LIMIT_TUSD_HOOK_WINDOW_MS: z.coerce.number().int().positive().default(60 * 1000),
 });
 
 const parsed = EnvSchema.safeParse(process.env);

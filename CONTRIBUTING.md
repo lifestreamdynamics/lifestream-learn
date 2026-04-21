@@ -23,6 +23,16 @@ Each sub-project has its own setup instructions:
 - Passes the linter and type checker
 - No secrets, no hostnames, no personal paths committed — see `.gitignore` and the `gitleaks` pre-push hook
 - Sign your commits (`git commit -S`) — required on the protected `main` branch
+- Never use Zod to validate fields whose *values* are secrets (JWTs, API keys, HMAC signing material). The error envelope surfaces Zod issue paths to the client, so a validation error on a secret-bearing field can leak portions of the secret. Validate shape at the boundary; verify secrets via `crypto.timingSafeEqual` against a hashed representation.
+
+## Required CI checks
+
+These must pass before a PR is merged to `main`:
+
+- `api-ci / lint-type-unit` — ESLint, `tsc --noEmit`, Jest unit tests with coverage thresholds.
+- `api-ci / integration` — Integration tests against Postgres + Redis services. Compose-dependent suites (`transcode-e2e`, `transcode-resilience`, `secure-link`, `health`) are excluded from CI and must be run locally against `infra/docker-compose.yml` — see `api/README.md`.
+- `app-ci / analyze-test` — `flutter analyze`, `flutter test --coverage`, and a generated-files-up-to-date check.
+- `secret-scan / gitleaks` — server-side secret scan (belt-and-braces alongside the local pre-push hook).
 
 ## Areas where help is welcome
 

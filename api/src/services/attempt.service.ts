@@ -3,6 +3,7 @@ import { prisma as defaultPrisma } from '@/config/prisma';
 import { ForbiddenError, NotFoundError } from '@/utils/errors';
 import { parseResponseFor } from '@/validators/cue-payloads';
 import { grade, type GradingResult } from '@/services/grading';
+import { hasCourseAccess } from '@/services/course-access';
 
 export interface SubmitAttemptResult {
   attempt: Attempt;
@@ -51,11 +52,7 @@ export function createAttemptService(
 
       // Access gate: admin, course owner, collaborator, or enrolled learner.
       // Designers testing their own content should not be required to enrol.
-      const isAdmin = role === 'ADMIN';
-      const isOwner = cue.video.course.ownerId === userId;
-      const isCollab = cue.video.course.collaborators.length > 0;
-      const isEnrolled = cue.video.course.enrollments.length > 0;
-      if (!isAdmin && !isOwner && !isCollab && !isEnrolled) {
+      if (!hasCourseAccess(role, userId, cue.video.course, 'READ')) {
         throw new ForbiddenError('You do not have access to this cue');
       }
 
