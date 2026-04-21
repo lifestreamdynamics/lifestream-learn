@@ -124,7 +124,7 @@ class CueOutcomeTile extends StatelessWidget {
                   key: Key('review.cue.${outcome.cueId}.watchFrom'),
                   avatar: const Icon(Icons.play_arrow, size: 18),
                   label: Text('Watch from ${formatDurationMs(outcome.atMs)}'),
-                  onPressed: () => context.go(
+                  onPressed: () => context.push(
                     '/videos/$videoId/watch?t=${outcome.atMs}',
                   ),
                 ),
