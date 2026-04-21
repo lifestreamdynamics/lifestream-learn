@@ -115,6 +115,13 @@ class AnalyticsBuffer {
   bool _flushing = false;
   bool _disposed = false;
 
+  /// Slice P4 — analytics opt-out. When `false`, [log] short-circuits
+  /// without queuing, and [flush] drops anything that was already on
+  /// disk (the user asked for it to go away, not to be replayed
+  /// later). Default `true` keeps pre-P4 behaviour. Set via
+  /// [setEnabled] from the SettingsCubit.
+  bool _enabled = true;
+
   /// Exposed for tests — size of the in-memory queue.
   @visibleForTesting
   int get queueLength => _queue.length;
@@ -164,6 +171,35 @@ class AnalyticsBuffer {
     }
   }
 
+  /// Exposed for tests — whether new events are accepted.
+  @visibleForTesting
+  bool get isEnabled => _enabled;
+
+  /// Slice P4 — flip the analytics opt-out.
+  ///
+  /// Disabling drops any events that are currently queued (both
+  /// in-memory and on disk): the user explicitly opted out, and we
+  /// promised their pending queue would not be exfiltrated later. The
+  /// next tick will persist the empty queue, overwriting the file.
+  ///
+  /// Re-enabling is a clean resume — no backfill of missed events.
+  ///
+  /// Calls from the SettingsCubit are idempotent: repeated
+  /// `setEnabled(true)` / `setEnabled(false)` with the same value are
+  /// cheap no-ops.
+  void setEnabled(bool value) {
+    if (_disposed) return;
+    if (_enabled == value) return;
+    _enabled = value;
+    if (!value) {
+      // Drop everything in RAM; overwrite the file with `[]` so a
+      // future hydrate() doesn't resurrect the queue. Fire-and-forget
+      // — _persist swallows its own failures.
+      _queue.clear();
+      unawaited(_persist());
+    }
+  }
+
   /// Queue an event for flushing. Validates the privacy guard first —
   /// rejected events are DROPPED (logged via debugPrint in debug mode).
   /// On accept, the event is appended to both the in-memory queue and
@@ -171,6 +207,12 @@ class AnalyticsBuffer {
   /// non-blocking flush is kicked off.
   Future<void> log(AnalyticsEvent event) async {
     if (_disposed) return;
+    if (!_enabled) {
+      // Opt-out short-circuit. No persistence, no debug log (the user
+      // knows they opted out; a stream of rejected-event logs would be
+      // noise).
+      return;
+    }
     if (!_passesPrivacyGuard(event)) {
       if (kDebugMode) {
         debugPrint(

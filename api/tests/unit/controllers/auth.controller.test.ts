@@ -27,7 +27,20 @@ function makeRes(): Response {
   const res = {} as Response;
   res.status = jest.fn().mockReturnValue(res);
   res.json = jest.fn().mockReturnValue(res);
+  res.send = jest.fn().mockReturnValue(res);
   return res;
+}
+
+// Slice P6 — auth controllers now read `req.get('user-agent')` + `req.ip`
+// to thread a RequestContext through to the session service. The
+// controller tests don't care about the exact values — they just need
+// the functions to exist so the call doesn't throw.
+function makeReq(body: Record<string, unknown>): Request {
+  return {
+    body,
+    get: jest.fn().mockReturnValue(undefined),
+    ip: '127.0.0.1',
+  } as unknown as Request;
 }
 
 describe('auth.controller', () => {
@@ -50,24 +63,28 @@ describe('auth.controller', () => {
       };
       (authService.signup as jest.Mock).mockResolvedValueOnce(fakeResult);
 
-      const req = {
-        body: { email: 'new@example.com', password: 'correct-horse-battery', displayName: 'New' },
-      } as Request;
-      const res = makeRes();
-
-      await authController.signup(req, res);
-
-      expect(authService.signup).toHaveBeenCalledWith({
+      const req = makeReq({
         email: 'new@example.com',
         password: 'correct-horse-battery',
         displayName: 'New',
       });
+      const res = makeRes();
+
+      await authController.signup(req, res);
+
+      expect(authService.signup).toHaveBeenCalledWith(
+        expect.objectContaining({
+          email: 'new@example.com',
+          password: 'correct-horse-battery',
+          displayName: 'New',
+        }),
+      );
       expect(res.status).toHaveBeenCalledWith(201);
       expect(res.json).toHaveBeenCalledWith(fakeResult);
     });
 
     it('throws ZodError synchronously for invalid body', async () => {
-      const req = { body: { email: 'not-email', password: 'x', displayName: '' } } as Request;
+      const req = makeReq({ email: 'not-email', password: 'x', displayName: '' });
       const res = makeRes();
 
       await expect(authController.signup(req, res)).rejects.toBeInstanceOf(ZodError);
@@ -90,12 +107,14 @@ describe('auth.controller', () => {
       };
       (authService.login as jest.Mock).mockResolvedValueOnce(fakeResult);
 
-      const req = { body: { email: 'x@example.com', password: 'pw' } } as Request;
+      const req = makeReq({ email: 'x@example.com', password: 'pw' });
       const res = makeRes();
 
       await authController.login(req, res);
 
-      expect(authService.login).toHaveBeenCalledWith({ email: 'x@example.com', password: 'pw' });
+      expect(authService.login).toHaveBeenCalledWith(
+        expect.objectContaining({ email: 'x@example.com', password: 'pw' }),
+      );
       expect(res.status).toHaveBeenCalledWith(200);
       expect(res.json).toHaveBeenCalledWith(fakeResult);
     });
@@ -107,19 +126,21 @@ describe('auth.controller', () => {
       const fakeTokens = { accessToken: 'new-a', refreshToken: 'new-r' };
       (authService.refresh as jest.Mock).mockResolvedValueOnce(fakeTokens);
 
-      const req = { body: { refreshToken: 'some-refresh-token' } } as Request;
+      const req = makeReq({ refreshToken: 'some-refresh-token' });
       const res = makeRes();
 
       await authController.refresh(req, res);
 
       expect(verifyRefreshToken).toHaveBeenCalledWith('some-refresh-token');
-      expect(authService.refresh).toHaveBeenCalledWith({ userId: 'u-42', oldJti: 'j' });
+      expect(authService.refresh).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'u-42', oldJti: 'j' }),
+      );
       expect(res.status).toHaveBeenCalledWith(200);
       expect(res.json).toHaveBeenCalledWith(fakeTokens);
     });
 
     it('throws ZodError when body is missing refreshToken', async () => {
-      const req = { body: {} } as Request;
+      const req = makeReq({});
       const res = makeRes();
 
       await expect(authController.refresh(req, res)).rejects.toBeInstanceOf(ZodError);

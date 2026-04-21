@@ -46,6 +46,25 @@ dependencies:
   # `enabled: false` mode and all capture calls are no-ops. See
   # `lib/config/crash_reporting_config.dart` for the key-rotation flow.
   lifestream_doctor: ^1.0.2
+  # Slice P7a — biometric unlock toggle in settings. The plugin exposes
+  # `canCheckBiometrics` / `getAvailableBiometrics` / `authenticate`;
+  # we persist the preference in `SettingsStore` and consult the plugin
+  # on app bootstrap via `core/auth/biometric_gate.dart`. Android-only
+  # wiring is all we need for the Lifestream Learn app target.
+  local_auth: ^2.1.6
+  credential_manager: ^2.0.8
+  # Slice P8 — personal data export. The export screen writes a JSON
+  # file to the app's documents directory and triggers the OS share
+  # sheet (Gmail, Drive, Files, etc.) so the user can hand the file
+  # off wherever they want it. `share_plus` is the platform-bridged
+  # invoker; `XFile` comes from `cross_file` (already a direct dep).
+  share_plus: ^10.0.0
+  # Validation-follow-up: Gravatar fallback in the profile header hashes
+  # the user's email with SHA-256. `crypto` is already a transitive dep
+  # of several packages above; pinning it directly lets `ProfileHeader`
+  # import `package:crypto/crypto.dart` without triggering
+  # `depend_on_referenced_packages` lint.
+  crypto: ^3.0.3
 
 dev_dependencies:
   flutter_test:

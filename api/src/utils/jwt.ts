@@ -21,26 +21,45 @@ const AccessClaimsSchema = z.object({
   role: RoleSchema,
   email: z.string().email(),
   type: z.literal('access'),
+  // Slice P6 — session id, mirrors the `Session.id` row for this refresh
+  // lineage. Enables the sessions controller to pinpoint "the current
+  // session" for the `current: true` flag + the "sign out all others"
+  // endpoint without the client passing its refresh token around.
+  // Optional on parse so access tokens minted before this change still
+  // validate; callers that rely on `sid` must fall back gracefully.
+  sid: z.string().uuid().optional(),
 });
 
 const RefreshClaimsSchema = z.object({
   sub: z.string().min(1),
   type: z.literal('refresh'),
   jti: z.string().min(1),
+  // `iat` is set automatically by jsonwebtoken on sign, expressed as
+  // seconds since epoch. We expose it on the parsed claim so the refresh
+  // handler can reject tokens issued before a user's `passwordChangedAt`
+  // (Slice P5). Optional so old tokens minted before this schema change
+  // still parse.
+  iat: z.number().int().nonnegative().optional(),
 });
 
 export type AccessTokenClaims = z.infer<typeof AccessClaimsSchema> & { role: Role };
 export type RefreshTokenClaims = z.infer<typeof RefreshClaimsSchema>;
 
-export function signAccessToken(user: { id: string; role: Role; email: string }): string {
-  return jwt.sign(
-    { sub: user.id, role: user.role, email: user.email, type: 'access' },
-    env.JWT_ACCESS_SECRET,
-    {
-      expiresIn: env.JWT_ACCESS_TTL as SignOptions['expiresIn'],
-      audience: JWT_AUDIENCE,
-    },
-  );
+export function signAccessToken(
+  user: { id: string; role: Role; email: string },
+  sessionId?: string,
+): string {
+  const payload: Record<string, unknown> = {
+    sub: user.id,
+    role: user.role,
+    email: user.email,
+    type: 'access',
+  };
+  if (sessionId) payload.sid = sessionId;
+  return jwt.sign(payload, env.JWT_ACCESS_SECRET, {
+    expiresIn: env.JWT_ACCESS_TTL as SignOptions['expiresIn'],
+    audience: JWT_AUDIENCE,
+  });
 }
 
 export function signRefreshToken(user: { id: string }): { token: string; jti: string } {

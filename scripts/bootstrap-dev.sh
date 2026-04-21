@@ -81,12 +81,24 @@ else
   # JWT secrets: two different high-entropy values. base64(48 bytes) = 64 chars.
   JWT_ACCESS_SECRET_VALUE="$(openssl rand -base64 48)"
   JWT_REFRESH_SECRET_VALUE="$(openssl rand -base64 48)"
+  # Slice P6 — per-install salt for hashing remote IPs on Session rows.
+  # Must be >=32 chars (env schema enforces this); using hex keeps the
+  # value sed-delimiter-safe.
+  IP_HASH_SALT_VALUE="$(openssl rand -hex 32)"
+  # Slice P7a — AES-256-GCM key for encrypting MFA TOTP secrets at
+  # rest. `openssl rand -base64 32` yields a 44-char value that
+  # decodes to exactly 32 bytes, matching the env schema.
+  MFA_ENCRYPTION_KEY_VALUE="$(openssl rand -base64 32)"
 
   # Use '|' delimiter for any value that may contain '/', '+', '=', or ':'.
   # openssl base64 output contains '/' and '+'; URLs contain '/' and ':'.
   sed -i.bak \
     -e "s|^JWT_ACCESS_SECRET=.*$|JWT_ACCESS_SECRET=${JWT_ACCESS_SECRET_VALUE}|" \
     -e "s|^JWT_REFRESH_SECRET=.*$|JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET_VALUE}|" \
+    -e "s|^IP_HASH_SALT=.*$|IP_HASH_SALT=${IP_HASH_SALT_VALUE}|" \
+    -e "s|^MFA_ENCRYPTION_KEY=.*$|MFA_ENCRYPTION_KEY=${MFA_ENCRYPTION_KEY_VALUE}|" \
+    -e "s|^WEBAUTHN_RP_ID=.*$|WEBAUTHN_RP_ID=localhost|" \
+    -e "s|^WEBAUTHN_ORIGIN=.*$|WEBAUTHN_ORIGIN=http://localhost:3011|" \
     -e "s|^S3_ACCESS_KEY=.*$|S3_ACCESS_KEY=learn_access_key|" \
     -e "s|^S3_SECRET_KEY=.*$|S3_SECRET_KEY=learn_secret_key|" \
     -e "s|^HLS_SIGNING_SECRET=.*$|HLS_SIGNING_SECRET=local_dev_secret_do_not_use_in_prod|" \

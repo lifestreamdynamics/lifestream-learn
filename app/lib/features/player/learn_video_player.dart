@@ -3,12 +3,15 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:video_player/video_player.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 
 import '../../core/analytics/analytics_sinks.dart';
 import '../../core/http/error_envelope.dart';
+import '../../core/settings/settings_cubit.dart';
+import '../../core/settings/settings_state.dart';
 import '../../data/models/video.dart';
 import '../../data/repositories/enrollment_repository.dart';
 import '../../data/repositories/video_repository.dart';
@@ -143,6 +146,19 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
     }
   }
 
+  /// Best-effort lookup of the app-wide [SettingsCubit]. Returns the
+  /// current state if the cubit is above this widget in the tree,
+  /// otherwise null — widget tests that don't need settings semantics
+  /// stay free of a required Provider.
+  SettingsState? _readSettings() {
+    if (!mounted) return null;
+    try {
+      return context.read<SettingsCubit>().state;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> _load() async {
     try {
       final playback = await widget.videoRepo.playback(widget.video.id);
@@ -161,6 +177,27 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
         return;
       }
       controller.setLooping(true);
+      // Slice P4 — apply the user's preferred playback speed if a
+      // SettingsCubit is in scope. Looked up through `context.read`
+      // rather than a required constructor param so existing widget
+      // tests (which don't wrap the player in a BlocProvider) keep
+      // working at the default 1.0x.
+      final settings = _readSettings();
+      if (settings != null) {
+        try {
+          await controller.setPlaybackSpeed(settings.playbackSpeed);
+        } catch (_) {
+          // Some fvp backends don't accept arbitrary speeds while the
+          // player is loading — a failure here is non-fatal (playback
+          // still happens at 1.0x). Swallow and move on.
+        }
+        // TODO(Slice P4 follow-up): apply `settings.captionsDefault`
+        // when captions are implemented (video_player doesn't expose
+        // a captions toggle surface today).
+        // TODO(Slice P4 follow-up): honour `settings.dataSaver` by
+        // capping ABR at 540p on cellular — needs connectivity_plus
+        // to detect the transport, which isn't yet a dep.
+      }
       setState(() {
         _controller = controller;
         _loading = false;

@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import bcrypt from 'bcrypt';
-import { Role, VideoStatus } from '@prisma/client';
+import { Prisma, Role, VideoStatus } from '@prisma/client';
 import { env } from '@/config/env';
 import { logger } from '@/config/logger';
 import { prisma } from '@/config/prisma';
@@ -134,6 +134,118 @@ async function ensureSampleVideo(courseId: string): Promise<void> {
   logger.info({ videoId: video.id }, 'seed: sample video READY');
 }
 
+/**
+ * Slice P3 — stable achievement catalog. Seeded idempotently via upsert
+ * so re-runs reconcile title/description/iconKey changes without losing
+ * user-unlock history (UserAchievement rows reference the slug id).
+ *
+ * `criteriaJson` is the discriminated-union payload interpreted by
+ * `achievement.service.evaluateAndUnlock`. Adding a new criterion type
+ * means adding both a seed row here and an evaluator branch there.
+ *
+ * VOICE cues are deliberately omitted — per ADR 0004 they are rejected
+ * at the API boundary today.
+ */
+const ACHIEVEMENT_CATALOG: ReadonlyArray<{
+  id: string;
+  title: string;
+  description: string;
+  iconKey: string;
+  criteriaJson: Prisma.InputJsonValue;
+}> = [
+  {
+    id: 'first_lesson',
+    title: 'First Lesson',
+    description: 'Complete your first lesson',
+    iconKey: 'school',
+    criteriaJson: { type: 'lessons_completed', count: 1 },
+  },
+  {
+    id: 'streak_3',
+    title: '3-Day Streak',
+    description: 'Learn 3 days in a row',
+    iconKey: 'local_fire_department',
+    criteriaJson: { type: 'streak', days: 3 },
+  },
+  {
+    id: 'streak_7',
+    title: 'Week-Long Streak',
+    description: 'Learn 7 days in a row',
+    iconKey: 'whatshot',
+    criteriaJson: { type: 'streak', days: 7 },
+  },
+  {
+    id: 'streak_30',
+    title: 'Monthly Streak',
+    description: 'Learn 30 days in a row',
+    iconKey: 'emoji_events',
+    criteriaJson: { type: 'streak', days: 30 },
+  },
+  {
+    id: 'perfect_quiz',
+    title: 'Perfect Quiz',
+    description: 'Answer all cues in a lesson correctly on the first try',
+    iconKey: 'verified',
+    criteriaJson: { type: 'perfect_lesson' },
+  },
+  {
+    id: 'course_complete',
+    title: 'Course Complete',
+    description: 'Complete every lesson in a course',
+    iconKey: 'workspace_premium',
+    criteriaJson: { type: 'course_complete' },
+  },
+  {
+    id: '100_cues_correct',
+    title: 'Century Club',
+    description: 'Answer 100 cues correctly',
+    iconKey: 'military_tech',
+    criteriaJson: { type: 'cues_correct', count: 100 },
+  },
+  {
+    id: 'mcq_master',
+    title: 'MCQ Master',
+    description: 'Answer 25 MCQ cues correctly',
+    iconKey: 'radio_button_checked',
+    criteriaJson: { type: 'cues_correct_by_type', cueType: 'MCQ', count: 25 },
+  },
+  {
+    id: 'matching_master',
+    title: 'Matching Master',
+    description: 'Answer 25 MATCHING cues correctly',
+    iconKey: 'extension',
+    criteriaJson: { type: 'cues_correct_by_type', cueType: 'MATCHING', count: 25 },
+  },
+  {
+    id: 'blanks_master',
+    title: 'Fill-in Master',
+    description: 'Answer 25 BLANKS cues correctly',
+    iconKey: 'edit_note',
+    criteriaJson: { type: 'cues_correct_by_type', cueType: 'BLANKS', count: 25 },
+  },
+];
+
+async function seedAchievements(): Promise<void> {
+  for (const ach of ACHIEVEMENT_CATALOG) {
+    await prisma.achievement.upsert({
+      where: { id: ach.id },
+      // Re-running seed reconciles wording + icons; criteria too, since
+      // a criteria-threshold tweak shouldn't require a manual DB edit.
+      update: {
+        title: ach.title,
+        description: ach.description,
+        iconKey: ach.iconKey,
+        criteriaJson: ach.criteriaJson,
+      },
+      create: ach,
+    });
+  }
+  logger.info(
+    { count: ACHIEVEMENT_CATALOG.length },
+    'seed: achievement catalog upserted',
+  );
+}
+
 async function main(): Promise<void> {
   const dev = env.SEED_DEV_USER_PASSWORD;
 
@@ -159,6 +271,7 @@ async function main(): Promise<void> {
   ];
 
   try {
+    await seedAchievements();
     const results = await Promise.all(seeds.map(upsertUser));
     for (const r of results) {
       if (r.generated) {

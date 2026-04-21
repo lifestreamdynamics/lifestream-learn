@@ -1,12 +1,20 @@
 import { prisma } from '@/config/prisma';
 import { redis } from '@/config/redis';
 
-/** Truncate all learn tables between integration tests. */
+/**
+ * Truncate all learn tables between integration tests.
+ *
+ * Slice P3: `UserAchievement` is truncated along with per-user state;
+ * `Achievement` is NOT — it's a seeded catalog and tests that exercise
+ * achievements expect the catalog to exist. Integration tests seed the
+ * subset of achievements they care about in `beforeEach`.
+ */
 export async function resetDb(): Promise<void> {
   await prisma.$executeRawUnsafe(
     `TRUNCATE TABLE
       "AnalyticsEvent","Attempt","Enrollment","Cue","Video",
-      "CourseCollaborator","Course","DesignerApplication","User"
+      "CourseCollaborator","Course","DesignerApplication",
+      "UserAchievement","Session","User"
       RESTART IDENTITY CASCADE`,
   );
 }

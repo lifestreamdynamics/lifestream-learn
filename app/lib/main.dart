@@ -13,6 +13,7 @@ import 'core/analytics/analytics_sinks.dart';
 import 'core/auth/auth_bloc.dart';
 import 'core/auth/auth_event.dart';
 import 'core/auth/auth_state.dart';
+import 'core/auth/biometric_gate.dart';
 import 'core/auth/token_store.dart';
 import 'core/crash/crash_consent_bloc.dart';
 import 'core/crash/crash_reporter.dart';
@@ -20,6 +21,9 @@ import 'core/crash/secure_storage_backend.dart';
 import 'core/http/auth_interceptor.dart';
 import 'core/http/dio_client.dart';
 import 'core/routing/app_router.dart';
+import 'core/settings/settings_cubit.dart';
+import 'core/settings/settings_state.dart';
+import 'core/settings/settings_store.dart';
 import 'core/theme/app_theme.dart';
 import 'core/utils/date_formatters.dart';
 import 'data/repositories/admin_analytics_repository.dart';
@@ -32,6 +36,8 @@ import 'data/repositories/designer_application_repository.dart';
 import 'data/repositories/enrollment_repository.dart';
 import 'data/repositories/events_repository.dart';
 import 'data/repositories/feed_repository.dart';
+import 'data/repositories/me_repository.dart';
+import 'data/repositories/progress_repository.dart';
 import 'data/repositories/video_repository.dart';
 
 void main() {
@@ -78,9 +84,24 @@ void main() {
     final adminDesignerAppRepo = AdminDesignerApplicationRepository(dio);
     final adminAnalyticsRepo = AdminAnalyticsRepository(dio);
     final eventsRepo = EventsRepository(dio);
+    final meRepo = MeRepository(dio);
+    final progressRepo = ProgressRepository(dio);
 
-    authBloc = AuthBloc(authRepo: authRepo, tokenStore: tokenStore)
-      ..add(const AuthStarted());
+    authBloc = AuthBloc(authRepo: authRepo, tokenStore: tokenStore);
+
+    // Slice P7a — biometric unlock gate. Runs BEFORE `AuthStarted` so
+    // a failed biometric check (user cancelled, too many attempts)
+    // clears the TokenStore first and the rehydrate sees no tokens,
+    // landing the user on /login. A no-op when the feature is off or
+    // no tokens are stored.
+    final settingsStoreForGate = SettingsStore(storage);
+    unawaited(() async {
+      await BiometricGate(
+        settingsStore: settingsStoreForGate,
+        tokenStore: tokenStore,
+      ).run();
+      authBloc.add(const AuthStarted());
+    }());
 
     // Analytics buffer is a per-process singleton. We hydrate from disk
     // before installing the periodic flush so the first tick drains any
@@ -117,6 +138,19 @@ void main() {
       storage: SecureStorageBackend(storage),
     )..add(const CrashConsentLoadRequested());
 
+    // Slice P4 — application preferences. The cubit hydrates from
+    // secure storage on `load()` and then drives themeMode, text
+    // scale, reduce-motion, etc. through a widget-tree provider.
+    // Analytics + crash consent are mirrored into their respective
+    // owners (buffer, CrashConsentBloc) so we don't fork their state.
+    final settingsStore = SettingsStore(storage);
+    final settingsCubit = SettingsCubit(
+      store: settingsStore,
+      analyticsBuffer: analyticsBuffer,
+      crashConsentBloc: crashConsentBloc,
+    );
+    unawaited(settingsCubit.load());
+
     // Fire-and-forget hydrate + periodic install. Failures are logged
     // inside the buffer; they never block app startup.
     unawaited(_bootstrapAnalytics(analyticsBuffer));
@@ -132,11 +166,14 @@ void main() {
       designerAppRepo: designerAppRepo,
       adminDesignerAppRepo: adminDesignerAppRepo,
       adminAnalyticsRepo: adminAnalyticsRepo,
+      meRepo: meRepo,
+      progressRepo: progressRepo,
       analyticsBuffer: analyticsBuffer,
       cueAnalyticsSink: cueAnalyticsSink,
       videoAnalyticsSink: videoAnalyticsSink,
       crashReporter: crashReporter,
       crashConsentBloc: crashConsentBloc,
+      settingsCubit: settingsCubit,
     ));
   }, (error, stack) {
     // Zone-level uncaught errors — route through the doctor so async
@@ -188,11 +225,14 @@ class App extends StatefulWidget {
     required this.designerAppRepo,
     required this.adminDesignerAppRepo,
     required this.adminAnalyticsRepo,
+    required this.meRepo,
+    required this.progressRepo,
     required this.analyticsBuffer,
     required this.cueAnalyticsSink,
     required this.videoAnalyticsSink,
     required this.crashReporter,
     required this.crashConsentBloc,
+    required this.settingsCubit,
     super.key,
   });
 
@@ -206,11 +246,14 @@ class App extends StatefulWidget {
   final DesignerApplicationRepository designerAppRepo;
   final AdminDesignerApplicationRepository adminDesignerAppRepo;
   final AdminAnalyticsRepository adminAnalyticsRepo;
+  final MeRepository meRepo;
+  final ProgressRepository progressRepo;
   final AnalyticsBuffer analyticsBuffer;
   final CueAnalyticsSink cueAnalyticsSink;
   final VideoAnalyticsSink videoAnalyticsSink;
   final CrashReporter crashReporter;
   final CrashConsentBloc crashConsentBloc;
+  final SettingsCubit settingsCubit;
 
   @override
   State<App> createState() => _AppState();
@@ -228,6 +271,8 @@ class _AppState extends State<App> with WidgetsBindingObserver {
     designerAppRepo: widget.designerAppRepo,
     adminDesignerAppRepo: widget.adminDesignerAppRepo,
     adminAnalyticsRepo: widget.adminAnalyticsRepo,
+    meRepo: widget.meRepo,
+    progressRepo: widget.progressRepo,
     cueAnalyticsSink: widget.cueAnalyticsSink,
     videoAnalyticsSink: widget.videoAnalyticsSink,
     crashConsentBloc: widget.crashConsentBloc,
@@ -283,13 +328,44 @@ class _AppState extends State<App> with WidgetsBindingObserver {
       providers: [
         BlocProvider<AuthBloc>.value(value: widget.authBloc),
         BlocProvider<CrashConsentBloc>.value(value: widget.crashConsentBloc),
+        // Slice P4 — SettingsCubit lives above the MaterialApp so any
+        // descendant can `context.watch<SettingsCubit>()` for
+        // themeMode, text scale, reduce-motion, etc.
+        BlocProvider<SettingsCubit>.value(value: widget.settingsCubit),
       ],
-      child: MaterialApp.router(
-        title: 'Lifestream Learn',
-        theme: AppTheme.light,
-        darkTheme: AppTheme.dark,
-        themeMode: ThemeMode.system,
-        routerConfig: router,
+      child: BlocBuilder<SettingsCubit, SettingsState>(
+        builder: (context, settings) {
+          return MaterialApp.router(
+            title: 'Lifestream Learn',
+            theme: AppTheme.light,
+            darkTheme: AppTheme.dark,
+            themeMode: settings.themeMode,
+            routerConfig: router,
+            builder: (context, child) {
+              // Honour the user's text-scale preference app-wide. We
+              // stack on top of whatever scaler the router/MaterialApp
+              // already chose so this plays nicely with a future
+              // in-app zoom control if we ever add one.
+              //
+              // Reduce-motion: set `disableAnimations` on the ambient
+              // MediaQuery so widgets that check it (most Material
+              // implicit animations do) shorten or skip their
+              // transitions. This is in addition to any future
+              // per-widget opt-ins that read `settings.reduceMotion`
+              // directly — the MediaQuery flag is the OS-parity path.
+              final existing = MediaQuery.of(context);
+              return MediaQuery(
+                data: existing.copyWith(
+                  textScaler:
+                      TextScaler.linear(settings.textScaleMultiplier),
+                  disableAnimations:
+                      settings.reduceMotion || existing.disableAnimations,
+                ),
+                child: child ?? const SizedBox.shrink(),
+              );
+            },
+          );
+        },
       ),
     );
   }

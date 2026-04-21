@@ -77,6 +77,10 @@ void main() {
     FlutterSecureStoragePlatform.instance = platform;
     tokenStore = TokenStore(const FlutterSecureStorage());
     repo = _MockAuthRepository();
+    // Slice P6 — LoggedOut now calls `authRepo.logout(...)` before
+    // clearing tokens. Stub it by default so every test doesn't have
+    // to remember; tests that want to assert the call can use `verify`.
+    when(() => repo.logout(any())).thenAnswer((_) async {});
   });
 
   group('AuthStarted', () {
@@ -133,8 +137,9 @@ void main() {
       when(() => repo.login(
             email: any(named: 'email'),
             password: any(named: 'password'),
-          )).thenAnswer((_) async =>
-          const AuthSession(tokens: _tokens, user: _testUser));
+          )).thenAnswer((_) async => const LoginSuccess(
+                AuthSession(tokens: _tokens, user: _testUser),
+              ));
 
       final bloc = AuthBloc(authRepo: repo, tokenStore: tokenStore);
       final expectation = expectLater(
@@ -246,6 +251,38 @@ void main() {
       await bloc.close();
     });
 
+    test('Slice P6: calls authRepo.logout(refreshToken) before clearing tokens',
+        () async {
+      await tokenStore.save(_tokens);
+      final bloc = AuthBloc(authRepo: repo, tokenStore: tokenStore);
+      final done = expectLater(
+        bloc.stream,
+        emitsInOrder(<dynamic>[const Unauthenticated()]),
+      );
+      bloc.add(const LoggedOut());
+      await done;
+
+      verify(() => repo.logout('r')).called(1);
+      expect(await tokenStore.read(), isNull);
+      await bloc.close();
+    });
+
+    test('Slice P6: logout is skipped when TokenStore is already empty',
+        () async {
+      // User taps logout but tokens were already cleared (e.g. the
+      // interceptor forced a logout). The bloc should not attempt the
+      // HTTP call with a bogus refresh token.
+      final bloc = AuthBloc(authRepo: repo, tokenStore: tokenStore);
+      final done = expectLater(
+        bloc.stream,
+        emitsInOrder(<dynamic>[const Unauthenticated()]),
+      );
+      bloc.add(const LoggedOut());
+      await done;
+      verifyNever(() => repo.logout(any()));
+      await bloc.close();
+    });
+
     test('emitLoggedOut() from AuthStateSink dispatches LoggedOut event',
         () async {
       await tokenStore.save(_tokens);
@@ -258,6 +295,55 @@ void main() {
       bloc.emitLoggedOut();
       await expectation;
       expect(await tokenStore.read(), isNull);
+      await bloc.close();
+    });
+  });
+
+  group('UserUpdated', () {
+    // Slice P1: the profile screen's Edit Profile sheet dispatches
+    // `UserUpdated(freshUser)` after a successful PATCH /api/me so the
+    // cached state reflects the rename. The handler must only act when
+    // the current state is `Authenticated` — a late response arriving
+    // after logout should not resurrect the session.
+
+    test('replaces user when currently Authenticated', () async {
+      await tokenStore.save(_tokens);
+      when(() => repo.me()).thenAnswer((_) async => _testUser);
+
+      final bloc = AuthBloc(authRepo: repo, tokenStore: tokenStore);
+      final renamed = _testUser.copyWith(displayName: 'Renamed');
+
+      final expectation = expectLater(
+        bloc.stream,
+        emitsInOrder(<dynamic>[
+          const Authenticated(_testUser),
+          Authenticated(renamed),
+        ]),
+      );
+      bloc.add(const AuthStarted());
+      // Allow AuthStarted to land before UserUpdated so the Bloc event
+      // queue processes them in order.
+      await Future<void>.delayed(Duration.zero);
+      bloc.add(UserUpdated(renamed));
+      await expectation;
+      await bloc.close();
+    });
+
+    test('ignored when state is Unauthenticated', () async {
+      final bloc = AuthBloc(authRepo: repo, tokenStore: tokenStore);
+      // AuthStarted with no stored tokens -> Unauthenticated.
+      final authStartedDone = expectLater(
+        bloc.stream,
+        emitsInOrder(<dynamic>[const Unauthenticated()]),
+      );
+      bloc.add(const AuthStarted());
+      await authStartedDone;
+
+      // Dispatching UserUpdated should not emit a new state — the
+      // state stays Unauthenticated.
+      bloc.add(UserUpdated(_testUser));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(bloc.state, const Unauthenticated());
       await bloc.close();
     });
   });

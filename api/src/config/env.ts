@@ -23,6 +23,13 @@ const EnvSchema = z.object({
   JWT_ACCESS_TTL: z.string().default('15m'),
   JWT_REFRESH_TTL: z.string().default('30d'),
 
+  // Slice P6 — salt for hashing remote IPs before persisting them on
+  // `Session.ipHash`. We never store raw IPs; the stored value is
+  // `sha256(ip + ":" + IP_HASH_SALT)` truncated to 32 hex chars. A
+  // missing salt fails the env schema up-front so a misconfigured
+  // deploy can't silently fall back to a predictable default.
+  IP_HASH_SALT: z.string().min(32),
+
   S3_ENDPOINT: z
     .string()
     .url()
@@ -144,6 +151,67 @@ const EnvSchema = z.object({
   RATE_LIMIT_LOGIN_WINDOW_MS: z.coerce.number().int().positive().default(5 * 60 * 1000),
   RATE_LIMIT_REFRESH_MAX: z.coerce.number().int().positive().default(30),
   RATE_LIMIT_REFRESH_WINDOW_MS: z.coerce.number().int().positive().default(5 * 60 * 1000),
+
+  // ---------- MFA (Slice P7a) ----------
+  // 32-byte (256-bit) AES-256-GCM key, base64-encoded. `openssl rand
+  // -base64 32` produces a 44-character token — the minimum length
+  // below is 44 so a decoded value shorter than 32 bytes is rejected
+  // at startup. Encryption guards `MfaCredential.totpSecretEncrypted`
+  // so a dump of the DB alone does not hand an attacker working
+  // authenticator-app seeds.
+  MFA_ENCRYPTION_KEY: z
+    .string()
+    .min(44, 'MFA_ENCRYPTION_KEY must be 32 bytes base64-encoded (min 44 chars)')
+    .refine(
+      (s) => {
+        try {
+          return Buffer.from(s, 'base64').byteLength === 32;
+        } catch {
+          return false;
+        }
+      },
+      { message: 'MFA_ENCRYPTION_KEY must decode to exactly 32 bytes' },
+    ),
+  // Shown to authenticator apps as the issuer label alongside the user's
+  // email. Keep it human-readable; the otpauth URI escaping in `otplib`
+  // handles spaces and punctuation.
+  MFA_TOTP_ISSUER: z.string().min(1).default('Lifestream Learn'),
+
+  // ---------- MFA WebAuthn (Slice P7b) ----------
+  // The "Relying Party ID" is a domain-only identifier that the
+  // authenticator binds credentials to. MUST be the effective domain
+  // the user's browser / app talks to — scheme, port, and path are
+  // stripped by the WebAuthn spec. For local Android-emulator dev
+  // we use `"localhost"` (the app's API_BASE_URL is
+  // `http://10.0.2.2:<nginx-port>` but the WebAuthn RP-ID is still
+  // `"localhost"` from the Credential Manager's point of view since
+  // the emulator relays back to the host loopback). Prod: the real
+  // origin's domain (e.g. `"learn.example.com"`).
+  WEBAUTHN_RP_ID: z.string().min(1).default('localhost'),
+  // Human-readable label shown in the browser / system passkey UI.
+  WEBAUTHN_RP_NAME: z.string().min(1).default('Lifestream Learn'),
+  // Comma-separated list of full origin strings the server will
+  // accept as a `clientDataJSON.origin`. Every entry MUST match
+  // byte-for-byte what the authenticator reports; the WebAuthn spec
+  // forbids wildcarding.
+  //
+  // Android apps don't use a conventional HTTP(S) origin — they
+  // use the platform-defined
+  //   `android:apk-key-hash:<BASE64URL(SHA-256(apk-signing-cert))>`
+  // format. To derive it for the dev debug keystore:
+  //   keytool -list -v -keystore ~/.android/debug.keystore \
+  //     -alias androiddebugkey -storepass android | grep SHA-256
+  // then base64url-encode the raw bytes (replace `:` → `,` → decode
+  // hex → base64url). See https://developer.android.com/training/sign-in/passkeys.
+  //
+  // Dev default: `"http://localhost:3011"` alone. Operators wiring up
+  // the Android Credential Manager flow append their apk-key-hash
+  // origin to this list once they've derived it.
+  WEBAUTHN_ORIGIN: z
+    .string()
+    .default('http://localhost:3011')
+    .transform((s) => s.split(',').map((x) => x.trim()).filter(Boolean))
+    .pipe(z.array(z.string().min(1)).min(1, 'WEBAUTHN_ORIGIN needs at least one entry')),
 
   // tusd-hook limiter. A leaked or brute-forced shared secret should not
   // translate into unbounded BullMQ enqueues — the limit caps per-IP hook
