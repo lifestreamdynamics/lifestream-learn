@@ -4,9 +4,9 @@ Flutter Android app for Lifestream Learn — learner feed and course-designer au
 
 ## Status
 
-Slice D in-review: vertical feed + video player (no cues; Slice E wires those in). Learners can browse published courses, enroll, and scroll a TikTok-style PageView of videos from their enrolled courses. The player handles tap/double-tap/long-press gestures, signs playback URLs via a short-lived HMAC, and caches controllers in a 3-slot LRU so swipes don't stutter.
+Slices C–F are code-complete and compiled-and-analyzed-only per project CLAUDE.md: Flutter scaffold + auth (C), vertical feed + player (D), cue engine + designer authoring (E), and admin + analytics + polish (F). Operator device verification is pending; see the per-slice manual-test checklists below.
 
-Per project CLAUDE.md, this slice is `compiled-and-analyzed-only (device test needed)` until the operator drives on-device verification.
+Per project CLAUDE.md, these slices are `compiled-and-analyzed-only (device test needed)` until the operator drives on-device verification.
 
 ## Stack
 
@@ -59,7 +59,7 @@ make app-deps    # one-time: pub get + build_runner codegen
 make app         # launches AVD if needed, then flutter run --flavor dev
 ```
 
-`make app` points the app at `http://10.0.2.2:80` (nginx-fronted, see `infra/nginx/local.conf`). Three dev users are pre-seeded — see the root [`README.md`](../README.md#local-development-quickstart) for credentials.
+`make app` points the app at `http://10.0.2.2:$NGINX_HOST_PORT` (nginx-fronted, see `infra/nginx/local.conf`) — that's `:8090` in the checked-in `infra/.env`. Three dev users are pre-seeded — see the root [`README.md`](../README.md#local-development-quickstart) for credentials.
 
 ### Manual run (for finer control)
 
@@ -67,9 +67,9 @@ make app         # launches AVD if needed, then flutter run --flavor dev
 cd app
 /home/eric/flutter/bin/flutter pub get
 /home/eric/flutter/bin/dart run build_runner build --delete-conflicting-outputs
-/home/eric/flutter/bin/flutter run --flavor dev --dart-define=API_BASE_URL=http://10.0.2.2:80
+/home/eric/flutter/bin/flutter run --flavor dev --dart-define=API_BASE_URL=http://10.0.2.2:8090
 # or on a physical device (adb over USB / Wi-Fi):
-# /home/eric/flutter/bin/flutter run --flavor dev --dart-define=API_BASE_URL=http://<dev-machine-ip>:80
+# /home/eric/flutter/bin/flutter run --flavor dev --dart-define=API_BASE_URL=http://<dev-machine-ip>:8090
 ```
 
 `10.0.2.2` is the Android emulator's alias for the host machine. On a physical device, point `API_BASE_URL` at the host's LAN IP. The `dev` flavor allows cleartext HTTP (required because local nginx is plain HTTP); the `prod` flavor blocks it.
@@ -102,6 +102,8 @@ Pass the API base URL via `--dart-define=API_BASE_URL=...`:
 
 - Emulator: `--dart-define=API_BASE_URL=http://10.0.2.2:8090`
 - Physical device: `--dart-define=API_BASE_URL=http://<dev-machine-ip>:8090`
+
+> `8090` is the locally-checked-in `NGINX_HOST_PORT` (see `infra/.env` — shifted off `:80` to avoid colliding with accounting-nginx). The Makefile reads that value and passes it through to `make app`; if you change `NGINX_HOST_PORT`, substitute the same value here.
 
 ### Dep pins
 
