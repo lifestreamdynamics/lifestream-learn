@@ -530,3 +530,20 @@ Carry-overs that don't block Phase 2 but need to land before a deploy track open
 - Node.js 22 LTS: https://nodesource.com/blog/Node.js-v22-Long-Term-Support-LTS
 - Prisma system requirements: https://www.prisma.io/docs/orm/reference/system-requirements
 - BullMQ (Bull EOL 2026): https://docs.bullmq.io · https://pocketlantern.dev/briefs/bull-vs-bullmq-node-job-queue-performance-2026
+
+---
+
+## 11. Code Problem Register (CPR)
+
+Tracked issues that warrant future attention. Reported, not fixed, by the /actualizar-todo grooming pass on 2026-04-20. Status values: OPEN, IN_PROGRESS, RESOLVED, WONTFIX, DEFERRED.
+
+| ID | Category | Severity | Description | First seen | Status |
+|----|----------|----------|-------------|------------|--------|
+| CPR-001 | CI_CONFIG | CRITICAL | `.github/workflows/app-ci.yml` pinned `flutter-version: '3.35.x'` (lines 32 and 73) while `app/.fvmrc` pins `3.41.5`. Fixed in the grooming pass on 2026-04-20 — both lines now pin `3.41.5`. | 2026-04-20 | RESOLVED (2026-04-20) |
+| CPR-002 | TEST_GAP | MINOR | Compose-dependent integration tests (`transcode-e2e`, `transcode-resilience`, `secure-link`, `health`) are excluded from `api-ci.yml` and only run locally. Accepted trade-off until the project moves to a CI runner that can host docker-compose; documented in CLAUDE.md §Phase awareness. | 2026-04-20 | DEFERRED |
+| CPR-003 | DOC_GAP | MINOR | Video input-hardening work in flight (WIP commit `3e2a615` + follow-ups: `api/src/services/ffmpeg/input-policy.ts`, `poster.ts`, VP9 rejection, rotated-portrait handling, poster-key + failure-reason schema migration) is not yet reflected in the Phase 3 exit criteria below. Update Phase 3 once WIP lands. | 2026-04-20 | OPEN |
+| CPR-004 | FEATURE_DEFERRED | COSMETIC | Bull Board dashboard deferred as Phase 3 polish per CLAUDE.md §Phase awareness; non-blocking for Phase 3 completion. | 2026-04-20 | DEFERRED |
+| CPR-005 | CONFIG_DRIFT | MAJOR | `NGINX_HOST_PORT` drift: `infra/.env.example` has `NGINX_HOST_PORT=80` (commented default) but the checked-in `infra/.env` sets `8090` to avoid colliding with `accounting-nginx`. Meanwhile `scripts/bootstrap-dev.sh:93` hard-codes `HLS_BASE_URL=http://10.0.2.2:80/hls` into `api/.env.local`, and `app/README.md` historically mixed `:80` and `:8090` in different code blocks. `app/README.md` normalised to `:8090` + parameterization note in the 2026-04-20 grooming pass, but `bootstrap-dev.sh` still writes a `:80` HLS_BASE_URL that won't match the running nginx on `:8090`. Fix: have `bootstrap-dev.sh` read `NGINX_HOST_PORT` from `infra/.env` after it writes it, and interpolate into `HLS_BASE_URL`. | 2026-04-20 | OPEN |
+| CPR-006 | OPEN_SOURCE_HYGIENE | MAJOR | `app/README.md` "Manual run" and "Test + analyze + build" blocks reference the private absolute path `/home/eric/flutter/bin/flutter` (and `dart`). This violates the project's open-source hygiene rule in CLAUDE.md ("Never commit internal paths (e.g. `/home/eric/...`)") and will leak once the monorepo splits. Replace with `fvm flutter` (roadmap calls for fvm) or a plain `flutter` assuming the operator has the pinned SDK on `PATH`. Left unchanged in the grooming pass — this needs a small call from the owner about which invocation style to standardise. | 2026-04-20 | OPEN |
+
+Update this table on each grooming pass. Mark entries RESOLVED (with date) rather than removing them, so the history stays visible.
