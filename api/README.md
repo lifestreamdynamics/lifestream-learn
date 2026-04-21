@@ -14,6 +14,9 @@ Deployment is deliberately out of scope right now — focus is a fully functiona
 - BullMQ 5 (video transcoding queue)
 - Zod (input validation)
 - JWT (access + refresh) with roles: `ADMIN`, `COURSE_DESIGNER`, `LEARNER`
+- **FFmpeg ≥ 6.0** (6.1+ tested) on PATH for the transcode worker. The worker
+  logs the detected `ffprobe` version at startup and warns if below 6.x. Install
+  via `apt install ffmpeg` on Debian/Ubuntu or the official static build.
 
 ## Layout
 

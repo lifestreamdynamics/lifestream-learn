@@ -18,9 +18,14 @@ class AnalyticsEvent with _$AnalyticsEvent {
   const factory AnalyticsEvent({
     required String eventType,
     required String occurredAt,
-    String? videoId,
-    String? cueId,
-    Map<String, dynamic>? payload,
+    // Null-valued optional fields must be OMITTED from the JSON, not
+    // serialized as `null`. The backend's Zod schema is `.strict()` and
+    // its `.uuid().optional()` rejects an explicit `null` — `.optional()`
+    // admits "key missing" / `undefined`, not `null`. Without this flag,
+    // every session_start / session_end event 400s.
+    @JsonKey(includeIfNull: false) String? videoId,
+    @JsonKey(includeIfNull: false) String? cueId,
+    @JsonKey(includeIfNull: false) Map<String, dynamic>? payload,
   }) = _AnalyticsEvent;
 
   factory AnalyticsEvent.fromJson(Map<String, dynamic> json) =>

@@ -3,17 +3,26 @@
 # sign-hls-url.sh — produce a secure_link-compatible signed URL for HLS
 # =============================================================================
 # Usage:
-#   SECURE_LINK_SECRET=<secret> ./sign-hls-url.sh <uri-path> [ttl-seconds]
+#   SECURE_LINK_SECRET=<secret> ./sign-hls-url.sh <videoId> [ttl-seconds]
 #
 # Example:
 #   SECURE_LINK_SECRET=local_dev_secret_do_not_use_in_prod \
-#     ./sign-hls-url.sh /hls/abc/master.m3u8 7200
+#     ./sign-hls-url.sh abc 7200
 #
 # Writes one line to stdout:
-#   /hls/abc/master.m3u8?md5=<base64url>&expires=<unix_ts>
+#   /hls/<sig>/<expires>/<videoId>/master.m3u8
 #
-# The scheme must match nginx/secure_link.conf.inc exactly:
-#   hash = base64url( md5( "{expires}{uri} {secret}" ) )
+# The URL shape embeds the signature and expiry into the PATH (not the
+# query string). HLS players do NOT propagate the parent URL's query
+# string to relative child requests (RFC 3986 §5.3), so a query-string
+# token cannot authorize variant playlists or segments. Putting the token
+# in the path lets every relative URL inside the playlist carry it
+# structurally. Nginx strips the `<sig>/<expires>/` prefix via an
+# internal rewrite before `secure_link` runs — see
+# `infra/nginx/local.conf`.
+#
+# Signing scheme:
+#   sig = base64url( md5( "<expires>/hls/<videoId>/ <secret>" ) )
 # where base64url means base64 with '+' -> '-', '/' -> '_', '=' stripped.
 #
 # Exit codes:
@@ -25,9 +34,9 @@ set -euo pipefail
 
 usage() {
   cat >&2 <<EOF
-Usage: SECURE_LINK_SECRET=<secret> $0 <uri-path> [ttl-seconds]
+Usage: SECURE_LINK_SECRET=<secret> $0 <videoId> [ttl-seconds]
 
-  <uri-path>      The path to sign, must start with /hls/ (e.g. /hls/abc/master.m3u8)
+  <videoId>       The video id to sign a playback URL for (no slashes).
   [ttl-seconds]   How long the URL stays valid. Default 7200 (2h).
 
 Environment:
@@ -41,7 +50,7 @@ if [[ $# -lt 1 || $# -gt 2 ]]; then
   usage
 fi
 
-uri="$1"
+video_id="$1"
 ttl="${2:-7200}"
 
 if [[ -z "${SECURE_LINK_SECRET:-}" ]]; then
@@ -49,8 +58,8 @@ if [[ -z "${SECURE_LINK_SECRET:-}" ]]; then
   exit 1
 fi
 
-if [[ "$uri" != /* ]]; then
-  echo "ERROR: <uri-path> must be absolute (start with /)." >&2
+if [[ -z "$video_id" || "$video_id" == */* ]]; then
+  echo "ERROR: <videoId> must be non-empty and contain no slashes." >&2
   exit 1
 fi
 
@@ -63,15 +72,18 @@ fi
 now="${NOW_OVERRIDE:-$(date +%s)}"
 expires=$(( now + ttl ))
 
-# Input to md5: concatenation of expires, uri, space, secret — exactly what
-# nginx computes from `secure_link_md5 "$secure_link_expires$uri $secret"`.
-input="${expires}${uri} ${SECURE_LINK_SECRET}"
+# Signed expression is the logical prefix `/hls/<videoId>/` — with trailing
+# slash — so one signature authorizes every URL under it (master, variant
+# playlists, init segments, media segments). Nginx reconstructs this same
+# expression from the captured path segments and recomputes the hash.
+signed_prefix="/hls/${video_id}/"
+input="${expires}${signed_prefix} ${SECURE_LINK_SECRET}"
 
 # md5 -> 16 raw bytes -> base64 -> base64url (strip =, swap +/ for -/_).
-hash=$(printf '%s' "$input" \
+sig=$(printf '%s' "$input" \
   | openssl dgst -md5 -binary \
   | openssl base64 -A \
   | tr '+/' '-_' \
   | tr -d '=')
 
-printf '%s?md5=%s&expires=%s\n' "$uri" "$hash" "$expires"
+printf '/hls/%s/%s/%s/master.m3u8\n' "$sig" "$expires" "$video_id"

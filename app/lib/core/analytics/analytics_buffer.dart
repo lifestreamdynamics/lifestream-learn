@@ -60,6 +60,14 @@ const int _maxBatchSize = 100;
 /// touching the real `path_provider` plugin.
 typedef DocsDirResolver = Future<Directory> Function();
 
+/// Predicate consulted before each flush. Returns `true` when the buffer
+/// is allowed to POST — typically "is the user authenticated". When
+/// `false`, the flush short-circuits WITHOUT consuming or dropping any
+/// queued events; they stay on disk until the next tick finds the gate
+/// open. The default predicate (`() => true`) is a no-op gate used by
+/// tests and by callers that don't need auth-gating.
+typedef FlushGate = bool Function();
+
 /// Offline-survivable analytics buffer.
 ///
 /// The buffer's central invariant: **every event the app asks to log is
@@ -86,14 +94,19 @@ class AnalyticsBuffer {
     required EventsRepository repo,
     DocsDirResolver? docsDirResolver,
     String fileName = 'analytics_buffer.json',
+    FlushGate? canFlush,
   })  : _repo = repo,
         _docsDirResolver =
             docsDirResolver ?? getApplicationDocumentsDirectory,
-        _fileName = fileName;
+        _fileName = fileName,
+        _canFlush = canFlush ?? _alwaysOpen;
+
+  static bool _alwaysOpen() => true;
 
   final EventsRepository _repo;
   final DocsDirResolver _docsDirResolver;
   final String _fileName;
+  final FlushGate _canFlush;
 
   final List<AnalyticsEvent> _queue = <AnalyticsEvent>[];
   Timer? _periodic;
@@ -196,6 +209,19 @@ class AnalyticsBuffer {
     if (_disposed) return;
     if (_flushing) return;
     if (_queue.isEmpty) return;
+    if (!_canFlush()) {
+      // Gate closed (typically: user not authenticated). Leave the queue
+      // intact on disk — no retry scheduled, no events dropped — and
+      // return. When the gate opens, the next tick (or an explicit
+      // flush()) will drain.
+      if (kDebugMode) {
+        debugPrint(
+          'AnalyticsBuffer.flush skipped — flush gate closed '
+          '(queueLen=${_queue.length})',
+        );
+      }
+      return;
+    }
     final now = DateTime.now();
     if (_retryAfter != null && now.isBefore(_retryAfter!)) {
       if (kDebugMode) {

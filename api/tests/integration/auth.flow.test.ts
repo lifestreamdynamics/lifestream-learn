@@ -1,12 +1,14 @@
 import request from 'supertest';
 import { getTestApp } from '@tests/integration/helpers/test-app';
-import { resetDb, resetRateLimits } from '@tests/integration/helpers/reset-db';
+import { resetDb, resetRedisKeys } from '@tests/integration/helpers/reset-db';
 import { closeConnections } from '@tests/integration/helpers/teardown';
 
 describe('Auth flow (integration)', () => {
   beforeEach(async () => {
     await resetDb();
-    await resetRateLimits();
+    // Also clear the refresh-revocation set so each test starts with a
+    // clean rotation state.
+    await resetRedisKeys(['rl:*', 'refresh-revoked:*']);
   });
 
   afterAll(async () => {
@@ -98,6 +100,34 @@ describe('Auth flow (integration)', () => {
     expect(refresh.status).toBe(200);
     expect(refresh.body.accessToken).toEqual(expect.any(String));
     expect(refresh.body.refreshToken).toEqual(expect.any(String));
+  });
+
+  it('rejects a refresh token presented twice (rotation)', async () => {
+    const app = await getTestApp();
+    const signup = await request(app).post('/api/auth/signup').send({
+      email: 'rotate@example.local',
+      password: 'CorrectHorseBattery1',
+      displayName: 'Rotate',
+    });
+    const originalRefresh = signup.body.refreshToken;
+
+    const first = await request(app)
+      .post('/api/auth/refresh')
+      .send({ refreshToken: originalRefresh });
+    expect(first.status).toBe(200);
+
+    // Replaying the original refresh token must fail now that it's
+    // revoked — protects against a stolen token still being usable.
+    const second = await request(app)
+      .post('/api/auth/refresh')
+      .send({ refreshToken: originalRefresh });
+    expect(second.status).toBe(401);
+
+    // The rotated-to refresh token is still valid.
+    const third = await request(app)
+      .post('/api/auth/refresh')
+      .send({ refreshToken: first.body.refreshToken });
+    expect(third.status).toBe(200);
   });
 
   it('rejects malformed signup payload with 400', async () => {

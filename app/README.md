@@ -51,16 +51,28 @@ app/
 
 ## Run
 
+The simplest path is the top-level `Makefile`, which handles emulator launch + dart-defines for you:
+
+```bash
+# from the repo root, with `make up` already done in another shell:
+make app-deps    # one-time: pub get + build_runner codegen
+make app         # launches AVD if needed, then flutter run --flavor dev
+```
+
+`make app` points the app at `http://10.0.2.2:80` (nginx-fronted, see `infra/nginx/local.conf`). Three dev users are pre-seeded — see the root [`README.md`](../README.md#local-development-quickstart) for credentials.
+
+### Manual run (for finer control)
+
 ```bash
 cd app
 /home/eric/flutter/bin/flutter pub get
 /home/eric/flutter/bin/dart run build_runner build --delete-conflicting-outputs
-/home/eric/flutter/bin/flutter run --dart-define=API_BASE_URL=http://10.0.2.2:8090
+/home/eric/flutter/bin/flutter run --flavor dev --dart-define=API_BASE_URL=http://10.0.2.2:80
 # or on a physical device (adb over USB / Wi-Fi):
-# /home/eric/flutter/bin/flutter run --dart-define=API_BASE_URL=http://<dev-machine-ip>:8090
+# /home/eric/flutter/bin/flutter run --flavor dev --dart-define=API_BASE_URL=http://<dev-machine-ip>:80
 ```
 
-`10.0.2.2` is the Android emulator's alias for the host machine. On a physical device, point `API_BASE_URL` at the host's LAN IP.
+`10.0.2.2` is the Android emulator's alias for the host machine. On a physical device, point `API_BASE_URL` at the host's LAN IP. The `dev` flavor allows cleartext HTTP (required because local nginx is plain HTTP); the `prod` flavor blocks it.
 
 ## Test + analyze + build
 

@@ -511,14 +511,38 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 12),
-                ElevatedButton(
-                  onPressed: _retryLoad,
-                  child: const Text('Retry'),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextButton(
+                      key: const Key('player.error.back'),
+                      onPressed: () => _exitOnError(context),
+                      child: const Text('Back',
+                          style: TextStyle(color: Colors.white)),
+                    ),
+                    const SizedBox(width: 12),
+                    ElevatedButton(
+                      onPressed: _retryLoad,
+                      child: const Text('Retry'),
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
         );
+    }
+  }
+
+  /// Leave a failed player. Prefer popping the current route when one
+  /// exists (embedded-in-feed and deep-linked-watch screens both have a
+  /// parent to fall back to); otherwise land on the Courses tab so the
+  /// user isn't stranded on a black screen.
+  void _exitOnError(BuildContext context) {
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    } else {
+      GoRouter.of(context).go('/courses');
     }
   }
 }

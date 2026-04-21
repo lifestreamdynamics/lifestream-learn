@@ -7,21 +7,26 @@ import { getMetrics } from '@/observability/metrics';
  * `secure_link_md5` directive in `infra/nginx/secure_link.conf.inc`.
  *
  * Signing scheme:
- *   hash = base64url(md5_raw(`${expires}${uri} ${secret}`))
+ *   hash = base64url(md5_raw(`${expires}${signedPrefix} ${secret}`))
  *
- * `expires` is a unix timestamp (seconds). `uri` must be an absolute path
- * beginning with `/` (it's what nginx sees as `$uri`). `secret` must match
- * the value nginx is configured with (`$secure_link_secret`).
+ * `signedPrefix` is the URL-path PREFIX the token authorizes — always
+ * `/hls/<videoId>/` (trailing slash included). One signature covers
+ * master playlist + every variant playlist + every segment under that
+ * prefix because the token is embedded in the URL path, not the query
+ * string — HLS players do NOT propagate the parent URL's query string to
+ * child requests (RFC 3986 §5.3; confirmed for FFmpeg libavformat/hls.c
+ * and ExoPlayer). See the comment block at the top of `signPlaybackUrl`
+ * for the URL shape nginx consumes.
+ *
+ * `expires` is a unix timestamp (seconds). `secret` must match the value
+ * nginx is configured with (`$secure_link_secret`). Hosts must be
+ * clock-synced within the TTL margin (~60s).
  *
  * base64url here means standard base64 with `+ → -`, `/ → _`, trailing `=`
  * stripped — the exact transform the bash reference applies.
- *
- * TTL assumption: the signed URL expiry is computed from Node's wall clock
- * and validated by nginx with its own wall clock. Hosts must be clock-synced
- * within the TTL margin (~60s).
  */
-export function computeHash(expires: number, uri: string, secret: string): string {
-  const input = `${expires}${uri} ${secret}`;
+export function computeHash(expires: number, signedPrefix: string, secret: string): string {
+  const input = `${expires}${signedPrefix} ${secret}`;
   const raw = createHash('md5').update(input, 'utf8').digest();
   return raw
     .toString('base64')
@@ -31,31 +36,48 @@ export function computeHash(expires: number, uri: string, secret: string): strin
 }
 
 /**
- * Produce a signed playback URL for the given path under `/hls/...`.
+ * Produce a signed master-playlist URL for the given video.
  *
- * @param uriPath  Absolute URI path beginning with `/` (e.g. `/hls/<id>/master.m3u8`).
- *                 This is the value nginx matches against `$uri`, so do NOT include
- *                 the hostname or query string.
- * @param ttlSec   How long the URL stays valid, in seconds. Defaults to the
- *                 operator-configured `HLS_SIGNING_TTL_SECONDS`.
+ * The returned URL embeds the signature and expiry in the PATH
+ * (not the query string) so every relative URL inside the playlist —
+ * variant playlists, init segments, media segments — resolves against a
+ * path that still carries the token. That's the only portable way to get
+ * one signature to authorize the entire HLS tree on standards-compliant
+ * players (fvp, ExoPlayer, hls.js, ffplay, VLC all drop parent query
+ * strings on child requests).
+ *
+ * URL shape:
+ *   {origin}/hls/{sig}/{expires}/{videoId}/master.m3u8
+ *
+ * where `sig` is computed over the prefix `/hls/{videoId}/` so any
+ * request whose path begins with `/hls/{sig}/{expires}/{videoId}/`
+ * validates against the same hash. Nginx strips the `{sig}/{expires}`
+ * prefix via an internal rewrite before `secure_link` runs (see
+ * `infra/nginx/local.conf`).
  */
 export function signPlaybackUrl(
-  uriPath: string,
+  videoId: string,
   ttlSec: number = env.HLS_SIGNING_TTL_SECONDS,
 ): { url: string; expiresAt: Date } {
-  if (!uriPath.startsWith('/')) {
-    throw new Error('uriPath must be absolute and start with /');
+  if (!videoId || videoId.includes('/')) {
+    // Tight guard: we embed the videoId into the URL path without further
+    // escaping, so a `/` in the value would let a caller reshape the URL.
+    // Treat any slash as a programming error rather than sanitising.
+    throw new Error('videoId must be a non-empty slug without slashes');
   }
   const nowSec = Math.floor(Date.now() / 1000);
   const expires = nowSec + ttlSec;
-  const md5 = computeHash(expires, uriPath, env.HLS_SIGNING_SECRET);
+  const signedPrefix = `/hls/${videoId}/`;
+  const sig = computeHash(expires, signedPrefix, env.HLS_SIGNING_SECRET);
   const base = env.HLS_BASE_URL.replace(/\/$/, '');
-  // HLS_BASE_URL may already include `/hls`; strip it if so to avoid a double
-  // prefix, since the signed path starts with `/hls/...`.
+  // `HLS_BASE_URL` may already include a trailing `/hls`; strip it so we
+  // don't emit `/hls/hls/...`. Both shapes (`http://host` and
+  // `http://host/hls`) were accepted by the previous signer and callers
+  // in operator env-files rely on that, so we keep the leniency.
   const origin = base.replace(/\/hls$/, '');
   getMetrics().playbackSignedUrlsTotal.inc();
   return {
-    url: `${origin}${uriPath}?md5=${md5}&expires=${expires}`,
+    url: `${origin}/hls/${sig}/${expires}/${videoId}/master.m3u8`,
     expiresAt: new Date(expires * 1000),
   };
 }

@@ -2,22 +2,38 @@
 # secure_link.conf.inc — HMAC-keyed URL validation for /hls/ playback
 # =============================================================================
 #
-# URL scheme: /hls/{path}?md5={hash}&expires={unix_ts}
-#   where hash = base64url( md5( "{expires} {uri} {secret}" ) )
+# URL scheme (path-embedded token):
+#   /hls/{sig}/{expires}/{videoId}/...
+#
+#   where sig = base64url( md5( "{expires}/hls/{videoId}/ {secret}" ) )
+#   (note the single space between the signed prefix and the secret)
 #   and base64url means standard base64 with:
 #     '+' -> '-'
 #     '/' -> '_'
 #     trailing '=' stripped
 #
-# This exactly matches nginx's built-in secure_link_md5 directive when the
-# expression is "$secure_link_expires$uri $secret" (with a single space between
-# expires+uri and the secret). See:
-#   https://nginx.org/en/docs/http/ngx_http_secure_link_module.html
+# The token lives in the URL PATH, not the query string, so every
+# relative URL inside the playlist (variant playlists, init segments,
+# media segments) structurally carries the token to nginx. HLS players
+# are NOT required by RFC 8216 / RFC 3986 §5.3 to propagate the parent
+# URL's query string to child requests — and none of the ones we target
+# (fvp/libmdk, ExoPlayer, hls.js, ffplay, VLC) do. Path-embedding is the
+# portable workaround.
 #
-# Nginx sets $secure_link to:
-#   empty string  -> signature invalid        -> we return 403
-#   "0"           -> signature valid but expired -> we return 410
-#   "1"           -> signature valid and unexpired -> request proceeds
+# The caller must arrange for the external request to be rewritten into
+# an internal URI whose $uri reflects the path WITHOUT the {sig}/{expires}
+# prefix, and must set $secure_link_expires_override + $signed_prefix +
+# $secure_link_secret as variables before including this file. Typically
+# the caller uses a `map` or `location ~` block that captures the three
+# path components via named groups:
+#
+#     location ~ ^/hls/(?<sig>[A-Za-z0-9_-]+)/(?<expires>[0-9]+)/(?<video_id>[A-Za-z0-9-]+)/.*$ {
+#         set $secure_link_expires_override $expires;
+#         set $signed_prefix "/hls/$video_id/";
+#         set $secure_link_secret "REPLACE_ME_WITH_HIGH_ENTROPY_SECRET";
+#         include /etc/nginx/snippets/secure_link.conf.inc;
+#         # (on validation pass) rewrite + proxy_pass to the backing store
+#     }
 #
 # ---------------------------------------------------------------------------
 # Deviation from the plan (MD5 vs HMAC-SHA256)
@@ -38,22 +54,20 @@
 # HMAC-SHA256 in the same $secure_link style. That swap lives behind this
 # single include file; callers won't need to change.
 # =============================================================================
-#
-# Caller contract: the enclosing `location` (or `server`) block MUST define
-# the $secure_link_secret variable before including this file, e.g.:
-#
-#     location /hls/ {
-#         set $secure_link_secret "REPLACE_ME_WITH_HIGH_ENTROPY_SECRET";
-#         include /etc/nginx/snippets/secure_link.conf.inc;
-#         ...
-#     }
-#
-# =============================================================================
 
-# Validate: $arg_md5 is the base64url(md5(...)) from the client; $arg_expires
-# is the unix timestamp the signature expires at.
-secure_link $arg_md5,$arg_expires;
-secure_link_md5 "$secure_link_expires$uri $secure_link_secret";
+# Validate: $sig is the base64url(md5(...)) from the client (captured from
+# the URL path); $secure_link_expires_override is the unix timestamp the
+# signature expires at (also from the path).
+#
+# Note: we reference `$secure_link_expires_override` (the path-captured
+# variable) in BOTH the `secure_link` expiry argument AND the
+# `secure_link_md5` hash expression. The nginx docs describe a
+# `$secure_link_expires` variable populated from the second argument of
+# `secure_link`, but that's only useful when the expiry is sourced from a
+# query arg and you want to avoid referencing `$arg_expires` twice; in our
+# path-captured case the named regex group is already the value we want.
+secure_link $sig,$secure_link_expires_override;
+secure_link_md5 "$secure_link_expires_override$signed_prefix $secure_link_secret";
 
 # $secure_link is "" (invalid), "0" (expired), or "1" (valid).
 if ($secure_link = "") {

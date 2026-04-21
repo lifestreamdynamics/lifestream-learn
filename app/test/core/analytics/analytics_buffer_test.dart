@@ -369,4 +369,77 @@ void main() {
       await tmp.delete(recursive: true);
     });
   });
+
+  group('AnalyticsBuffer.flush gate (auth-gating)', () {
+    test('gate closed → flush short-circuits without calling repo', () async {
+      final tmp = await _makeTempDir();
+      final repo = _MockEventsRepository();
+      when(() => repo.submitBatch(any())).thenAnswer((_) async {});
+      bool gateOpen = false;
+      final buffer = AnalyticsBuffer(
+        repo: repo,
+        docsDirResolver: () async => tmp,
+        canFlush: () => gateOpen,
+      );
+
+      await buffer.log(_evt('session_start'));
+      await buffer.flush();
+
+      // Event is still queued, nothing was sent, no retry scheduled.
+      verifyNever(() => repo.submitBatch(any()));
+      expect(buffer.queueLength, 1);
+      expect(buffer.retryAfter, isNull);
+      await buffer.dispose();
+      await tmp.delete(recursive: true);
+    });
+
+    test('gate opens later → next flush drains queued events', () async {
+      final tmp = await _makeTempDir();
+      final repo = _MockEventsRepository();
+      when(() => repo.submitBatch(any())).thenAnswer((_) async {});
+      bool gateOpen = false;
+      final buffer = AnalyticsBuffer(
+        repo: repo,
+        docsDirResolver: () async => tmp,
+        canFlush: () => gateOpen,
+      );
+
+      await buffer.log(_evt('session_start'));
+      await buffer.log(_evt('video_view'));
+      await buffer.flush();
+      expect(buffer.queueLength, 2);
+      verifyNever(() => repo.submitBatch(any()));
+
+      gateOpen = true;
+      await buffer.flush();
+
+      verify(() => repo.submitBatch(any(that: hasLength(2)))).called(1);
+      expect(buffer.queueLength, 0);
+      await buffer.dispose();
+      await tmp.delete(recursive: true);
+    });
+
+    test('gate closed does not schedule a retry backoff', () async {
+      // Regression: a closed gate is not a server failure, so it must not
+      // pollute the retry clock. Otherwise, a long pre-login splash would
+      // push the backoff up to 5 minutes before we even tried once.
+      final tmp = await _makeTempDir();
+      final repo = _MockEventsRepository();
+      final buffer = AnalyticsBuffer(
+        repo: repo,
+        docsDirResolver: () async => tmp,
+        canFlush: () => false,
+      );
+
+      await buffer.log(_evt('session_start'));
+      await buffer.flush();
+      await buffer.flush();
+      await buffer.flush();
+
+      expect(buffer.retryAfter, isNull);
+      expect(buffer.currentBackoff, const Duration(seconds: 10));
+      await buffer.dispose();
+      await tmp.delete(recursive: true);
+    });
+  });
 }

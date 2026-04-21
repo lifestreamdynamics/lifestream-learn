@@ -154,25 +154,18 @@ export default function (data) {
         tags: { endpoint: 'hls-master', route: '/hls/:id/master.m3u8' },
       });
       check(res, { 'master 200': (r) => r.status === 200 });
-      // Rewrite the master's relative variant URI into a signed segment
-      // URL. For the baseline we only fetch two variants' first segments
-      // — ABR in a real client would wiggle between renditions; we're
-      // sampling, not faithfully emulating ExoPlayer.
+      // The master URL carries a path-embedded token
+      // (/hls/<sig>/<expires>/<videoId>/master.m3u8). The SAME token
+      // authorizes variants and segments under the same prefix, so a
+      // player resolving `v_0/index.m3u8` against the master's base URL
+      // ends up at /hls/<sig>/<expires>/<videoId>/v_0/index.m3u8 — which
+      // nginx accepts because the sig authorizes the full prefix.
       //
-      // NOTE: the master playlist references `v_0/index.m3u8` relative
-      // to its own path. To fetch a segment we need a SIGNED URL — the
-      // master itself is signed, but the variant index + segments each
-      // need their own signature. In this baseline we skip variant
-      // playlists (which would need fresh signatures per request) and
-      // hit a known-signed-via-same-master path pattern only if the
-      // secure_link scheme permits. In practice: segments under /hls/
-      // are gated by nginx; unsigned requests return 403 and inflate
-      // the error rate. For a pure-API + master baseline, stop here.
-      //
-      // If you want to exercise the segment path, have the API issue a
-      // segment URL (future endpoint) or bypass secure_link for this
-      // run by setting `HLS_SIGNING_SECRET` blank and reconfiguring
-      // nginx — not recommended.
+      // We still stop at the master here for the baseline: ABR in a real
+      // client would fetch multiple variants and interleave segments,
+      // and simulating that faithfully is out of scope. If you want to
+      // extend this, `masterUrl.replace(/master\.m3u8$/, 'v_0/...')`
+      // gives you fetchable variant / segment URLs with no re-signing.
     });
   }
 

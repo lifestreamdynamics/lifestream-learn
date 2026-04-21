@@ -22,9 +22,17 @@ AnalyticsEvent _$AnalyticsEventFromJson(Map<String, dynamic> json) {
 /// @nodoc
 mixin _$AnalyticsEvent {
   String get eventType => throw _privateConstructorUsedError;
-  String get occurredAt => throw _privateConstructorUsedError;
+  String get occurredAt =>
+      throw _privateConstructorUsedError; // Null-valued optional fields must be OMITTED from the JSON, not
+  // serialized as `null`. The backend's Zod schema is `.strict()` and
+  // its `.uuid().optional()` rejects an explicit `null` — `.optional()`
+  // admits "key missing" / `undefined`, not `null`. Without this flag,
+  // every session_start / session_end event 400s.
+  @JsonKey(includeIfNull: false)
   String? get videoId => throw _privateConstructorUsedError;
+  @JsonKey(includeIfNull: false)
   String? get cueId => throw _privateConstructorUsedError;
+  @JsonKey(includeIfNull: false)
   Map<String, dynamic>? get payload => throw _privateConstructorUsedError;
 
   /// Serializes this AnalyticsEvent to a JSON map.
@@ -47,9 +55,9 @@ abstract class $AnalyticsEventCopyWith<$Res> {
   $Res call({
     String eventType,
     String occurredAt,
-    String? videoId,
-    String? cueId,
-    Map<String, dynamic>? payload,
+    @JsonKey(includeIfNull: false) String? videoId,
+    @JsonKey(includeIfNull: false) String? cueId,
+    @JsonKey(includeIfNull: false) Map<String, dynamic>? payload,
   });
 }
 
@@ -114,9 +122,9 @@ abstract class _$$AnalyticsEventImplCopyWith<$Res>
   $Res call({
     String eventType,
     String occurredAt,
-    String? videoId,
-    String? cueId,
-    Map<String, dynamic>? payload,
+    @JsonKey(includeIfNull: false) String? videoId,
+    @JsonKey(includeIfNull: false) String? cueId,
+    @JsonKey(includeIfNull: false) Map<String, dynamic>? payload,
   });
 }
 
@@ -173,9 +181,9 @@ class _$AnalyticsEventImpl implements _AnalyticsEvent {
   const _$AnalyticsEventImpl({
     required this.eventType,
     required this.occurredAt,
-    this.videoId,
-    this.cueId,
-    final Map<String, dynamic>? payload,
+    @JsonKey(includeIfNull: false) this.videoId,
+    @JsonKey(includeIfNull: false) this.cueId,
+    @JsonKey(includeIfNull: false) final Map<String, dynamic>? payload,
   }) : _payload = payload;
 
   factory _$AnalyticsEventImpl.fromJson(Map<String, dynamic> json) =>
@@ -185,12 +193,20 @@ class _$AnalyticsEventImpl implements _AnalyticsEvent {
   final String eventType;
   @override
   final String occurredAt;
+  // Null-valued optional fields must be OMITTED from the JSON, not
+  // serialized as `null`. The backend's Zod schema is `.strict()` and
+  // its `.uuid().optional()` rejects an explicit `null` — `.optional()`
+  // admits "key missing" / `undefined`, not `null`. Without this flag,
+  // every session_start / session_end event 400s.
   @override
+  @JsonKey(includeIfNull: false)
   final String? videoId;
   @override
+  @JsonKey(includeIfNull: false)
   final String? cueId;
   final Map<String, dynamic>? _payload;
   @override
+  @JsonKey(includeIfNull: false)
   Map<String, dynamic>? get payload {
     final value = _payload;
     if (value == null) return null;
@@ -250,9 +266,9 @@ abstract class _AnalyticsEvent implements AnalyticsEvent {
   const factory _AnalyticsEvent({
     required final String eventType,
     required final String occurredAt,
-    final String? videoId,
-    final String? cueId,
-    final Map<String, dynamic>? payload,
+    @JsonKey(includeIfNull: false) final String? videoId,
+    @JsonKey(includeIfNull: false) final String? cueId,
+    @JsonKey(includeIfNull: false) final Map<String, dynamic>? payload,
   }) = _$AnalyticsEventImpl;
 
   factory _AnalyticsEvent.fromJson(Map<String, dynamic> json) =
@@ -261,12 +277,19 @@ abstract class _AnalyticsEvent implements AnalyticsEvent {
   @override
   String get eventType;
   @override
-  String get occurredAt;
+  String get occurredAt; // Null-valued optional fields must be OMITTED from the JSON, not
+  // serialized as `null`. The backend's Zod schema is `.strict()` and
+  // its `.uuid().optional()` rejects an explicit `null` — `.optional()`
+  // admits "key missing" / `undefined`, not `null`. Without this flag,
+  // every session_start / session_end event 400s.
   @override
+  @JsonKey(includeIfNull: false)
   String? get videoId;
   @override
+  @JsonKey(includeIfNull: false)
   String? get cueId;
   @override
+  @JsonKey(includeIfNull: false)
   Map<String, dynamic>? get payload;
 
   /// Create a copy of AnalyticsEvent

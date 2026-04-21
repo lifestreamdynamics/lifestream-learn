@@ -7,6 +7,7 @@ import {
   ValidationError,
 } from '@/utils/errors';
 import { cuePayloadSchema } from '@/validators/cue-payloads';
+import { hasCourseAccess } from '@/services/course-access';
 
 export interface CreateCueInput {
   atMs: number;
@@ -68,17 +69,6 @@ async function loadVideoAuth(
   });
 }
 
-function isDesignerOrAbove(
-  role: Role,
-  userId: string,
-  course: { ownerId: string; collaborators: { userId: string }[] },
-): boolean {
-  if (role === 'ADMIN') return true;
-  if (course.ownerId === userId) return true;
-  if (course.collaborators.length > 0) return true;
-  return false;
-}
-
 function validatePayloadForType(type: CueType, payload: unknown): void {
   // Reconstruct the discriminator on the payload so discriminatedUnion
   // dispatches correctly — the HTTP input keeps `type` at the cue level, not
@@ -98,7 +88,7 @@ export function createCueService(prisma: PrismaClient = defaultPrisma): CueServi
     async createCue(videoId, userId, role, input) {
       const video = await loadVideoAuth(prisma, videoId, userId);
       if (!video) throw new NotFoundError('Video not found');
-      if (!isDesignerOrAbove(role, userId, video.course)) {
+      if (!hasCourseAccess(role, userId, video.course, 'WRITE')) {
         throw new ForbiddenError('Not authorized to create cues on this video');
       }
 
@@ -152,11 +142,7 @@ export function createCueService(prisma: PrismaClient = defaultPrisma): CueServi
       });
       if (!video) throw new NotFoundError('Video not found');
 
-      const isAdmin = role === 'ADMIN';
-      const isOwner = video.course.ownerId === userId;
-      const isCollab = video.course.collaborators.length > 0;
-      const isEnrolled = video.course.enrollments.length > 0;
-      if (!isAdmin && !isOwner && !isCollab && !isEnrolled) {
+      if (!hasCourseAccess(role, userId, video.course, 'READ')) {
         throw new ForbiddenError('You do not have access to this video');
       }
 
@@ -190,7 +176,7 @@ export function createCueService(prisma: PrismaClient = defaultPrisma): CueServi
         },
       });
       if (!cue) throw new NotFoundError('Cue not found');
-      if (!isDesignerOrAbove(role, userId, cue.video.course)) {
+      if (!hasCourseAccess(role, userId, cue.video.course, 'WRITE')) {
         throw new ForbiddenError('Not authorized to update this cue');
       }
 
@@ -237,7 +223,7 @@ export function createCueService(prisma: PrismaClient = defaultPrisma): CueServi
         },
       });
       if (!cue) throw new NotFoundError('Cue not found');
-      if (!isDesignerOrAbove(role, userId, cue.video.course)) {
+      if (!hasCourseAccess(role, userId, cue.video.course, 'WRITE')) {
         throw new ForbiddenError('Not authorized to delete this cue');
       }
       // Prisma cascade on Attempt.cueId handles attempts cleanup.

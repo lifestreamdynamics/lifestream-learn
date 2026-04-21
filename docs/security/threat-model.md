@@ -89,7 +89,7 @@ fields (`answerIndex`, `pairs`).
 |---|---|---|
 | **Nginx `secure_link` uses MD5.** | Not pre-image resistant for an adversary with substantial compute; fine for 2-4h signed URLs in practice. | Upgrade path documented inline in `infra/nginx/secure_link.conf.inc` — switch to `secure_link_sha256` by flipping one directive. No code change needed in `hls-signer.ts` if we swap in parallel. Tracked; not blocking. |
 | **JWT secret rotation is a manual env-swap.** | Rotating a secret invalidates all in-flight tokens. | Dual-secret rollover (`JWT_ACCESS_SECRET_PREVIOUS`) is a backlog item for the deployment track. |
-| **`@hono/node-server <1.19.13` (transitive of Prisma).** | Moderate-severity `serveStatic` path-traversal in dev tooling. | Deferred per `docs/security/audit-summary-2026-04.md` — Prisma 7 pins this; not a runtime path for the API. |
+| ~~**`@hono/node-server <1.19.13` (transitive of Prisma).**~~ | ~~Moderate-severity `serveStatic` path-traversal in dev tooling.~~ | **Resolved 2026-04-20** via npm `overrides` pinning `^1.19.14`. `npm audit` is clean. See `docs/security/audit-summary-2026-04.md`. |
 | **Flutter deps with 24 out-of-date lines + 3 discontinued transitives.** | Latent maintenance burden. | Dedicated "Flutter dep upgrade 2026 H2" backlog slice; none carry known CVEs today. |
 | **No `gitleaks` installed locally.** | Pre-push hook falls back to a regex scanner; weaker coverage. | Install `gitleaks` via `apt install gitleaks` or `brew install gitleaks`. Slice G3 surfaced and fixed a subtle bug in the regex fallback (grep was receiving a `-`-prefixed pattern as a flag). |
 | **VOICE cue type reserved but unimplemented.** | None today (API returns 501). | ADR 0004. |
@@ -126,9 +126,10 @@ The full archive lives at `ops/security-review-2026-04.md` (ops/ is
 gitignored). Findings summary:
 
 - **No critical or high findings in the Slice G1/G2/G3 delta.**
-- Moderate findings (rate-limit defaults, `/metrics` allowlisting,
-  `@hono/node-server` advisory) are already reflected in §6 above
-  and in the G2 tuning knobs.
+- Moderate findings (rate-limit defaults, `/metrics` allowlisting)
+  are reflected in §6 above and in the G2 tuning knobs. The
+  `@hono/node-server` advisory was resolved 2026-04-20 via npm
+  `overrides` — see the audit summary for the disposition.
 - Pre-existing items (MD5 secure_link, VOICE cue deferral) unchanged
   from prior ADR documentation.
 

@@ -4,7 +4,7 @@
  *   name: InternalHooks
  *   description: Internal webhook receivers (not for client use).
  */
-import { timingSafeEqual } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import type { Request, Response } from 'express';
 import { env } from '@/config/env';
 import { logger } from '@/config/logger';
@@ -12,20 +12,28 @@ import { tusdHookBodySchema } from '@/validators/video.validators';
 import { enqueueTranscode } from '@/queues/transcode.queue';
 import { UnauthorizedError, ValidationError } from '@/utils/errors';
 
+// Query-param fallback leaks the secret into proxy/access logs, so it is only
+// honoured outside production. Header-based auth is required in prod.
+const QUERY_TOKEN_ALLOWED = env.NODE_ENV !== 'production';
+
 /**
  * Constant-time check of the shared secret tusd presents on every hook
- * delivery. Accepts the secret either via `X-Tusd-Hook-Token` header (preferred,
- * matches the tusd `-hooks-http-forward-headers` config) or `?token=` query
- * (handy in dev when shelling curl). Both pathways feed the same constant-time
- * comparison so secret-shape leakage via timing is bounded.
+ * delivery. Accepts the secret via `X-Tusd-Hook-Token` header; a `?token=`
+ * query-param fallback is honoured only in non-production environments. Both
+ * provided and expected are SHA-256 hashed before `timingSafeEqual`, which
+ * removes the length-branch timing side-channel that a raw compare has (the
+ * hash output is always 32 bytes, so missing/short/long tokens all hit the
+ * same code path).
  */
 function hookTokenValid(req: Request): boolean {
   const tokenFromHeader = req.header('x-tusd-hook-token') ?? '';
-  const tokenFromQuery = typeof req.query.token === 'string' ? req.query.token : '';
+  const tokenFromQuery =
+    QUERY_TOKEN_ALLOWED && typeof req.query.token === 'string' ? req.query.token : '';
   const provided = tokenFromHeader || tokenFromQuery;
   const expected = env.TUSD_HOOK_SECRET;
-  if (!provided || provided.length !== expected.length) return false;
-  return timingSafeEqual(Buffer.from(provided), Buffer.from(expected));
+  const providedDigest = createHash('sha256').update(provided).digest();
+  const expectedDigest = createHash('sha256').update(expected).digest();
+  return timingSafeEqual(providedDigest, expectedDigest);
 }
 
 /**

@@ -117,4 +117,47 @@ describe('tusd hook (integration)', () => {
       .send({ not: 'right' });
     expect(res.status).toBe(400);
   });
+
+  it('401 for short tokens (no length side-channel)', async () => {
+    // Pre-fix: a shorter-than-expected token short-circuited on length, which
+    // is observable by timing. The hash-first compare now treats any mismatch
+    // identically.
+    const app = await getTestApp();
+    const res = await request(app)
+      .post('/internal/hooks/tusd')
+      .set('x-tusd-hook-token', 'short')
+      .send(body('pre-finish', randomUUID()));
+    expect(res.status).toBe(401);
+  });
+
+  it('401 for empty token', async () => {
+    const app = await getTestApp();
+    const res = await request(app)
+      .post('/internal/hooks/tusd')
+      .set('x-tusd-hook-token', '')
+      .send(body('pre-finish', randomUUID()));
+    expect(res.status).toBe(401);
+  });
+
+  it('flooding the hook eventually returns 429', async () => {
+    const app = await getTestApp();
+    // RATE_LIMIT_TUSD_HOOK_MAX default is 60/min in a 60s window. The test
+    // env raises ceilings for other limiters but this one is new; if the
+    // limit has been raised in .env.test we still assert that *some* request
+    // past the ceiling is throttled. Using malformed bodies keeps the queue
+    // clean; the limiter runs before the controller so 429 takes precedence.
+    // Budget: at most 200 requests serially — well under the 30s timeout.
+    let saw429 = false;
+    for (let i = 0; i < 200; i += 1) {
+      const res = await request(app)
+        .post('/internal/hooks/tusd')
+        .set('x-tusd-hook-token', goodToken)
+        .send({ malformed: true });
+      if (res.status === 429) {
+        saw429 = true;
+        break;
+      }
+    }
+    expect(saw429).toBe(true);
+  });
 });

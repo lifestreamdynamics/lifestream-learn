@@ -9,6 +9,7 @@ import { createObjectStore } from '@/services/object-store';
 import { probeVideo } from '@/services/ffmpeg/probe';
 import { runFfmpeg } from '@/services/ffmpeg/run-ffmpeg';
 import { buildFfmpegArgs } from '@/services/ffmpeg/build-args';
+import { logFfmpegVersion } from '@/services/ffmpeg/version-check';
 import { makeJobTmpDir, cleanupJobTmpDir } from '@/utils/tmp-dir';
 import { runTranscodePipeline, type PipelineDeps } from '@/workers/transcode.pipeline';
 import { TRANSCODE_QUEUE_NAME, closeTranscodeQueue } from '@/queues/transcode.queue';
@@ -119,6 +120,11 @@ function main(): void {
     { concurrency: env.TRANSCODE_CONCURRENCY },
     'transcode worker started',
   );
+
+  // Fire-and-forget version check. Doesn't gate boot because we'd rather
+  // fail the first job loudly than refuse to start a worker on a slightly
+  // old-but-possibly-workable FFmpeg in dev.
+  void logFfmpegVersion(logger);
 }
 
 try {
