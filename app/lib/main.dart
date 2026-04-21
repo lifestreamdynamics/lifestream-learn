@@ -30,6 +30,7 @@ import 'data/repositories/admin_analytics_repository.dart';
 import 'data/repositories/admin_designer_application_repository.dart';
 import 'data/repositories/attempt_repository.dart';
 import 'data/repositories/auth_repository.dart';
+import 'data/repositories/caption_repository.dart';
 import 'data/repositories/course_repository.dart';
 import 'data/repositories/cue_repository.dart';
 import 'data/repositories/designer_application_repository.dart';
@@ -79,6 +80,7 @@ void main() {
     final videoRepo = VideoRepository(dio);
     final enrollmentRepo = EnrollmentRepository(dio);
     final cueRepo = CueRepository(dio);
+    final captionRepo = CaptionRepository(dio);
     final attemptRepo = AttemptRepository(dio);
     final designerAppRepo = DesignerApplicationRepository(dio);
     final adminDesignerAppRepo = AdminDesignerApplicationRepository(dio);
@@ -162,6 +164,7 @@ void main() {
       videoRepo: videoRepo,
       enrollmentRepo: enrollmentRepo,
       cueRepo: cueRepo,
+      captionRepo: captionRepo,
       attemptRepo: attemptRepo,
       designerAppRepo: designerAppRepo,
       adminDesignerAppRepo: adminDesignerAppRepo,
@@ -221,6 +224,7 @@ class App extends StatefulWidget {
     required this.videoRepo,
     required this.enrollmentRepo,
     required this.cueRepo,
+    required this.captionRepo,
     required this.attemptRepo,
     required this.designerAppRepo,
     required this.adminDesignerAppRepo,
@@ -242,6 +246,7 @@ class App extends StatefulWidget {
   final VideoRepository videoRepo;
   final EnrollmentRepository enrollmentRepo;
   final CueRepository cueRepo;
+  final CaptionRepository captionRepo;
   final AttemptRepository attemptRepo;
   final DesignerApplicationRepository designerAppRepo;
   final AdminDesignerApplicationRepository adminDesignerAppRepo;
@@ -267,6 +272,7 @@ class _AppState extends State<App> with WidgetsBindingObserver {
     videoRepo: widget.videoRepo,
     enrollmentRepo: widget.enrollmentRepo,
     cueRepo: widget.cueRepo,
+    captionRepo: widget.captionRepo,
     attemptRepo: widget.attemptRepo,
     designerAppRepo: widget.designerAppRepo,
     adminDesignerAppRepo: widget.adminDesignerAppRepo,

@@ -243,4 +243,66 @@ describe('createObjectStore', () => {
       expect(res).toEqual({ uploaded: 1 });
     });
   });
+
+  describe('getObjectStream', () => {
+    it('returns stream + contentType + contentLength from S3 response', async () => {
+      const { client, sendMock } = fakeS3();
+      const body = Readable.from([Buffer.from('png-bytes')]);
+      sendMock.mockResolvedValueOnce({
+        Body: body,
+        ContentType: 'image/png',
+        ContentLength: 9,
+      });
+      const store = createObjectStore(client);
+
+      const res = await store.getObjectStream('learn-uploads', 'avatars/u/abc.png');
+
+      expect(res.stream).toBe(body);
+      expect(res.contentType).toBe('image/png');
+      expect(res.contentLength).toBe(9);
+      const cmd = sendMock.mock.calls[0][0] as GetObjectCommand;
+      expect(cmd).toBeInstanceOf(GetObjectCommand);
+      expect(cmd.input).toEqual({ Bucket: 'learn-uploads', Key: 'avatars/u/abc.png' });
+    });
+
+    it('defaults contentType to application/octet-stream when S3 omits it', async () => {
+      const { client, sendMock } = fakeS3();
+      sendMock.mockResolvedValueOnce({ Body: Readable.from([Buffer.from('x')]) });
+      const store = createObjectStore(client);
+
+      const res = await store.getObjectStream('learn-uploads', 'k');
+      expect(res.contentType).toBe('application/octet-stream');
+      expect(res.contentLength).toBeNull();
+    });
+
+    it('maps NoSuchKey -> NotFoundError', async () => {
+      const { client, sendMock } = fakeS3();
+      const err = Object.assign(new Error('missing'), { name: 'NoSuchKey' });
+      sendMock.mockRejectedValueOnce(err);
+      const store = createObjectStore(client);
+      const { NotFoundError } = await import('@/utils/errors');
+
+      await expect(store.getObjectStream('learn-uploads', 'k')).rejects.toBeInstanceOf(
+        NotFoundError,
+      );
+    });
+
+    it('maps 404 metadata -> NotFoundError even without a named code', async () => {
+      const { client, sendMock } = fakeS3();
+      sendMock.mockRejectedValueOnce({ $metadata: { httpStatusCode: 404 } });
+      const store = createObjectStore(client);
+      const { NotFoundError } = await import('@/utils/errors');
+
+      await expect(store.getObjectStream('learn-uploads', 'k')).rejects.toBeInstanceOf(
+        NotFoundError,
+      );
+    });
+
+    it('throws when Body is missing', async () => {
+      const { client, sendMock } = fakeS3();
+      sendMock.mockResolvedValueOnce({});
+      const store = createObjectStore(client);
+      await expect(store.getObjectStream('b', 'k')).rejects.toThrow(/no body/);
+    });
+  });
 });

@@ -8,5 +8,8 @@ export function contentTypeForPath(filename: string): string {
   if (lower.endsWith('.m4s')) return 'video/iso.segment';
   if (lower.endsWith('.mp4')) return 'video/mp4';
   if (lower.endsWith('.ts')) return 'video/mp2t';
+  // WebVTT caption files — charset=utf-8 is non-negotiable: multibyte
+  // content (CJK, Arabic) must round-trip correctly through the CDN.
+  if (lower.endsWith('.vtt')) return 'text/vtt; charset=utf-8';
   return 'application/octet-stream';
 }

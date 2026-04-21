@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/settings/settings_cubit.dart';
 
@@ -14,14 +15,18 @@ import '../../../core/settings/settings_cubit.dart';
 /// - The crash reporting toggle dispatches consent events on the
 ///   existing `CrashConsentBloc` — no parallel consent state is
 ///   introduced. (See `SettingsCubit.setCrashReporting`.)
-/// - Privacy Policy / Terms links are rendered as copyable text rows
-///   because `url_launcher` isn't a dependency (no new deps per slice
-///   constraints).
+/// - Privacy Policy / Terms links open in the system browser via
+///   `url_launcher`; when no browser can be resolved we fall back to
+///   copying the URL to the clipboard so the user is never stranded.
 class PrivacySection extends StatelessWidget {
-  const PrivacySection({super.key});
+  const PrivacySection({super.key, this.launcher});
 
-  // TODO(Slice P4 follow-up): swap the copyable-text links for a
-  // real launchUrl once `url_launcher` is added as a dependency.
+  /// Test-only URL-launcher injection. Real builds use `launchUrl`
+  /// from `package:url_launcher`. Widget tests pass a fake so they
+  /// don't need to stub the platform channel.
+  @visibleForTesting
+  final UrlLauncher? launcher;
+
   static const String _privacyPolicyUrl =
       'https://lifestream.example/learn/privacy';
   static const String _termsUrl =
@@ -78,11 +83,13 @@ class PrivacySection extends StatelessWidget {
             keyValue: const Key('settings.privacy.privacyPolicy'),
             title: 'Privacy Policy',
             url: _privacyPolicyUrl,
+            launcher: launcher,
           ),
           _LinkTile(
             keyValue: const Key('settings.privacy.terms'),
             title: 'Terms of Service',
             url: _termsUrl,
+            launcher: launcher,
           ),
         ],
       ),
@@ -90,19 +97,29 @@ class PrivacySection extends StatelessWidget {
   }
 }
 
-/// Copyable-URL tile. Tap copies to clipboard and surfaces a
-/// SnackBar. When `url_launcher` is added, swap the onTap handler to
-/// `launchUrl(Uri.parse(url))`.
+/// External-URL tile. Tap launches the system browser; on failure
+/// (no browser resolvable, or the launch is rejected for any reason)
+/// falls back to copying the URL to the clipboard so the user can
+/// paste it wherever they like. Launch is routed through the override
+/// [launcher] when provided — tests use that to inject a fake without
+/// having to hit the platform channel.
+typedef UrlLauncher = Future<bool> Function(Uri url, {LaunchMode mode});
+
+Future<bool> _defaultLaunch(Uri url, {LaunchMode mode = LaunchMode.externalApplication}) =>
+    launchUrl(url, mode: mode);
+
 class _LinkTile extends StatelessWidget {
   const _LinkTile({
     required this.keyValue,
     required this.title,
     required this.url,
+    this.launcher,
   });
 
   final Key keyValue;
   final String title;
   final String url;
+  final UrlLauncher? launcher;
 
   @override
   Widget build(BuildContext context) {
@@ -115,16 +132,30 @@ class _LinkTile extends StatelessWidget {
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
-      onTap: () async {
-        await Clipboard.setData(ClipboardData(text: url));
-        if (!context.mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Copied: $url'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      },
+      onTap: () => _handleTap(context),
+    );
+  }
+
+  Future<void> _handleTap(BuildContext context) async {
+    final uri = Uri.parse(url);
+    final launch = launcher ?? _defaultLaunch;
+    bool launched = false;
+    try {
+      launched = await launch(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      launched = false;
+    }
+    if (launched) return;
+    // Fallback: copy to clipboard so the user isn't stranded on a
+    // tile that does nothing (e.g. a locked-down device with no
+    // browser).
+    await Clipboard.setData(ClipboardData(text: url));
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Copied: $url'),
+        duration: const Duration(seconds: 2),
+      ),
     );
   }
 }

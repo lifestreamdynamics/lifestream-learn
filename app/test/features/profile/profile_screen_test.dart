@@ -68,6 +68,14 @@ Widget _wrap({
         builder: (_, __) =>
             const Scaffold(body: Text('designer-application')),
       ),
+      GoRoute(
+        path: '/courses',
+        builder: (_, __) => const Scaffold(body: Text('courses-placeholder')),
+      ),
+      GoRoute(
+        path: '/admin',
+        builder: (_, __) => const Scaffold(body: Text('admin-placeholder')),
+      ),
     ],
   );
   return BlocProvider<AuthBloc>.value(
@@ -128,6 +136,12 @@ void main() {
     when(() => meRepo.fetchMfaMethods()).thenAnswer(
       (_) async => const MfaMethods(totp: false),
     );
+    // Slice-H follow-up — ProfileHeader fetches uploaded avatar bytes
+    // when `user.avatarKey` is non-null. Default user factory has
+    // `avatarKey: null` so this stub is only exercised by the one
+    // uploaded-avatar branch test, but keeping it here keeps every
+    // test resilient to a future factory tweak.
+    when(() => meRepo.fetchMyAvatar()).thenAnswer((_) async => null);
   });
 
   testWidgets('renders header, stats, account section, logout for learner',
@@ -379,5 +393,76 @@ void main() {
     await tester.pump();
 
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
+  });
+
+  // ---------- Slice-H follow-up — role-specific shortcuts ----------
+
+  testWidgets(
+      'designer sees Authoring shortcut (not Apply-to-become); tap routes /courses',
+      (tester) async {
+    stubAuthed(_user(role: UserRole.courseDesigner));
+
+    await tester.pumpWidget(
+      _wrap(authBloc: authBloc, meRepo: meRepo, progressRepo: progressRepo),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('profile.applyDesigner')), findsNothing);
+    expect(find.byKey(const Key('profile.admin.tools')), findsNothing);
+    expect(find.byKey(const Key('profile.designer.myCourses')), findsOneWidget);
+
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('profile.designer.myCourses')),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('profile.designer.myCourses')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('courses-placeholder'), findsOneWidget);
+  });
+
+  testWidgets(
+      'admin sees Admin tools shortcut (not Apply-to-become); tap routes /admin',
+      (tester) async {
+    stubAuthed(_user(role: UserRole.admin));
+
+    await tester.pumpWidget(
+      _wrap(authBloc: authBloc, meRepo: meRepo, progressRepo: progressRepo),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('profile.applyDesigner')), findsNothing);
+    expect(find.byKey(const Key('profile.designer.myCourses')), findsNothing);
+    expect(find.byKey(const Key('profile.admin.tools')), findsOneWidget);
+
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('profile.admin.tools')),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('profile.admin.tools')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('admin-placeholder'), findsOneWidget);
+  });
+
+  testWidgets(
+      'learner sees Apply-to-become but neither of the role shortcuts',
+      (tester) async {
+    stubAuthed(_user(role: UserRole.learner));
+
+    await tester.pumpWidget(
+      _wrap(authBloc: authBloc, meRepo: meRepo, progressRepo: progressRepo),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('profile.applyDesigner')), findsOneWidget);
+    expect(find.byKey(const Key('profile.designer.myCourses')), findsNothing);
+    expect(find.byKey(const Key('profile.admin.tools')), findsNothing);
   });
 }

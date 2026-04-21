@@ -261,24 +261,61 @@ model CourseCollaborator {
 }
 
 model Video {
-  id            String              @id @default(uuid()) @db.Uuid
-  courseId      String              @db.Uuid
-  course        Course              @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  title         String
-  orderIndex    Int
-  status        VideoStatus         @default(UPLOADING)
-  durationMs    Int?
-  sourceKey     String?
-  hlsPrefix     String?
-  posterKey     String?
-  failureReason VideoFailureReason?
-  cues          Cue[]
-  attempts      Attempt[]
-  createdAt     DateTime            @default(now())
-  updatedAt     DateTime            @updatedAt
+  id                     String              @id @default(uuid()) @db.Uuid
+  courseId               String              @db.Uuid
+  course                 Course              @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  title                  String
+  orderIndex             Int
+  status                 VideoStatus         @default(UPLOADING)
+  durationMs             Int?
+  sourceKey              String?
+  hlsPrefix              String?
+  posterKey              String?
+  failureReason          VideoFailureReason?
+  // BCP-47 language code pointing at one of the Video's `captions` rows.
+  // Set by a designer to surface a default track to learners who haven't
+  // chosen one themselves. Nullable — the feature is opt-in per video.
+  // No FK to VideoCaption: the caption row may be uploaded/deleted after
+  // the default is set; the playback endpoint falls through gracefully
+  // if the default no longer matches an available track.
+  defaultCaptionLanguage String?
+  cues                   Cue[]
+  attempts               Attempt[]
+  captions               VideoCaption[]
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
 
   @@index([courseId, orderIndex])
   @@index([status])
+}
+
+// Per-video, per-language caption sidecar. One row per uploaded language.
+// The object itself lives at `learn-vod/vod/{videoId}/captions/{language}.vtt`
+// (always WebVTT on disk — SRT uploads are converted on ingest) so it
+// falls under the existing `/hls/{videoId}/` signed prefix served by
+// nginx with zero config changes.
+model VideoCaption {
+  id         String   @id @default(uuid()) @db.Uuid
+  videoId    String   @db.Uuid
+  video      Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  // BCP-47 language tag. Validated at the API boundary against a strict
+  // regex (^[a-z]{2,3}(-[A-Z][a-z]{3})?(-[A-Z]{2}|-[0-9]{3})?$) — covers
+  // `en`, `zh-CN`, `zh-Hant`, `pt-BR` without pulling in a full tag lib.
+  language   String
+  // Object-storage key under `learn-vod`. Always ends in `.vtt`; the
+  // controller computes this from (videoId, language) so a rename/move
+  // of the storage layout touches one place.
+  vttKey     String
+  // Size in bytes of the stored VTT (after any SRT→VTT conversion).
+  // Exposed in `listCaptions` so the designer UI can warn on large files.
+  bytes      Int
+  // User who last uploaded this language. Keeps audit trail for designer
+  // collaborator scenarios — not shown to learners.
+  uploadedBy String   @db.Uuid
+  uploadedAt DateTime @default(now())
+
+  @@unique([videoId, language])
+  @@index([videoId])
 }
 
 model Cue {

@@ -52,6 +52,15 @@ meRouter.post(
   asyncHandler(meController.uploadAvatar),
 );
 
+// GET companion to POST /avatar — streams the caller's own avatar
+// bytes. 204 when no avatar is set so the client can fall through to
+// Gravatar / initials without treating it as an error.
+meRouter.get(
+  '/avatar',
+  authenticate,
+  asyncHandler(meController.getOwnAvatar),
+);
+
 // Slice P2 — progress aggregation endpoints.
 meRouter.get(
   '/progress',

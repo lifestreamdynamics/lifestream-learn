@@ -8,6 +8,7 @@ import type { Request, Response } from 'express';
 import { createVideoSchema, videoIdParamsSchema } from '@/validators/video.validators';
 import { videoService } from '@/services/video.service';
 import { signPlaybackUrl, signPosterUrl } from '@/utils/hls-signer';
+import { captionService } from '@/services/caption.service';
 import { ConflictError, ForbiddenError, NotFoundError, UnauthorizedError } from '@/utils/errors';
 import { env } from '@/config/env';
 
@@ -90,7 +91,13 @@ export async function getById(req: Request, res: Response): Promise<void> {
  * /api/videos/{id}/playback:
  *   get:
  *     tags: [Videos]
- *     summary: Get a short-lived signed master playlist URL.
+ *     summary: Get a short-lived signed master playlist URL plus caption bundle.
+ *     description: |
+ *       Returns a signed HLS master playlist URL, an optional poster URL, and
+ *       a list of signed caption URLs for every stored language track. All URLs
+ *       share the same `expiresAt` TTL (2–4 h). `defaultCaptionLanguage` is the
+ *       language tag the player should enable by default, or null when no default
+ *       has been set for this video.
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - in: path
@@ -98,7 +105,28 @@ export async function getById(req: Request, res: Response): Promise<void> {
  *         required: true
  *         schema: { type: string, format: uuid }
  *     responses:
- *       200: { description: Signed master playlist URL with expiry. }
+ *       200:
+ *         description: Signed playback bundle.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 masterPlaylistUrl: { type: string, format: uri }
+ *                 posterUrl: { type: string, format: uri, nullable: true }
+ *                 expiresAt: { type: string, format: date-time }
+ *                 captions:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       language: { type: string, example: en }
+ *                       url: { type: string, format: uri }
+ *                       expiresAt: { type: string, format: date-time }
+ *                 defaultCaptionLanguage:
+ *                   type: string
+ *                   nullable: true
+ *                   example: en
  *       401: { description: Unauthenticated. }
  *       403: { description: No access. }
  *       404: { description: Video not found. }
@@ -119,9 +147,16 @@ export async function getPlayback(req: Request, res: Response): Promise<void> {
   // sources that refused poster extraction. Clients must treat it as
   // optional — the Flutter feed already has a fallback coloured card.
   const posterUrl = video.posterKey ? signPosterUrl(video.id).url : null;
+  const bundle = await captionService.getCaptionsForPlayback(video.id);
   res.status(200).json({
     masterPlaylistUrl: url,
     posterUrl,
     expiresAt: expiresAt.toISOString(),
+    captions: bundle.captions.map((c) => ({
+      language: c.language,
+      url: c.url,
+      expiresAt: c.expiresAt.toISOString(),
+    })),
+    defaultCaptionLanguage: bundle.defaultCaptionLanguage,
   });
 }

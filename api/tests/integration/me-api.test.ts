@@ -26,6 +26,7 @@ jest.mock('@/services/object-store', () => {
   const uploadDirectory = jest.fn().mockResolvedValue({ uploaded: 0 });
   const deleteObject = jest.fn().mockResolvedValue(undefined);
   const putObject = jest.fn().mockResolvedValue(undefined);
+  const getObjectStream = jest.fn();
   return {
     createObjectStore: jest.fn(),
     objectStore: {
@@ -34,6 +35,7 @@ jest.mock('@/services/object-store', () => {
       uploadDirectory,
       deleteObject,
       putObject,
+      getObjectStream,
     },
   };
 });
@@ -161,7 +163,9 @@ describe('Me API (integration)', () => {
       expect(res.body.avatarKey).toMatch(
         new RegExp(`^avatars/${user.id}/[0-9a-f-]+\\.png$`),
       );
-      expect(res.body.avatarUrl).toBeNull();
+      // Media-serving route shipped; upload now returns the relative URL
+      // clients compose against their API base URL.
+      expect(res.body.avatarUrl).toBe('/api/me/avatar');
 
       const row = await prisma.user.findUnique({ where: { id: user.id } });
       expect(row?.avatarKey).toBe(res.body.avatarKey);
@@ -205,6 +209,134 @@ describe('Me API (integration)', () => {
         .post('/api/me/avatar')
         .set('content-type', 'image/png')
         .send(Buffer.from('png'));
+      expect(res.status).toBe(401);
+    });
+  });
+
+  describe('GET /api/me/avatar', () => {
+    it('streams bytes + content-type when avatarKey is set', async () => {
+      const app = await getTestApp();
+      const user = await createUser({ role: 'LEARNER' });
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { avatarKey: 'avatars/u/abc.png' },
+      });
+
+      // Stub the object-store read with a tiny PNG payload.
+      const { Readable } = await import('node:stream');
+      const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const store = require('@/services/object-store').objectStore;
+      store.getObjectStream.mockResolvedValueOnce({
+        stream: Readable.from([bytes]),
+        contentType: 'image/png',
+        contentLength: bytes.byteLength,
+      });
+
+      const res = await request(app)
+        .get('/api/me/avatar')
+        .set('authorization', `Bearer ${user.accessToken}`)
+        .buffer(true)
+        .parse((r, cb) => {
+          const chunks: Buffer[] = [];
+          r.on('data', (c: Buffer) => chunks.push(c));
+          r.on('end', () => cb(null, Buffer.concat(chunks)));
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toBe('image/png');
+      expect(res.headers['cache-control']).toBe('private, max-age=300');
+      expect(Buffer.isBuffer(res.body)).toBe(true);
+      expect((res.body as Buffer).equals(bytes)).toBe(true);
+
+      expect(store.getObjectStream).toHaveBeenCalledWith(
+        expect.any(String),
+        'avatars/u/abc.png',
+      );
+    });
+
+    it('204 when caller has no avatar set', async () => {
+      const app = await getTestApp();
+      const user = await createUser({ role: 'LEARNER' });
+      const res = await request(app)
+        .get('/api/me/avatar')
+        .set('authorization', `Bearer ${user.accessToken}`);
+      expect(res.status).toBe(204);
+    });
+
+    it('401 when unauthenticated', async () => {
+      const app = await getTestApp();
+      const res = await request(app).get('/api/me/avatar');
+      expect(res.status).toBe(401);
+    });
+  });
+
+  describe('GET /api/users/:id/avatar', () => {
+    it('streams another user\'s avatar bytes', async () => {
+      const app = await getTestApp();
+      const caller = await createUser({ role: 'LEARNER' });
+      const target = await createUser({ role: 'LEARNER' });
+      await prisma.user.update({
+        where: { id: target.id },
+        data: { avatarKey: `avatars/${target.id}/xyz.webp` },
+      });
+
+      const { Readable } = await import('node:stream');
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const store = require('@/services/object-store').objectStore;
+      store.getObjectStream.mockResolvedValueOnce({
+        stream: Readable.from([Buffer.from('webp-bytes')]),
+        contentType: 'image/webp',
+        contentLength: 10,
+      });
+
+      const res = await request(app)
+        .get(`/api/users/${target.id}/avatar`)
+        .set('authorization', `Bearer ${caller.accessToken}`)
+        .buffer(true)
+        .parse((r, cb) => {
+          const chunks: Buffer[] = [];
+          r.on('data', (c: Buffer) => chunks.push(c));
+          r.on('end', () => cb(null, Buffer.concat(chunks)));
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toBe('image/webp');
+    });
+
+    it('302 redirects to /api/me/avatar when id matches the caller', async () => {
+      const app = await getTestApp();
+      const caller = await createUser({ role: 'LEARNER' });
+      const res = await request(app)
+        .get(`/api/users/${caller.id}/avatar`)
+        .set('authorization', `Bearer ${caller.accessToken}`)
+        .redirects(0);
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toBe('/api/me/avatar');
+    });
+
+    it('204 when target user exists but has no avatar', async () => {
+      const app = await getTestApp();
+      const caller = await createUser({ role: 'LEARNER' });
+      const target = await createUser({ role: 'LEARNER' });
+      const res = await request(app)
+        .get(`/api/users/${target.id}/avatar`)
+        .set('authorization', `Bearer ${caller.accessToken}`);
+      expect(res.status).toBe(204);
+    });
+
+    it('404 when target user does not exist', async () => {
+      const app = await getTestApp();
+      const caller = await createUser({ role: 'LEARNER' });
+      const res = await request(app)
+        .get('/api/users/00000000-0000-4000-8000-000000000000/avatar')
+        .set('authorization', `Bearer ${caller.accessToken}`);
+      expect(res.status).toBe(404);
+    });
+
+    it('401 when unauthenticated', async () => {
+      const app = await getTestApp();
+      const res = await request(app).get('/api/users/anything/avatar');
       expect(res.status).toBe(401);
     });
   });

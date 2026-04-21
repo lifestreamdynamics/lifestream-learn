@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_secure_storage_platform_interface/flutter_secure_storage_platform_interface.dart';
@@ -12,6 +13,7 @@ import 'package:lifestream_learn_app/core/settings/settings_store.dart';
 import 'package:lifestream_learn_app/data/repositories/events_repository.dart';
 import 'package:lifestream_learn_app/features/profile/settings/privacy_section.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../test_support/fake_secure_storage.dart';
 
@@ -33,9 +35,22 @@ void main() {
   setUp(() async {
     FlutterSecureStoragePlatform.instance = FakeSecureStoragePlatform();
     tmp = await Directory.systemTemp.createTemp('lf-p-');
+    // Handle the Clipboard platform channel so `Clipboard.setData` in
+    // the fallback path completes instead of hanging on a missing
+    // handler. Set/Get symmetric so subsequent tests can also use it.
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData' ||
+          call.method == 'Clipboard.getData') {
+        return null;
+      }
+      return null;
+    });
   });
 
   tearDown(() async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, null);
     if (await tmp.exists()) {
       await tmp.delete(recursive: true);
     }
@@ -130,6 +145,109 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('export-screen-placeholder'), findsOneWidget);
+
+    await cubit.close();
+    await buffer.dispose();
+  });
+
+  testWidgets(
+      'tapping Privacy Policy invokes launchUrl with externalApplication mode',
+      (tester) async {
+    final store = SettingsStore(const FlutterSecureStorage());
+    final repo = _MockEventsRepo();
+    when(() => repo.submitBatch(any())).thenAnswer((_) async {});
+    final buffer = AnalyticsBuffer(
+      repo: repo,
+      docsDirResolver: () async => tmp,
+    );
+    final cubit = SettingsCubit(store: store, analyticsBuffer: buffer);
+    await cubit.load();
+
+    final launched = <(Uri, LaunchMode)>[];
+    Future<bool> fakeLauncher(Uri uri, {LaunchMode mode = LaunchMode.platformDefault}) async {
+      launched.add((uri, mode));
+      return true;
+    }
+
+    await tester.pumpWidget(
+      BlocProvider<SettingsCubit>.value(
+        value: cubit,
+        child: MaterialApp(
+          home: PrivacySection(launcher: fakeLauncher),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    // Scroll to Privacy Policy tile — the 800x600 test viewport may
+    // render it below the fold behind the switches.
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('settings.privacy.privacyPolicy')),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('settings.privacy.privacyPolicy')));
+    await tester.pumpAndSettle();
+
+    expect(launched, hasLength(1));
+    expect(launched.single.$1.toString(), 'https://lifestream.example/learn/privacy');
+    expect(launched.single.$2, LaunchMode.externalApplication);
+
+    await cubit.close();
+    await buffer.dispose();
+  });
+
+  testWidgets(
+      'launchUrl failure falls back to clipboard + snackbar',
+      (tester) async {
+    final store = SettingsStore(const FlutterSecureStorage());
+    final repo = _MockEventsRepo();
+    when(() => repo.submitBatch(any())).thenAnswer((_) async {});
+    final buffer = AnalyticsBuffer(
+      repo: repo,
+      docsDirResolver: () async => tmp,
+    );
+    final cubit = SettingsCubit(store: store, analyticsBuffer: buffer);
+    await cubit.load();
+
+    // Launcher that rejects every attempt — simulates a locked-down
+    // device with no browser resolvable.
+    Future<bool> rejectingLauncher(Uri uri, {LaunchMode mode = LaunchMode.platformDefault}) async {
+      return false;
+    }
+
+    await tester.pumpWidget(
+      BlocProvider<SettingsCubit>.value(
+        value: cubit,
+        child: MaterialApp(
+          home: PrivacySection(launcher: rejectingLauncher),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('settings.privacy.terms')),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('settings.privacy.terms')));
+    // Let the async fallback (clipboard write, snackbar show) settle —
+    // but cap the pump duration so the Material SnackBar animation
+    // doesn't hang pumpAndSettle forever.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(
+      find.textContaining('Copied: https://lifestream.example/learn/terms'),
+      findsOneWidget,
+    );
 
     await cubit.close();
     await buffer.dispose();

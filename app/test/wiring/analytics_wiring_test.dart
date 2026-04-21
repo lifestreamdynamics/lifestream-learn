@@ -41,6 +41,7 @@ class _RecordingCueSink implements CueAnalyticsSink {
 class _RecordingVideoSink implements VideoAnalyticsSink {
   final List<String> views = [];
   final List<(String, int)> completes = [];
+  final List<(String, String?)> captionSelections = [];
 
   @override
   void onVideoView(String videoId) => views.add(videoId);
@@ -48,6 +49,10 @@ class _RecordingVideoSink implements VideoAnalyticsSink {
   @override
   void onVideoComplete(String videoId, int durationMs) =>
       completes.add((videoId, durationMs));
+
+  @override
+  void onCaptionLanguageSelected(String videoId, String? language) =>
+      captionSelections.add((videoId, language));
 }
 
 void main() {

@@ -33,6 +33,10 @@ abstract class VideoAnalyticsSink {
   /// moment of detection (so the backend can disambiguate partial
   /// watches later if we want).
   void onVideoComplete(String videoId, int durationMs);
+
+  /// Called when the learner changes caption language via the CC picker.
+  /// [language] is the selected BCP-47 code, or null when "Off" was chosen.
+  void onCaptionLanguageSelected(String videoId, String? language);
 }
 
 class NoopCueAnalyticsSink implements CueAnalyticsSink {
@@ -49,6 +53,8 @@ class NoopVideoAnalyticsSink implements VideoAnalyticsSink {
   void onVideoView(String videoId) {}
   @override
   void onVideoComplete(String videoId, int durationMs) {}
+  @override
+  void onCaptionLanguageSelected(String videoId, String? language) {}
 }
 
 /// Production sink — emits events into an [AnalyticsBuffer].
@@ -98,6 +104,16 @@ class AnalyticsBufferVideoSink implements VideoAnalyticsSink {
       occurredAt: DateTime.now().toUtcIso8601(),
       videoId: videoId,
       payload: <String, dynamic>{'durationMs': durationMs},
+    ));
+  }
+
+  @override
+  void onCaptionLanguageSelected(String videoId, String? language) {
+    _buffer.log(AnalyticsEvent(
+      eventType: AnalyticsEventTypes.captionLanguageSelected,
+      occurredAt: DateTime.now().toUtcIso8601(),
+      videoId: videoId,
+      payload: <String, dynamic>{'language': language},
     ));
   }
 }

@@ -177,6 +177,28 @@ void main() {
       expect(cubit.state.biometricUnlock, true);
       await cubit.close();
     });
+
+    test('setCaptionLanguage("en") emits state with captionLanguage = "en"',
+        () async {
+      final cubit = SettingsCubit(store: store);
+      await cubit.load();
+      await cubit.setCaptionLanguage('en');
+      expect(cubit.state.captionLanguage, 'en');
+      expect(await store.readCaptionLanguage(), 'en');
+      await cubit.close();
+    });
+
+    test('setCaptionLanguage(null) clears the preference', () async {
+      final cubit = SettingsCubit(store: store);
+      await cubit.load();
+      await cubit.setCaptionLanguage('fr');
+      expect(cubit.state.captionLanguage, 'fr');
+
+      await cubit.setCaptionLanguage(null);
+      expect(cubit.state.captionLanguage, isNull);
+      expect(await store.readCaptionLanguage(), isNull);
+      await cubit.close();
+    });
   });
 
   group('SettingsCubit mirrors CrashConsentBloc changes', () {

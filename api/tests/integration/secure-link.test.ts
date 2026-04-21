@@ -17,12 +17,16 @@
  * signature is the contract). The one case that needs a real object —
  * the positive path — is covered by transcode-e2e.test.ts.
  *
+ * Caption URL signing tests live at the bottom of this file. They verify
+ * the tampered-sig 403 path (no object needed) and the cross-URL prefix
+ * identity guarantee (pure-JS assertion, no network call).
+ *
  * URL shape under test (path-embedded token):
  *   /hls/{sig}/{expires}/{videoId}/...
  */
 import { randomUUID } from 'node:crypto';
 import { closeConnections } from '@tests/integration/helpers/teardown';
-import { computeHash, signPlaybackUrl } from '@/utils/hls-signer';
+import { computeHash, signPlaybackUrl, signCaptionUrl } from '@/utils/hls-signer';
 
 describe('nginx secure_link guard (API-integration)', () => {
   const videoId = randomUUID();
@@ -105,5 +109,55 @@ describe('nginx secure_link guard (API-integration)', () => {
     expect(hash.includes('=')).toBe(false);
     // Determinism.
     expect(computeHash(expires, '/hls/abc/', secret)).toBe(hash);
+  });
+
+  describe('caption URL signing', () => {
+    // The nginx secure_link guard evaluates signatures before it fetches any
+    // object from SeaweedFS. The tampered-sig check below therefore doesn't
+    // need a real object in the bucket — nginx returns 403 before it ever
+    // contacts SeaweedFS (same rationale as the master-playlist tampered-sig
+    // test above). The positive 200 path (nginx serves a real .vtt with
+    // `Content-Type: text/vtt`) requires a running SeaweedFS with a real
+    // object pre-uploaded and is covered by the `transcode-e2e` suite once
+    // the compose stack is available; see the comment at the top of this file.
+    const captionVideoId = randomUUID();
+
+    it('rejects a tampered sig on a caption URL (403)', async () => {
+      const { url } = signCaptionUrl(captionVideoId, 'en');
+      // Verify the URL has the expected caption tail before mutating it.
+      expect(url).toMatch(/\/captions\/en\.vtt$/);
+
+      const tamperedUrl = url.replace(
+        /\/hls\/([^/]+)\//,
+        (_match, sig: string) => {
+          const swap = sig[0] === 'a' ? 'b' : 'a';
+          return `/hls/${swap}${sig.slice(1)}/`;
+        },
+      );
+      expect(tamperedUrl).not.toBe(url);
+      const res = await fetch(tamperedUrl);
+      expect(res.status).toBe(403);
+    });
+
+    it('caption URL shares the same signed prefix as the master playlist URL', () => {
+      // Load-bearing unit assertion: the signer embeds the same /hls/{videoId}/
+      // prefix in both URLs so a single token authorizes master.m3u8 and every
+      // caption file under the same videoId. Extract the sig + expires from both
+      // and assert they are identical (same prefix → same hash → same sig).
+      const { url: masterUrl } = signPlaybackUrl(captionVideoId);
+      const { url: captionUrl } = signCaptionUrl(captionVideoId, 'en');
+
+      // Shape: /hls/<sig>/<expires>/<videoId>/...
+      const masterMatch = masterUrl.match(/\/hls\/([^/]+)\/(\d+)\//);
+      const captionMatch = captionUrl.match(/\/hls\/([^/]+)\/(\d+)\//);
+
+      expect(masterMatch).not.toBeNull();
+      expect(captionMatch).not.toBeNull();
+
+      // Both URLs were signed at nearly the same instant; expires values will
+      // differ by at most a few milliseconds → same second → same value.
+      expect(captionMatch![1]).toBe(masterMatch![1]); // sig must be byte-identical
+      expect(captionMatch![2]).toBe(masterMatch![2]); // same expires second
+    });
   });
 });
