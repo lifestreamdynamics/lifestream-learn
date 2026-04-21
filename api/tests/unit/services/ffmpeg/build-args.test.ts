@@ -133,5 +133,119 @@ describe('buildFfmpegArgs', () => {
       expect(fc).toContain('[v2]scale=w=1280:h=720[v2out]');
       expect(fc).toContain('[v3]scale=w=1920:h=1080[v3out]');
     });
+
+    it('forces yuv420p pixel format per rung for universal decoder compat', () => {
+      for (let i = 0; i < ladder.length; i += 1) {
+        expect(text).toContain(`-pix_fmt:v:${i} yuv420p`);
+      }
+    });
+
+    it('emits BT.709 colour metadata per rung so HDR lands as well-behaved SDR', () => {
+      for (let i = 0; i < ladder.length; i += 1) {
+        expect(text).toContain(`-colorspace:v:${i} bt709`);
+        expect(text).toContain(`-color_primaries:v:${i} bt709`);
+        expect(text).toContain(`-color_trc:v:${i} bt709`);
+        expect(text).toContain(`-color_range:v:${i} tv`);
+      }
+    });
+
+    it('clears the rotation tag on every output stream', () => {
+      for (let i = 0; i < ladder.length; i += 1) {
+        expect(text).toContain(`-metadata:s:v:${i} rotate=0`);
+      }
+    });
+
+    it('applies EBU R128 loudness normalisation once at the global audio stage', () => {
+      expect(args.filter((a) => a === '-af')).toHaveLength(1);
+      expect(pairValueAfter(args, '-af')).toBe('loudnorm=I=-16:LRA=11:TP=-1.5');
+    });
+  });
+
+  describe('rotation', () => {
+    it('prepends transpose=1 into each scale branch for 90° clockwise', () => {
+      const args = buildFfmpegArgs(
+        DEFAULT_LADDER.slice(0, 2),
+        INPUT,
+        OUT,
+        { rotationDegrees: 90 },
+      );
+      const fc = pairValueAfter(args, '-filter_complex') ?? '';
+      expect(fc).toContain('[v0]transpose=1,scale=w=640:h=360[v0out]');
+      expect(fc).toContain('[v1]transpose=1,scale=w=960:h=540[v1out]');
+    });
+
+    it('uses transpose=2 for 270° (-90°) rotation', () => {
+      const args = buildFfmpegArgs(
+        [DEFAULT_LADDER[0]],
+        INPUT,
+        OUT,
+        { rotationDegrees: 270 },
+      );
+      const fc = pairValueAfter(args, '-filter_complex') ?? '';
+      expect(fc).toContain('[v0]transpose=2,scale=w=640:h=360[v0out]');
+    });
+
+    it('uses hflip,vflip for 180° rotation', () => {
+      const args = buildFfmpegArgs(
+        [DEFAULT_LADDER[0]],
+        INPUT,
+        OUT,
+        { rotationDegrees: 180 },
+      );
+      const fc = pairValueAfter(args, '-filter_complex') ?? '';
+      expect(fc).toContain('[v0]hflip,vflip,scale=w=640:h=360[v0out]');
+    });
+
+    it('does not alter the scale chain when rotation is 0', () => {
+      const args = buildFfmpegArgs(
+        [DEFAULT_LADDER[0]],
+        INPUT,
+        OUT,
+        { rotationDegrees: 0 },
+      );
+      const fc = pairValueAfter(args, '-filter_complex') ?? '';
+      expect(fc).toContain('[v0]scale=w=640:h=360[v0out]');
+      expect(fc).not.toContain('transpose');
+      expect(fc).not.toContain('hflip');
+    });
+  });
+
+  describe('silent source (hasAudio=false)', () => {
+    const args = buildFfmpegArgs(
+      DEFAULT_LADDER.slice(0, 2),
+      INPUT,
+      OUT,
+      { hasAudio: false },
+    );
+    const text = joined(args);
+
+    it('omits -map 0:a audio maps', () => {
+      // Only the two video maps should appear.
+      expect(args.filter((a) => a === '-map')).toHaveLength(2);
+      for (const mapValue of ['0:a:0?', '0:a:1?', '0:a:2?']) {
+        expect(args).not.toContain(mapValue);
+      }
+    });
+
+    it('omits -c:a and -b:a codec flags', () => {
+      expect(text).not.toMatch(/-c:a/);
+      expect(text).not.toMatch(/-b:a/);
+    });
+
+    it('omits the global -ar / -ac / -af flags', () => {
+      expect(args).not.toContain('-ar');
+      expect(args).not.toContain('-ac');
+      expect(args).not.toContain('-af');
+    });
+
+    it('emits a video-only var_stream_map', () => {
+      const v = pairValueAfter(args, '-var_stream_map');
+      expect(v).toBe('v:0 v:1');
+    });
+
+    it('still sets per-rung video codec flags', () => {
+      expect(text).toContain('-b:v:0 800k');
+      expect(text).toContain('-pix_fmt:v:1 yuv420p');
+    });
   });
 });

@@ -139,6 +139,47 @@ describe('tusd hook (integration)', () => {
     expect(res.status).toBe(401);
   });
 
+  it('pre-create with a Size within the byte cap returns 200', async () => {
+    const app = await getTestApp();
+    const res = await request(app)
+      .post('/internal/hooks/tusd')
+      .set('x-tusd-hook-token', goodToken)
+      .send({
+        Type: 'pre-create',
+        Event: {
+          Upload: {
+            ID: 'tus-upload-id',
+            Size: 10 * 1024 * 1024, // 10 MiB — well under the 2 GiB default
+            MetaData: {},
+          },
+        },
+      });
+    expect(res.status).toBe(200);
+    expect(res.body.accepted).toBe(true);
+  });
+
+  it('pre-create rejects an oversized Upload-Length with 413 INPUT_TOO_LARGE', async () => {
+    const app = await getTestApp();
+    // 1 byte over the env cap. We read env.VIDEO_MAX_BYTES at runtime so
+    // raising the default in .env.test doesn't silently skip this check.
+    const over = env.VIDEO_MAX_BYTES + 1;
+    const res = await request(app)
+      .post('/internal/hooks/tusd')
+      .set('x-tusd-hook-token', goodToken)
+      .send({
+        Type: 'pre-create',
+        Event: {
+          Upload: {
+            ID: 'tus-upload-id',
+            Size: over,
+            MetaData: {},
+          },
+        },
+      });
+    expect(res.status).toBe(413);
+    expect(res.body.code).toBe('INPUT_TOO_LARGE');
+  });
+
   it('flooding the hook eventually returns 429', async () => {
     const app = await getTestApp();
     // RATE_LIMIT_TUSD_HOOK_MAX default is 60/min in a 60s window. The test

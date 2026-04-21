@@ -26,6 +26,16 @@ enum VideoStatus {
   FAILED
 }
 
+enum VideoFailureReason {
+  INPUT_TOO_LARGE
+  DURATION_EXCEEDED
+  UNSUPPORTED_CONTAINER
+  UNSUPPORTED_VIDEO_CODEC
+  UNSUPPORTED_AUDIO_CODEC
+  CORRUPT_OR_UNREADABLE
+  TRANSCODE_FAILED
+}
+
 enum CueType {
   MCQ
   MATCHING
@@ -68,19 +78,19 @@ model DesignerApplication {
 }
 
 model Course {
-  id             String               @id @default(uuid()) @db.Uuid
-  slug           String               @unique
-  title          String
-  description    String
-  coverImageUrl  String?
-  ownerId        String               @db.Uuid
-  owner          User                 @relation("CourseOwner", fields: [ownerId], references: [id], onDelete: Restrict)
-  published      Boolean              @default(false)
-  videos         Video[]
-  collaborators  CourseCollaborator[]
-  enrollments    Enrollment[]
-  createdAt      DateTime             @default(now())
-  updatedAt      DateTime             @updatedAt
+  id            String               @id @default(uuid()) @db.Uuid
+  slug          String               @unique
+  title         String
+  description   String
+  coverImageUrl String?
+  ownerId       String               @db.Uuid
+  owner         User                 @relation("CourseOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  published     Boolean              @default(false)
+  videos        Video[]
+  collaborators CourseCollaborator[]
+  enrollments   Enrollment[]
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
 
   @@index([ownerId])
   @@index([published])
@@ -98,19 +108,21 @@ model CourseCollaborator {
 }
 
 model Video {
-  id          String      @id @default(uuid()) @db.Uuid
-  courseId    String      @db.Uuid
-  course      Course      @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  title       String
-  orderIndex  Int
-  status      VideoStatus @default(UPLOADING)
-  durationMs  Int?
-  sourceKey   String?
-  hlsPrefix   String?
-  cues        Cue[]
-  attempts    Attempt[]
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  id            String              @id @default(uuid()) @db.Uuid
+  courseId      String              @db.Uuid
+  course        Course              @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  title         String
+  orderIndex    Int
+  status        VideoStatus         @default(UPLOADING)
+  durationMs    Int?
+  sourceKey     String?
+  hlsPrefix     String?
+  posterKey     String?
+  failureReason VideoFailureReason?
+  cues          Cue[]
+  attempts      Attempt[]
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
 
   @@index([courseId, orderIndex])
   @@index([status])

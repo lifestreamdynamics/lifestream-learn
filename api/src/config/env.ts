@@ -89,6 +89,32 @@ const EnvSchema = z.object({
   FFPROBE_BIN: z.string().default('ffprobe'),
   VIDEO_MAX_DURATION_MS: z.coerce.number().int().positive().default(180_000),
 
+  // ---------- Video input policy (Slice V1) ----------
+  // Upper bound on raw upload byte size. tusd enforces this at the
+  // network edge via `-max-size`; the pipeline re-validates the actual
+  // downloaded file against the same cap as a belt-and-braces check.
+  // Default: 2 GiB — covers a 180s 4K source at ~100 Mbps with headroom.
+  VIDEO_MAX_BYTES: z.coerce.number().int().positive().default(2 * 1024 * 1024 * 1024),
+  // Comma-separated ffprobe `codec_name` tokens we will hand to ffmpeg.
+  // Everything else is rejected up-front as UNSUPPORTED_CODEC — ffmpeg's
+  // decoder parsers are CVE-heavy, so the whitelist is the trust boundary
+  // between "bytes we received" and "bytes we decode".
+  VIDEO_ALLOWED_VIDEO_CODECS: z
+    .string()
+    .default('h264,hevc,vp8,vp9,av1,mpeg4,mpeg2video')
+    .transform((s) => s.split(',').map((x) => x.trim().toLowerCase()).filter(Boolean)),
+  VIDEO_ALLOWED_AUDIO_CODECS: z
+    .string()
+    .default('aac,mp3,opus,vorbis,pcm_s16le,pcm_s16be,ac3,eac3,flac')
+    .transform((s) => s.split(',').map((x) => x.trim().toLowerCase()).filter(Boolean)),
+  // ffprobe `format.format_name` tokens. The MP4/MOV family surfaces as
+  // the compound `mov,mp4,m4a,3gp,3g2,mj2`; matroska/webm as `matroska,webm`.
+  // Match by substring (comma-split), so `mp4` accepts the compound.
+  VIDEO_ALLOWED_CONTAINERS: z
+    .string()
+    .default('mov,mp4,m4a,3gp,3g2,mj2,matroska,webm,avi')
+    .transform((s) => s.split(',').map((x) => x.trim().toLowerCase()).filter(Boolean)),
+
   // ---------- Observability (Slice G1) ----------
   // Both flags default false so the test suite + fresh dev clones open no
   // network sockets and expose no new surface until an operator opts in.

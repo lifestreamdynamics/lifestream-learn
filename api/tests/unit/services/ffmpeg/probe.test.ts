@@ -33,10 +33,10 @@ describe('probeVideo', () => {
     spawn.mockReturnValue(child);
 
     const sample = JSON.stringify({
-      format: { duration: '3.045000' },
+      format: { duration: '3.045000', format_name: 'mov,mp4,m4a,3gp,3g2,mj2' },
       streams: [
-        { codec_type: 'video', width: 640, height: 360 },
-        { codec_type: 'audio', sample_rate: '48000' },
+        { codec_type: 'video', codec_name: 'h264', width: 640, height: 360 },
+        { codec_type: 'audio', codec_name: 'aac', sample_rate: '48000' },
       ],
     });
 
@@ -54,6 +54,10 @@ describe('probeVideo', () => {
       height: 360,
       audioSampleRate: 48000,
       hasAudio: true,
+      containerFormat: 'mov,mp4,m4a,3gp,3g2,mj2',
+      videoCodec: 'h264',
+      audioCodec: 'aac',
+      rotationDegrees: 0,
     });
 
     // Verify spawn was called with the right argv shape.
@@ -86,7 +90,88 @@ describe('probeVideo', () => {
     const probe = await promise;
     expect(probe.hasAudio).toBe(false);
     expect(probe.audioSampleRate).toBeNull();
+    expect(probe.audioCodec).toBeNull();
     expect(probe.durationMs).toBe(5000);
+  });
+
+  it('extracts rotation from side_data_list (modern ffprobe)', async () => {
+    const child = makeChild();
+    spawn.mockReturnValue(child);
+
+    const sample = JSON.stringify({
+      format: { duration: '3.000000', format_name: 'mov,mp4,m4a,3gp,3g2,mj2' },
+      streams: [
+        {
+          codec_type: 'video',
+          codec_name: 'h264',
+          width: 1080,
+          height: 1920,
+          side_data_list: [{ side_data_type: 'Display Matrix', rotation: -90 }],
+        },
+      ],
+    });
+    const promise = probeVideo('/tmp/portrait.mp4');
+    setImmediate(() => {
+      child.stdout.emit('data', Buffer.from(sample));
+      child.emit('close', 0);
+    });
+    const probe = await promise;
+    // -90 CCW → 270 CW after normalisation.
+    expect(probe.rotationDegrees).toBe(270);
+    expect(probe.width).toBe(1080);
+    expect(probe.height).toBe(1920);
+  });
+
+  it('extracts rotation from legacy tags.rotate', async () => {
+    const child = makeChild();
+    spawn.mockReturnValue(child);
+
+    const sample = JSON.stringify({
+      format: { duration: '3.000000', format_name: 'mov,mp4' },
+      streams: [
+        {
+          codec_type: 'video',
+          codec_name: 'h264',
+          width: 1080,
+          height: 1920,
+          tags: { rotate: '90' },
+        },
+      ],
+    });
+    const promise = probeVideo('/tmp/portrait-legacy.mp4');
+    setImmediate(() => {
+      child.stdout.emit('data', Buffer.from(sample));
+      child.emit('close', 0);
+    });
+    const probe = await promise;
+    expect(probe.rotationDegrees).toBe(90);
+  });
+
+  it('returns rotationDegrees=0 when rotation is unspecified or non-right-angle', async () => {
+    const child = makeChild();
+    spawn.mockReturnValue(child);
+
+    const sample = JSON.stringify({
+      format: { duration: '3.000000', format_name: 'matroska,webm' },
+      streams: [
+        {
+          codec_type: 'video',
+          codec_name: 'vp9',
+          width: 1280,
+          height: 720,
+          side_data_list: [{ side_data_type: 'Display Matrix', rotation: 45 }],
+        },
+      ],
+    });
+    const promise = probeVideo('/tmp/weird.webm');
+    setImmediate(() => {
+      child.stdout.emit('data', Buffer.from(sample));
+      child.emit('close', 0);
+    });
+    const probe = await promise;
+    expect(probe.rotationDegrees).toBe(0);
+    expect(probe.videoCodec).toBe('vp9');
+    expect(probe.containerFormat).toBe('matroska,webm');
   });
 
   it('rejects when ffprobe exits non-zero with stderr tail', async () => {

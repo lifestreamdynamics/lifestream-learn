@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:video_player/video_player.dart';
 import 'package:visibility_detector/visibility_detector.dart';
@@ -61,6 +63,29 @@ class LearnVideoPlayer extends StatefulWidget {
 
 enum _PlayerErrorKind { processing, unavailable, forbidden, unknown }
 
+/// Intents for keyboard / DPAD shortcuts. Declared as private top-level
+/// classes so `Shortcuts`/`Actions` can dispatch them without needing
+/// closures that capture state across rebuilds.
+class _TogglePlayIntent extends Intent {
+  const _TogglePlayIntent();
+}
+
+class _SeekBackIntent extends Intent {
+  const _SeekBackIntent();
+}
+
+class _SeekForwardIntent extends Intent {
+  const _SeekForwardIntent();
+}
+
+class _VolumeUpIntent extends Intent {
+  const _VolumeUpIntent();
+}
+
+class _VolumeDownIntent extends Intent {
+  const _VolumeDownIntent();
+}
+
 class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
   VideoPlayerController? _controller;
   _PlayerErrorKind? _errorKind;
@@ -87,6 +112,15 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
 
   /// Latch: fire `video_complete` exactly once per mount, at 90%.
   bool _completeLogged = false;
+
+  /// Focus node for the keyboard/DPAD shortcut detector. Owned by the
+  /// state (not by `FocusableActionDetector(autofocus: true)`) because
+  /// the feed preloads 3 players at once — `autofocus` on every mounted
+  /// instance lets siblings steal focus from the visible one, which
+  /// would route Space / arrow keys to an off-screen video. We request
+  /// focus in `_onVisibilityChanged` when this player becomes the one
+  /// in view, and drop it when it scrolls out.
+  final FocusNode _focusNode = FocusNode(debugLabel: 'learn_video_player');
 
   @override
   void initState() {
@@ -142,6 +176,7 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
         _errorMessage = e.message;
         _errorKind = _mapError(e);
       });
+      _announceError();
     } catch (e) {
       if (!mounted) return;
       widget.onError?.call();
@@ -150,7 +185,45 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
         _errorMessage = e.toString();
         _errorKind = _PlayerErrorKind.unknown;
       });
+      _announceError();
     }
+  }
+
+  /// Returns a human-readable description of the current error, suitable
+  /// for a screen-reader announcement or a Semantics label.
+  String _describeError() {
+    switch (_errorKind) {
+      case _PlayerErrorKind.processing:
+        return 'Video is still processing';
+      case _PlayerErrorKind.forbidden:
+        return 'Access denied';
+      case _PlayerErrorKind.unavailable:
+        return 'Video unavailable';
+      case _PlayerErrorKind.unknown:
+      case null:
+        return 'Playback failed — ${_errorMessage ?? ''}'.trimRight();
+    }
+  }
+
+  void _announceError() {
+    if (_errorKind == null) return;
+    // Defer until after the current frame so that (a) `initState`'s
+    // synchronous error path doesn't crash on `View.maybeOf()` (it's an
+    // inherited-widget lookup, illegal before first build), and (b) the
+    // error UI is in the tree when the announcement fires so TalkBack
+    // associates the two.
+    final message = _describeError();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final view = View.maybeOf(context);
+      if (view == null) return;
+      // Fire-and-forget — a failed announcement must never break playback.
+      unawaited(SemanticsService.sendAnnouncement(
+        view,
+        message,
+        TextDirection.ltr,
+      ));
+    });
   }
 
   _PlayerErrorKind _mapError(ApiException e) {
@@ -219,6 +292,7 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
     _tearDownListener();
     _overlayHideTimer?.cancel();
     _scrubberTick?.cancel();
+    _focusNode.dispose();
     // Controllers live in the shared cache — do NOT dispose here.
     super.dispose();
   }
@@ -227,6 +301,14 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
     final nowVisible = info.visibleFraction >= 0.5;
     if (nowVisible == _isVisible) return;
     _isVisible = nowVisible;
+    // Focus moves with visibility so keyboard / DPAD / hardware-keyboard
+    // events only ever route to the player the user is actually looking
+    // at. Off-screen siblings relinquish focus so they don't steal it.
+    if (nowVisible) {
+      _focusNode.requestFocus();
+    } else if (_focusNode.hasFocus) {
+      _focusNode.unfocus();
+    }
     final c = _controller;
     if (c == null) return;
     if (nowVisible) {
@@ -264,6 +346,13 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
         ? Duration.zero
         : (target > duration ? duration : target);
     unawaited(c.seekTo(clamped));
+  }
+
+  void _adjustVolume(double delta) {
+    final c = _controller;
+    if (c == null) return;
+    final next = (c.value.volume + delta).clamp(0.0, 1.0);
+    unawaited(c.setVolume(next));
   }
 
   void _showScrubber() {
@@ -308,10 +397,54 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
 
   @override
   Widget build(BuildContext context) {
-    return VisibilityDetector(
-      key: ValueKey<String>('learn_video.${widget.video.id}'),
-      onVisibilityChanged: _onVisibilityChanged,
-      child: _buildBody(context),
+    return FocusableActionDetector(
+      focusNode: _focusNode,
+      includeFocusSemantics: false,
+      shortcuts: const <ShortcutActivator, Intent>{
+        SingleActivator(LogicalKeyboardKey.space): _TogglePlayIntent(),
+        SingleActivator(LogicalKeyboardKey.enter): _TogglePlayIntent(),
+        SingleActivator(LogicalKeyboardKey.arrowLeft): _SeekBackIntent(),
+        SingleActivator(LogicalKeyboardKey.arrowRight): _SeekForwardIntent(),
+        SingleActivator(LogicalKeyboardKey.arrowUp): _VolumeUpIntent(),
+        SingleActivator(LogicalKeyboardKey.arrowDown): _VolumeDownIntent(),
+      },
+      actions: <Type, Action<Intent>>{
+        _TogglePlayIntent: CallbackAction<_TogglePlayIntent>(
+          onInvoke: (_) {
+            _toggleOverlay();
+            return null;
+          },
+        ),
+        _SeekBackIntent: CallbackAction<_SeekBackIntent>(
+          onInvoke: (_) {
+            _seekBy(const Duration(seconds: -10));
+            return null;
+          },
+        ),
+        _SeekForwardIntent: CallbackAction<_SeekForwardIntent>(
+          onInvoke: (_) {
+            _seekBy(const Duration(seconds: 10));
+            return null;
+          },
+        ),
+        _VolumeUpIntent: CallbackAction<_VolumeUpIntent>(
+          onInvoke: (_) {
+            _adjustVolume(0.1);
+            return null;
+          },
+        ),
+        _VolumeDownIntent: CallbackAction<_VolumeDownIntent>(
+          onInvoke: (_) {
+            _adjustVolume(-0.1);
+            return null;
+          },
+        ),
+      },
+      child: VisibilityDetector(
+        key: ValueKey<String>('learn_video.${widget.video.id}'),
+        onVisibilityChanged: _onVisibilityChanged,
+        child: _buildBody(context),
+      ),
     );
   }
 
@@ -352,15 +485,25 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
           // the player but below the overlay.
           Row(children: [
             Expanded(
-              child: GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onDoubleTap: () => _seekBy(const Duration(seconds: -10)),
+              child: Semantics(
+                button: true,
+                label: 'Rewind 10 seconds',
+                onTap: () => _seekBy(const Duration(seconds: -10)),
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onDoubleTap: () => _seekBy(const Duration(seconds: -10)),
+                ),
               ),
             ),
             Expanded(
-              child: GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onDoubleTap: () => _seekBy(const Duration(seconds: 10)),
+              child: Semantics(
+                button: true,
+                label: 'Skip forward 10 seconds',
+                onTap: () => _seekBy(const Duration(seconds: 10)),
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onDoubleTap: () => _seekBy(const Duration(seconds: 10)),
+                ),
               ),
             ),
           ]),
@@ -376,6 +519,17 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
                   color: Colors.white.withValues(alpha: 0.85),
                 ),
               ),
+            ),
+          ),
+          // Invisible semantics layer for screen readers. The outer
+          // GestureDetector above handles the actual tap — this just
+          // exposes a labelled "Play"/"Pause" button to TalkBack.
+          Positioned.fill(
+            child: Semantics(
+              button: true,
+              label: c.value.isPlaying ? 'Pause' : 'Play',
+              onTap: _toggleOverlay,
+              child: const IgnorePointer(child: SizedBox.expand()),
             ),
           ),
           // Title / course chrome.
@@ -424,23 +578,28 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
         return ColoredBox(
           color: Colors.black,
           child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.hourglass_empty,
-                    color: Colors.white, size: 48),
-                const SizedBox(height: 12),
-                const Text(
-                  'Processing…',
-                  style: TextStyle(color: Colors.white),
-                ),
-                const SizedBox(height: 12),
-                ElevatedButton(
-                  key: const Key('player.retry'),
-                  onPressed: _retryLoad,
-                  child: const Text('Refresh'),
-                ),
-              ],
+            child: Semantics(
+              liveRegion: true,
+              container: true,
+              label: 'Video is still processing',
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.hourglass_empty,
+                      color: Colors.white, size: 48),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Processing…',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                  const SizedBox(height: 12),
+                  ElevatedButton(
+                    key: const Key('player.retry'),
+                    onPressed: _retryLoad,
+                    child: const Text('Refresh'),
+                  ),
+                ],
+              ),
             ),
           ),
         );
@@ -448,24 +607,29 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
         return ColoredBox(
           color: Colors.black,
           child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.lock, color: Colors.white, size: 48),
-                const SizedBox(height: 12),
-                Text(
-                  _errorMessage ?? 'You do not have access to this video',
-                  key: const Key('player.forbidden'),
-                  style: const TextStyle(color: Colors.white),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 12),
-                TextButton(
-                  onPressed: () => GoRouter.of(context).go('/feed'),
-                  child: const Text('Go home',
-                      style: TextStyle(color: Colors.white)),
-                ),
-              ],
+            child: Semantics(
+              liveRegion: true,
+              container: true,
+              label: 'Access denied',
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.lock, color: Colors.white, size: 48),
+                  const SizedBox(height: 12),
+                  Text(
+                    _errorMessage ?? 'You do not have access to this video',
+                    key: const Key('player.forbidden'),
+                    style: const TextStyle(color: Colors.white),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 12),
+                  TextButton(
+                    onPressed: () => GoRouter.of(context).go('/feed'),
+                    child: const Text('Go home',
+                        style: TextStyle(color: Colors.white)),
+                  ),
+                ],
+              ),
             ),
           ),
         );
@@ -473,24 +637,29 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
         return ColoredBox(
           color: Colors.black,
           child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.videocam_off,
-                    color: Colors.white, size: 48),
-                const SizedBox(height: 12),
-                const Text(
-                  'Video unavailable',
-                  key: Key('player.unavailable'),
-                  style: TextStyle(color: Colors.white),
-                ),
-                const SizedBox(height: 12),
-                TextButton(
-                  onPressed: () => Navigator.of(context).maybePop(),
-                  child: const Text('Back',
-                      style: TextStyle(color: Colors.white)),
-                ),
-              ],
+            child: Semantics(
+              liveRegion: true,
+              container: true,
+              label: 'Video unavailable',
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.videocam_off,
+                      color: Colors.white, size: 48),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Video unavailable',
+                    key: Key('player.unavailable'),
+                    style: TextStyle(color: Colors.white),
+                  ),
+                  const SizedBox(height: 12),
+                  TextButton(
+                    onPressed: () => Navigator.of(context).maybePop(),
+                    child: const Text('Back',
+                        style: TextStyle(color: Colors.white)),
+                  ),
+                ],
+              ),
             ),
           ),
         );
@@ -498,36 +667,41 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
         return ColoredBox(
           color: Colors.black,
           child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.error_outline,
-                    color: Colors.white, size: 48),
-                const SizedBox(height: 12),
-                Text(
-                  _errorMessage ?? 'Playback failed',
-                  key: const Key('player.error'),
-                  style: const TextStyle(color: Colors.white),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextButton(
-                      key: const Key('player.error.back'),
-                      onPressed: () => _exitOnError(context),
-                      child: const Text('Back',
-                          style: TextStyle(color: Colors.white)),
-                    ),
-                    const SizedBox(width: 12),
-                    ElevatedButton(
-                      onPressed: _retryLoad,
-                      child: const Text('Retry'),
-                    ),
-                  ],
-                ),
-              ],
+            child: Semantics(
+              liveRegion: true,
+              container: true,
+              label: 'Playback failed — ${_errorMessage ?? ''}'.trimRight(),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.error_outline,
+                      color: Colors.white, size: 48),
+                  const SizedBox(height: 12),
+                  Text(
+                    _errorMessage ?? 'Playback failed',
+                    key: const Key('player.error'),
+                    style: const TextStyle(color: Colors.white),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextButton(
+                        key: const Key('player.error.back'),
+                        onPressed: () => _exitOnError(context),
+                        child: const Text('Back',
+                            style: TextStyle(color: Colors.white)),
+                      ),
+                      const SizedBox(width: 12),
+                      ElevatedButton(
+                        onPressed: _retryLoad,
+                        child: const Text('Retry'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         );

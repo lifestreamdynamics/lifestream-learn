@@ -51,6 +51,13 @@ function buildPipelineDeps(
     uploadBucket: env.S3_UPLOAD_BUCKET,
     vodBucket: env.S3_VOD_BUCKET,
     maxDurationMs: env.VIDEO_MAX_DURATION_MS,
+    inputPolicy: {
+      maxBytes: env.VIDEO_MAX_BYTES,
+      maxDurationMs: env.VIDEO_MAX_DURATION_MS,
+      allowedContainers: env.VIDEO_ALLOWED_CONTAINERS,
+      allowedVideoCodecs: env.VIDEO_ALLOWED_VIDEO_CODECS,
+      allowedAudioCodecs: env.VIDEO_ALLOWED_AUDIO_CODECS,
+    },
     logger,
   };
 }

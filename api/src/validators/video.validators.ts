@@ -26,6 +26,11 @@ export const tusdHookBodySchema = z.object({
   Event: z.object({
     Upload: z.object({
       ID: z.string(),
+      // tusd sends `Size: 0` for uploads that declared no Upload-Length
+      // (deferred-length uploads). Optional because older tusd builds
+      // may omit the field entirely on pre-create when the client used
+      // `Upload-Defer-Length: 1`.
+      Size: z.number().int().nonnegative().optional(),
       MetaData: z.record(z.string()).optional().default({}),
       Storage: z
         .object({

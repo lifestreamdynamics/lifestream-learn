@@ -7,7 +7,7 @@
 import type { Request, Response } from 'express';
 import { createVideoSchema, videoIdParamsSchema } from '@/validators/video.validators';
 import { videoService } from '@/services/video.service';
-import { signPlaybackUrl } from '@/utils/hls-signer';
+import { signPlaybackUrl, signPosterUrl } from '@/utils/hls-signer';
 import { ConflictError, ForbiddenError, NotFoundError, UnauthorizedError } from '@/utils/errors';
 import { env } from '@/config/env';
 
@@ -114,5 +114,14 @@ export async function getPlayback(req: Request, res: Response): Promise<void> {
     throw new ConflictError(`Video is not ready for playback (status=${video.status})`);
   }
   const { url, expiresAt } = signPlaybackUrl(video.id);
-  res.status(200).json({ masterPlaylistUrl: url, expiresAt: expiresAt.toISOString() });
+  // The poster is best-effort during transcode (see
+  // `transcode.pipeline.ts`), so it may be absent on older rows or on
+  // sources that refused poster extraction. Clients must treat it as
+  // optional — the Flutter feed already has a fallback coloured card.
+  const posterUrl = video.posterKey ? signPosterUrl(video.id).url : null;
+  res.status(200).json({
+    masterPlaylistUrl: url,
+    posterUrl,
+    expiresAt: expiresAt.toISOString(),
+  });
 }

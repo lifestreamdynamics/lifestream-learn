@@ -19,6 +19,7 @@ interface CallTrace {
 function buildDeps(overrides: Partial<PipelineDeps> = {}): { deps: PipelineDeps; trace: CallTrace; mocks: {
   download: jest.Mock;
   uploadDirectory: jest.Mock;
+  uploadFile: jest.Mock;
   deleteObject: jest.Mock;
   probe: jest.Mock;
   runFfmpeg: jest.Mock;
@@ -34,6 +35,10 @@ function buildDeps(overrides: Partial<PipelineDeps> = {}): { deps: PipelineDeps;
     height: 720,
     audioSampleRate: 48000,
     hasAudio: true,
+    containerFormat: 'mov,mp4,m4a,3gp,3g2,mj2',
+    videoCodec: 'h264',
+    audioCodec: 'aac',
+    rotationDegrees: 0,
   };
   const download = jest.fn(async (_b: string, _k: string, _p: string) => {
     trace.order.push('download');
@@ -56,6 +61,9 @@ function buildDeps(overrides: Partial<PipelineDeps> = {}): { deps: PipelineDeps;
   const deleteObject = jest.fn(async (_b: string, _k: string) => {
     trace.order.push('deleteObject');
   });
+  const uploadFile = jest.fn(async (_b: string, _k: string, _p: string, _c: string) => {
+    trace.order.push('uploadFile');
+  });
   const prismaUpdate = jest.fn(async (args: unknown) => {
     trace.order.push(`prisma.update:${JSON.stringify((args as { data: { status: string } }).data.status)}`);
     return {};
@@ -73,6 +81,7 @@ function buildDeps(overrides: Partial<PipelineDeps> = {}): { deps: PipelineDeps;
     objectStore: {
       downloadToFile: download,
       uploadDirectory,
+      uploadFile,
       deleteObject,
     },
     probe,
@@ -82,6 +91,19 @@ function buildDeps(overrides: Partial<PipelineDeps> = {}): { deps: PipelineDeps;
     uploadBucket: 'learn-uploads',
     vodBucket: 'learn-vod',
     maxDurationMs: 180_000,
+    // Generous default policy so existing happy-path tests pass without
+    // rewriting every probe shape. Individual tests that need to trip the
+    // policy override this field via the `overrides` argument.
+    inputPolicy: {
+      maxBytes: 10 * 1024 * 1024 * 1024,
+      maxDurationMs: 180_000,
+      allowedContainers: ['mov', 'mp4', 'matroska', 'webm'],
+      allowedVideoCodecs: ['h264', 'hevc', 'vp8', 'vp9', 'av1'],
+      allowedAudioCodecs: ['aac', 'mp3', 'opus', 'vorbis'],
+    },
+    // Pipeline unit tests never touch the real filesystem; stub the
+    // file-size probe so assertInputAcceptable gets a sane value.
+    statSizeBytes: async () => 12_345_678,
     logger: silentLogger,
     ...overrides,
   };
@@ -89,7 +111,18 @@ function buildDeps(overrides: Partial<PipelineDeps> = {}): { deps: PipelineDeps;
   return {
     deps,
     trace,
-    mocks: { download, uploadDirectory, deleteObject, probe, runFfmpeg, buildArgs, prismaUpdate, makeTmp, cleanupTmp },
+    mocks: {
+      download,
+      uploadDirectory,
+      uploadFile,
+      deleteObject,
+      probe,
+      runFfmpeg,
+      buildArgs,
+      prismaUpdate,
+      makeTmp,
+      cleanupTmp,
+    },
   };
 }
 
@@ -115,7 +148,12 @@ describe('runTranscodePipeline', () => {
       rungCount: 3, // height=720 → 360p+540p+720p
     });
 
-    // Strict order: makeTmp → download → probe → prisma TRANSCODING → buildArgs → runFfmpeg → uploadDirectory → prisma READY → deleteObject → cleanupTmp
+    // Strict order: makeTmp → download → probe → prisma TRANSCODING →
+    // buildArgs → runFfmpeg → uploadDirectory → runFfmpeg (poster) →
+    // uploadFile (poster) → prisma READY → deleteObject → cleanupTmp.
+    // The second `runFfmpeg` is the poster extraction — the happy-path
+    // `buildDeps` doesn't override `runFfmpegPoster` so the pipeline
+    // falls back to `runFfmpeg` for the poster call.
     expect(trace.order).toEqual([
       'makeTmp',
       'download',
@@ -124,6 +162,8 @@ describe('runTranscodePipeline', () => {
       'buildArgs',
       'runFfmpeg',
       'uploadDirectory',
+      'runFfmpeg',
+      'uploadFile',
       'prisma.update:"READY"',
       'deleteObject',
       'cleanupTmp',
@@ -170,6 +210,10 @@ describe('runTranscodePipeline', () => {
       height: 1080,
       audioSampleRate: 48000,
       hasAudio: true,
+      containerFormat: 'mov,mp4,m4a,3gp,3g2,mj2',
+      videoCodec: 'h264',
+      audioCodec: 'aac',
+      rotationDegrees: 0,
     };
     const { deps, mocks } = buildDeps({
       probe: jest.fn(async () => longProbe),
@@ -181,11 +225,134 @@ describe('runTranscodePipeline', () => {
     expect(mocks.cleanupTmp).toHaveBeenCalledTimes(1);
   });
 
+  it('persists UNSUPPORTED_VIDEO_CODEC and never invokes ffmpeg when probe reports a disallowed codec', async () => {
+    const disallowed: ProbeResult = {
+      durationMs: 12_000,
+      width: 1280,
+      height: 720,
+      audioSampleRate: 48000,
+      hasAudio: true,
+      containerFormat: 'mov,mp4',
+      videoCodec: 'prores',
+      audioCodec: 'aac',
+      rotationDegrees: 0,
+    };
+    const { deps, mocks } = buildDeps({
+      probe: jest.fn(async () => disallowed),
+    });
+
+    await expect(runTranscodePipeline(data, deps)).rejects.toThrow(/allow-list/);
+    expect(mocks.runFfmpeg).not.toHaveBeenCalled();
+    expect(mocks.uploadDirectory).not.toHaveBeenCalled();
+
+    const failedCall = mocks.prismaUpdate.mock.calls.find(
+      (c: unknown[]) => (c[0] as { data: { status: string } }).data.status === 'FAILED',
+    )?.[0] as { data: { failureReason: string } };
+    expect(failedCall.data.failureReason).toBe('UNSUPPORTED_VIDEO_CODEC');
+  });
+
+  it('persists INPUT_TOO_LARGE when the downloaded file exceeds maxBytes', async () => {
+    const { deps, mocks } = buildDeps({
+      statSizeBytes: async () => 5 * 1024 * 1024 * 1024,
+      inputPolicy: {
+        maxBytes: 1024 * 1024 * 1024,
+        maxDurationMs: 180_000,
+        allowedContainers: ['mp4'],
+        allowedVideoCodecs: ['h264'],
+        allowedAudioCodecs: ['aac'],
+      },
+    });
+
+    await expect(runTranscodePipeline(data, deps)).rejects.toThrow(/exceeds cap/);
+    const failedCall = mocks.prismaUpdate.mock.calls.find(
+      (c: unknown[]) => (c[0] as { data: { status: string } }).data.status === 'FAILED',
+    )?.[0] as { data: { failureReason: string } };
+    expect(failedCall.data.failureReason).toBe('INPUT_TOO_LARGE');
+  });
+
+  it('persists TRANSCODE_FAILED when ffmpeg itself errors after policy passed', async () => {
+    const { deps, mocks } = buildDeps({
+      runFfmpeg: jest.fn(async () => { throw new Error('x264 bad input'); }),
+    });
+
+    await expect(runTranscodePipeline(data, deps)).rejects.toThrow(/x264/);
+
+    const failedCall = mocks.prismaUpdate.mock.calls.find(
+      (c: unknown[]) => (c[0] as { data: { status: string } }).data.status === 'FAILED',
+    )?.[0] as { data: { failureReason: string } };
+    expect(failedCall.data.failureReason).toBe('TRANSCODE_FAILED');
+  });
+
+  it('generates a poster after transcode and persists the posterKey on READY', async () => {
+    const { deps, mocks } = buildDeps();
+
+    await runTranscodePipeline(data, deps);
+
+    expect(mocks.uploadFile).toHaveBeenCalledTimes(1);
+    const [bucket, key, , contentType] = mocks.uploadFile.mock.calls[0] as [
+      string,
+      string,
+      string,
+      string,
+    ];
+    expect(bucket).toBe('learn-vod');
+    expect(key).toBe(`vod/${VIDEO_ID}/poster.jpg`);
+    expect(contentType).toBe('image/jpeg');
+
+    const readyCall = mocks.prismaUpdate.mock.calls.find(
+      (c: unknown[]) => (c[0] as { data: { status: string } }).data.status === 'READY',
+    )?.[0] as { data: { posterKey: string | null } };
+    expect(readyCall.data.posterKey).toBe(`vod/${VIDEO_ID}/poster.jpg`);
+  });
+
+  it('still commits READY when the poster extraction itself fails', async () => {
+    // Two ffmpeg invocations happen: the main transcode and the poster.
+    // Fail only the second. The existing `runFfmpeg` mock covers the main
+    // transcode; `runFfmpegPoster` targets the poster-specific path.
+    const { deps, mocks } = buildDeps({
+      runFfmpegPoster: jest.fn(async () => { throw new Error('poster boom'); }),
+    });
+
+    const result = await runTranscodePipeline(data, deps);
+    expect(result.hlsPrefix).toBe(`vod/${VIDEO_ID}`);
+
+    // No poster file should have been uploaded.
+    expect(mocks.uploadFile).not.toHaveBeenCalled();
+    const readyCall = mocks.prismaUpdate.mock.calls.find(
+      (c: unknown[]) => (c[0] as { data: { status: string } }).data.status === 'READY',
+    )?.[0] as { data: { posterKey: string | null } };
+    expect(readyCall.data.posterKey).toBeNull();
+  });
+
+  it('passes rotation and hasAudio from probe into buildFfmpegArgs', async () => {
+    const rotated: ProbeResult = {
+      durationMs: 12_000,
+      width: 1080,
+      height: 1920,
+      audioSampleRate: null,
+      hasAudio: false,
+      containerFormat: 'mov,mp4',
+      videoCodec: 'h264',
+      audioCodec: null,
+      rotationDegrees: 90,
+    };
+    const { deps, mocks } = buildDeps({
+      probe: jest.fn(async () => rotated),
+    });
+
+    await runTranscodePipeline(data, deps);
+
+    expect(mocks.buildArgs).toHaveBeenCalledTimes(1);
+    const [, , , optsArg] = mocks.buildArgs.mock.calls[0] as [unknown, unknown, unknown, unknown];
+    expect(optsArg).toEqual({ rotationDegrees: 90, hasAudio: false });
+  });
+
   it('returns success even when source delete fails (best-effort)', async () => {
     const { deps, mocks } = buildDeps({
       objectStore: {
         downloadToFile: jest.fn(async () => undefined),
         uploadDirectory: jest.fn(async () => ({ uploaded: 3 })),
+        uploadFile: jest.fn(async () => undefined),
         deleteObject: jest.fn(async () => { throw new Error('s3 down'); }),
       },
     });

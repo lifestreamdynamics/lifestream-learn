@@ -1,7 +1,7 @@
 import '@tests/unit/setup';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
-import { computeHash, signPlaybackUrl } from '@/utils/hls-signer';
+import { computeHash, signPlaybackUrl, signPosterUrl } from '@/utils/hls-signer';
 
 const SCRIPT = path.resolve(__dirname, '..', '..', '..', '..', 'infra/scripts/sign-hls-url.sh');
 
@@ -98,6 +98,35 @@ describe('hls-signer', () => {
         process.env.HLS_SIGNING_SECRET ?? '',
       );
       expect(rehashed).toBe(sigInPath);
+    });
+  });
+
+  describe('signPosterUrl', () => {
+    it('produces a URL ending in /{videoId}/poster.jpg', () => {
+      const { url } = signPosterUrl('abc', 60);
+      expect(url).toMatch(/\/hls\/[A-Za-z0-9_-]+\/\d+\/abc\/poster\.jpg$/);
+    });
+
+    it('uses the same signature shape as the playback URL (covered by the same prefix)', () => {
+      // Both helpers sign prefix=/hls/{videoId}/ with the same secret and
+      // TTL, so a request to the poster path validates under the exact
+      // same nginx secure_link rule the master playlist uses. This test
+      // pins that invariant — if a future refactor diverges the shapes,
+      // clients will silently stop getting posters.
+      const playback = signPlaybackUrl('abc', 60);
+      const poster = signPosterUrl('abc', 60);
+      // Both URLs share the same origin and {sig}/{expires}/{videoId}/ prefix.
+      const playbackPrefix = playback.url.replace(/master\.m3u8$/, '');
+      const posterPrefix = poster.url.replace(/poster\.jpg$/, '');
+      expect(playbackPrefix).toBe(posterPrefix);
+    });
+
+    it('rejects an empty videoId', () => {
+      expect(() => signPosterUrl('')).toThrow(/non-empty/i);
+    });
+
+    it('rejects a videoId containing a slash', () => {
+      expect(() => signPosterUrl('a/b')).toThrow(/slash/i);
     });
   });
 });

@@ -81,3 +81,34 @@ export function signPlaybackUrl(
     expiresAt: new Date(expires * 1000),
   };
 }
+
+/**
+ * Produce a signed URL for a video's poster JPEG. The poster lives at
+ * the same prefix the master playlist does (`vod/{videoId}/poster.jpg`)
+ * so a single signature authorizes both — the nginx regex at
+ * `infra/nginx/local.conf:93` captures any path segment after the video
+ * id, so `poster.jpg` validates under the same signed prefix.
+ *
+ * Returned as its own helper (rather than reusing `signPlaybackUrl`) so
+ * callers don't end up generating a playback URL just to edit the tail
+ * — and so the TTL can be tuned independently if we ever want longer-
+ * lived poster URLs for pre-render caches.
+ */
+export function signPosterUrl(
+  videoId: string,
+  ttlSec: number = env.HLS_SIGNING_TTL_SECONDS,
+): { url: string; expiresAt: Date } {
+  if (!videoId || videoId.includes('/')) {
+    throw new Error('videoId must be a non-empty slug without slashes');
+  }
+  const nowSec = Math.floor(Date.now() / 1000);
+  const expires = nowSec + ttlSec;
+  const signedPrefix = `/hls/${videoId}/`;
+  const sig = computeHash(expires, signedPrefix, env.HLS_SIGNING_SECRET);
+  const base = env.HLS_BASE_URL.replace(/\/$/, '');
+  const origin = base.replace(/\/hls$/, '');
+  return {
+    url: `${origin}/hls/${sig}/${expires}/${videoId}/poster.jpg`,
+    expiresAt: new Date(expires * 1000),
+  };
+}
