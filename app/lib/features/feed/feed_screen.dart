@@ -123,7 +123,7 @@ class _FeedScreenState extends State<FeedScreen> {
             key: const Key('feed.appbar.courses'),
             tooltip: 'Courses',
             icon: const Icon(Icons.school_outlined),
-            onPressed: () => GoRouter.of(context).go('/courses'),
+            onPressed: () => GoRouter.of(context).push('/courses'),
           ),
         ],
       ),
@@ -166,7 +166,7 @@ class _FeedScreenState extends State<FeedScreen> {
                     const SizedBox(height: 12),
                     ElevatedButton(
                       key: const Key('feed.empty.browse'),
-                      onPressed: () => GoRouter.of(context).go('/browse'),
+                      onPressed: () => GoRouter.of(context).go('/courses'),
                       child: const Text('Browse courses'),
                     ),
                   ],

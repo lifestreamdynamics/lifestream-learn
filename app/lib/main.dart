@@ -21,6 +21,8 @@ import 'core/crash/secure_storage_backend.dart';
 import 'core/http/auth_interceptor.dart';
 import 'core/http/dio_client.dart';
 import 'core/routing/app_router.dart';
+import 'core/routing/navigation_history_observer.dart';
+import 'core/routing/root_back_handler.dart';
 import 'core/settings/settings_cubit.dart';
 import 'core/settings/settings_state.dart';
 import 'core/settings/settings_store.dart';
@@ -89,6 +91,8 @@ void main() {
     final meRepo = MeRepository(dio);
     final progressRepo = ProgressRepository(dio);
 
+    final navigationHistoryObserver = NavigationHistoryObserver();
+
     authBloc = AuthBloc(authRepo: authRepo, tokenStore: tokenStore);
 
     // Slice P7a — biometric unlock gate. Runs BEFORE `AuthStarted` so
@@ -129,6 +133,8 @@ void main() {
     authBloc.stream.listen((state) {
       if (state is Authenticated) {
         unawaited(analyticsBuffer.flush());
+      } else if (state is Unauthenticated) {
+        navigationHistoryObserver.clear();
       }
     });
 
@@ -177,6 +183,7 @@ void main() {
       crashReporter: crashReporter,
       crashConsentBloc: crashConsentBloc,
       settingsCubit: settingsCubit,
+      navigationHistoryObserver: navigationHistoryObserver,
     ));
   }, (error, stack) {
     // Zone-level uncaught errors — route through the doctor so async
@@ -237,6 +244,7 @@ class App extends StatefulWidget {
     required this.crashReporter,
     required this.crashConsentBloc,
     required this.settingsCubit,
+    required this.navigationHistoryObserver,
     super.key,
   });
 
@@ -259,6 +267,7 @@ class App extends StatefulWidget {
   final CrashReporter crashReporter;
   final CrashConsentBloc crashConsentBloc;
   final SettingsCubit settingsCubit;
+  final NavigationHistoryObserver navigationHistoryObserver;
 
   @override
   State<App> createState() => _AppState();
@@ -282,7 +291,10 @@ class _AppState extends State<App> with WidgetsBindingObserver {
     cueAnalyticsSink: widget.cueAnalyticsSink,
     videoAnalyticsSink: widget.videoAnalyticsSink,
     crashConsentBloc: widget.crashConsentBloc,
-    observers: <NavigatorObserver>[widget.crashReporter.routerObserver],
+    observers: <NavigatorObserver>[
+      widget.crashReporter.routerObserver,
+      widget.navigationHistoryObserver,
+    ],
   );
 
   DateTime? _sessionStart;
@@ -367,7 +379,10 @@ class _AppState extends State<App> with WidgetsBindingObserver {
                   disableAnimations:
                       settings.reduceMotion || existing.disableAnimations,
                 ),
-                child: child ?? const SizedBox.shrink(),
+                child: RootBackHandler(
+                  historyObserver: widget.navigationHistoryObserver,
+                  child: child ?? const SizedBox.shrink(),
+                ),
               );
             },
           );

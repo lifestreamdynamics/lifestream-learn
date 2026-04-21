@@ -176,7 +176,7 @@ class _LessonRow extends StatelessWidget {
           title: Text(lesson.title),
           subtitle: Text(subtitle),
           trailing: const Icon(Icons.chevron_right),
-          onTap: () => context.go(
+          onTap: () => context.push(
             '/courses/$courseId/lessons/${lesson.videoId}/review',
           ),
         ),

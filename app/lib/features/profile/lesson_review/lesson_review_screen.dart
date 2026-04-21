@@ -156,7 +156,7 @@ class _Header extends StatelessWidget {
                 children: [
                   ElevatedButton.icon(
                     key: const Key('review.retry'),
-                    onPressed: () => context.go(
+                    onPressed: () => context.push(
                       '/videos/${review.video.id}/watch?t=0',
                     ),
                     icon: const Icon(Icons.replay),

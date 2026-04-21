@@ -59,7 +59,7 @@ class _EnrolledCourseCardState extends State<EnrolledCourseCard> {
     if (lastVideoId != null) {
       // Deep-link with a ?t=<ms> query param — the player reads this on
       // init and seeks once the controller is ready.
-      context.go('/videos/$lastVideoId/watch?t=$lastPosMs');
+      context.push('/videos/$lastVideoId/watch?t=$lastPosMs');
       return;
     }
     // No last-watched position recorded: either the learner hasn't
@@ -68,9 +68,9 @@ class _EnrolledCourseCardState extends State<EnrolledCourseCard> {
     // route to the course detail screen so they can pick.
     final firstLesson = _detail?.lessons.firstOrNull;
     if (firstLesson != null) {
-      context.go('/videos/${firstLesson.videoId}/watch?t=0');
+      context.push('/videos/${firstLesson.videoId}/watch?t=0');
     } else {
-      context.go('/courses/${widget.summary.course.id}');
+      context.push('/courses/${widget.summary.course.id}');
     }
   }
 
@@ -159,7 +159,7 @@ class _EnrolledCourseCardState extends State<EnrolledCourseCard> {
                   TextButton(
                     key: Key('profile.course.${s.course.id}.details'),
                     onPressed: () =>
-                        context.go('/courses/${s.course.id}/progress'),
+                        context.push('/courses/${s.course.id}/progress'),
                     child: const Text('Details'),
                   ),
                   const SizedBox(width: 4),
@@ -289,7 +289,7 @@ class _LessonTile extends StatelessWidget {
       title: Text(lesson.title, overflow: TextOverflow.ellipsis),
       subtitle: Text(subtitle),
       trailing: const Icon(Icons.chevron_right),
-      onTap: () => context.go(
+      onTap: () => context.push(
         '/courses/$courseId/lessons/${lesson.videoId}/review',
       ),
     );

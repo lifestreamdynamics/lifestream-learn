@@ -166,7 +166,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
               const SizedBox(height: 8),
               OutlinedButton(
                 key: const Key('detail.watch'),
-                onPressed: () => GoRouter.of(context).go('/feed'),
+                onPressed: () => GoRouter.of(context).push('/feed'),
                 child: const Text('Watch in feed'),
               ),
             ],
