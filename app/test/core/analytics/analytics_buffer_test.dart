@@ -370,6 +370,99 @@ void main() {
     });
   });
 
+  group('AnalyticsBuffer.setEnabled (Slice P4 opt-out)', () {
+    test('enabled=false drops new events', () async {
+      final tmp = await _makeTempDir();
+      final repo = _MockEventsRepository();
+      final buffer = AnalyticsBuffer(
+        repo: repo,
+        docsDirResolver: () async => tmp,
+      );
+      buffer.setEnabled(false);
+
+      await buffer.log(_evt('video_view'));
+      await buffer.log(_evt('cue_shown'));
+
+      expect(buffer.queueLength, 0);
+      await buffer.dispose();
+      await tmp.delete(recursive: true);
+    });
+
+    test('enabled=false purges the on-disk queue', () async {
+      final tmp = await _makeTempDir();
+      final repo = _MockEventsRepository();
+      // Step 1: log two events while enabled.
+      final b1 = AnalyticsBuffer(
+        repo: repo,
+        docsDirResolver: () async => tmp,
+      );
+      await b1.log(_evt('video_view'));
+      await b1.log(_evt('cue_shown'));
+      expect(b1.queueLength, 2);
+
+      // Step 2: user opts out. Queue clears in-memory AND on disk.
+      b1.setEnabled(false);
+      // Let the unawaited _persist land.
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(b1.queueLength, 0);
+      await b1.dispose();
+
+      // Step 3: a fresh buffer hydrating from the same file sees
+      // nothing. If the on-disk queue had survived, those events
+      // would resurface here.
+      final b2 = AnalyticsBuffer(
+        repo: repo,
+        docsDirResolver: () async => tmp,
+      );
+      await b2.hydrate();
+      expect(b2.queueLength, 0);
+
+      await b2.dispose();
+      await tmp.delete(recursive: true);
+    });
+
+    test('re-enabling resumes normal queueing; no backfill of missed events',
+        () async {
+      final tmp = await _makeTempDir();
+      final repo = _MockEventsRepository();
+      final buffer = AnalyticsBuffer(
+        repo: repo,
+        docsDirResolver: () async => tmp,
+      );
+
+      buffer.setEnabled(false);
+      await buffer.log(_evt('video_view')); // dropped
+      expect(buffer.queueLength, 0);
+
+      buffer.setEnabled(true);
+      await buffer.log(_evt('cue_shown'));
+      expect(buffer.queueLength, 1);
+
+      await buffer.dispose();
+      await tmp.delete(recursive: true);
+    });
+
+    test('setEnabled is idempotent', () async {
+      final tmp = await _makeTempDir();
+      final repo = _MockEventsRepository();
+      final buffer = AnalyticsBuffer(
+        repo: repo,
+        docsDirResolver: () async => tmp,
+      );
+      // Default is enabled.
+      expect(buffer.isEnabled, true);
+      buffer.setEnabled(true); // no-op
+      expect(buffer.isEnabled, true);
+
+      buffer.setEnabled(false);
+      buffer.setEnabled(false); // no-op
+      expect(buffer.isEnabled, false);
+
+      await buffer.dispose();
+      await tmp.delete(recursive: true);
+    });
+  });
+
   group('AnalyticsBuffer.flush gate (auth-gating)', () {
     test('gate closed → flush short-circuits without calling repo', () async {
       final tmp = await _makeTempDir();

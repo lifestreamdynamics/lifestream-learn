@@ -40,7 +40,17 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Log in')),
-      body: BlocBuilder<AuthBloc, AuthState>(
+      body: BlocConsumer<AuthBloc, AuthState>(
+        // Slice P7a — when the login call lands in the MFA-required
+        // state, push the challenge screen on top. The challenge
+        // screen is responsible for driving the second step; this
+        // screen just hands off.
+        listenWhen: (prev, next) => next is MfaChallengeRequired,
+        listener: (context, state) {
+          if (state is MfaChallengeRequired) {
+            context.push('/login/mfa');
+          }
+        },
         builder: (context, state) {
           final busy = state is AuthAuthenticating;
           final errorMessage =

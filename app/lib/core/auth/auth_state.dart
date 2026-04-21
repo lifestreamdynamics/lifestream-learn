@@ -52,3 +52,61 @@ class Unauthenticated extends AuthState {
   @override
   int get hashCode => errorMessage?.hashCode ?? 2;
 }
+
+/// Slice P7a — transitional state between `AuthAuthenticating` and
+/// `Authenticated` for users with MFA enabled.
+///
+/// Held while the challenge screen is on-stage. Carries the pending
+/// token (the server's 5-minute JWT), the methods the user may choose
+/// from, an inline error string for wrong-code retries, and a
+/// "submitting" flag for the submit button's disabled state.
+class MfaChallengeRequired extends AuthState {
+  const MfaChallengeRequired({
+    required this.mfaToken,
+    required this.availableMethods,
+    this.errorMessage,
+    this.submitting = false,
+  });
+
+  final String mfaToken;
+  final List<String> availableMethods;
+  final String? errorMessage;
+  final bool submitting;
+
+  MfaChallengeRequired copyWith({
+    String? errorMessage,
+    bool? submitting,
+    bool clearError = false,
+  }) {
+    return MfaChallengeRequired(
+      mfaToken: mfaToken,
+      availableMethods: availableMethods,
+      errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
+      submitting: submitting ?? this.submitting,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is MfaChallengeRequired &&
+      other.mfaToken == mfaToken &&
+      other.errorMessage == errorMessage &&
+      other.submitting == submitting &&
+      _listEq(other.availableMethods, availableMethods);
+
+  @override
+  int get hashCode => Object.hash(
+        mfaToken,
+        Object.hashAll(availableMethods),
+        errorMessage,
+        submitting,
+      );
+}
+
+bool _listEq(List<String> a, List<String> b) {
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
+}

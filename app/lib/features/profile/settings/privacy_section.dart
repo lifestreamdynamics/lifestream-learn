@@ -1,0 +1,130 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
+
+import '../../../core/settings/settings_cubit.dart';
+
+/// Privacy & data section — analytics opt-out, crash reporting opt-out,
+/// Privacy Policy + Terms links.
+///
+/// - The analytics toggle calls `SettingsCubit.setAnalyticsEnabled`,
+///   which flips the AnalyticsBuffer gate and purges the pending
+///   on-disk queue on opt-out.
+/// - The crash reporting toggle dispatches consent events on the
+///   existing `CrashConsentBloc` — no parallel consent state is
+///   introduced. (See `SettingsCubit.setCrashReporting`.)
+/// - Privacy Policy / Terms links are rendered as copyable text rows
+///   because `url_launcher` isn't a dependency (no new deps per slice
+///   constraints).
+class PrivacySection extends StatelessWidget {
+  const PrivacySection({super.key});
+
+  // TODO(Slice P4 follow-up): swap the copyable-text links for a
+  // real launchUrl once `url_launcher` is added as a dependency.
+  static const String _privacyPolicyUrl =
+      'https://lifestream.example/learn/privacy';
+  static const String _termsUrl =
+      'https://lifestream.example/learn/terms';
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<SettingsCubit>().state;
+    final cubit = context.read<SettingsCubit>();
+    return Scaffold(
+      appBar: AppBar(title: const Text('Privacy & data')),
+      body: ListView(
+        children: [
+          SwitchListTile(
+            key: const Key('settings.privacy.analytics'),
+            secondary: const Icon(Icons.analytics_outlined),
+            title: const Text('Share usage analytics'),
+            subtitle: const Text(
+              'Structural events only — what you tapped, never what you '
+              'typed. Turn off to drop pending data and stop collection.',
+            ),
+            value: state.analyticsEnabled,
+            onChanged: cubit.setAnalyticsEnabled,
+          ),
+          const Divider(height: 0),
+          SwitchListTile(
+            key: const Key('settings.privacy.crashReporting'),
+            secondary: const Icon(Icons.bug_report_outlined),
+            title: const Text('Share crash reports'),
+            subtitle: const Text(
+              'Sends anonymised error info when the app crashes so we '
+              'can fix bugs. Never includes what you typed.',
+            ),
+            value: state.crashReportingEnabled,
+            onChanged: cubit.setCrashReporting,
+          ),
+          const Divider(),
+          // Slice P8 — GDPR "right of access" surface. Lives here
+          // (inside Privacy & data) rather than under Security because
+          // it's about the data we hold, not credential protection.
+          ListTile(
+            key: const Key('settings.privacy.exportData'),
+            leading: const Icon(Icons.download_outlined),
+            title: const Text('Export my data'),
+            subtitle: const Text(
+              'Download a JSON copy of your profile, activity, and '
+              'enrollments. Available once per day.',
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => GoRouter.of(context).push('/profile/export'),
+          ),
+          const Divider(),
+          _LinkTile(
+            keyValue: const Key('settings.privacy.privacyPolicy'),
+            title: 'Privacy Policy',
+            url: _privacyPolicyUrl,
+          ),
+          _LinkTile(
+            keyValue: const Key('settings.privacy.terms'),
+            title: 'Terms of Service',
+            url: _termsUrl,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Copyable-URL tile. Tap copies to clipboard and surfaces a
+/// SnackBar. When `url_launcher` is added, swap the onTap handler to
+/// `launchUrl(Uri.parse(url))`.
+class _LinkTile extends StatelessWidget {
+  const _LinkTile({
+    required this.keyValue,
+    required this.title,
+    required this.url,
+  });
+
+  final Key keyValue;
+  final String title;
+  final String url;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      key: keyValue,
+      leading: const Icon(Icons.open_in_new),
+      title: Text(title),
+      subtitle: Text(
+        url,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      onTap: () async {
+        await Clipboard.setData(ClipboardData(text: url));
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Copied: $url'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      },
+    );
+  }
+}

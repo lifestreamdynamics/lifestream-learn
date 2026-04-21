@@ -24,7 +24,25 @@ mixin _$User {
   String get id => throw _privateConstructorUsedError;
   String get email => throw _privateConstructorUsedError;
   String get displayName => throw _privateConstructorUsedError;
-  UserRole get role => throw _privateConstructorUsedError;
+  UserRole get role =>
+      throw _privateConstructorUsedError; // Slice P1 — profile screen additions. All optional on the client so
+  // the model stays backward-compatible with older `/api/auth/me`
+  // payloads (e.g. between rolling app + API upgrades).
+  //
+  // - `createdAt`: ISO-8601 string on the wire; freezed + json_serializable
+  //   decode to a DateTime automatically.
+  // - `avatarKey`: object-storage key, not a URL. The media-serving
+  //   route arrives in a later slice; the ProfileHeader widget
+  //   composes a display URL then. For now, a non-null key is a
+  //   signal that an avatar exists; we still render initials.
+  // - `useGravatar`: opt-in fallback flag (defaults off to match
+  //   backend default).
+  // - `preferences`: free-form bag (theme / playback / a11y) — Slice
+  //   P4 introduces a strongly-typed wrapper on top.
+  DateTime? get createdAt => throw _privateConstructorUsedError;
+  String? get avatarKey => throw _privateConstructorUsedError;
+  bool get useGravatar => throw _privateConstructorUsedError;
+  Map<String, dynamic>? get preferences => throw _privateConstructorUsedError;
 
   /// Serializes this User to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -40,7 +58,16 @@ abstract class $UserCopyWith<$Res> {
   factory $UserCopyWith(User value, $Res Function(User) then) =
       _$UserCopyWithImpl<$Res, User>;
   @useResult
-  $Res call({String id, String email, String displayName, UserRole role});
+  $Res call({
+    String id,
+    String email,
+    String displayName,
+    UserRole role,
+    DateTime? createdAt,
+    String? avatarKey,
+    bool useGravatar,
+    Map<String, dynamic>? preferences,
+  });
 }
 
 /// @nodoc
@@ -62,6 +89,10 @@ class _$UserCopyWithImpl<$Res, $Val extends User>
     Object? email = null,
     Object? displayName = null,
     Object? role = null,
+    Object? createdAt = freezed,
+    Object? avatarKey = freezed,
+    Object? useGravatar = null,
+    Object? preferences = freezed,
   }) {
     return _then(
       _value.copyWith(
@@ -81,6 +112,22 @@ class _$UserCopyWithImpl<$Res, $Val extends User>
                 ? _value.role
                 : role // ignore: cast_nullable_to_non_nullable
                       as UserRole,
+            createdAt: freezed == createdAt
+                ? _value.createdAt
+                : createdAt // ignore: cast_nullable_to_non_nullable
+                      as DateTime?,
+            avatarKey: freezed == avatarKey
+                ? _value.avatarKey
+                : avatarKey // ignore: cast_nullable_to_non_nullable
+                      as String?,
+            useGravatar: null == useGravatar
+                ? _value.useGravatar
+                : useGravatar // ignore: cast_nullable_to_non_nullable
+                      as bool,
+            preferences: freezed == preferences
+                ? _value.preferences
+                : preferences // ignore: cast_nullable_to_non_nullable
+                      as Map<String, dynamic>?,
           )
           as $Val,
     );
@@ -95,7 +142,16 @@ abstract class _$$UserImplCopyWith<$Res> implements $UserCopyWith<$Res> {
   ) = __$$UserImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({String id, String email, String displayName, UserRole role});
+  $Res call({
+    String id,
+    String email,
+    String displayName,
+    UserRole role,
+    DateTime? createdAt,
+    String? avatarKey,
+    bool useGravatar,
+    Map<String, dynamic>? preferences,
+  });
 }
 
 /// @nodoc
@@ -114,6 +170,10 @@ class __$$UserImplCopyWithImpl<$Res>
     Object? email = null,
     Object? displayName = null,
     Object? role = null,
+    Object? createdAt = freezed,
+    Object? avatarKey = freezed,
+    Object? useGravatar = null,
+    Object? preferences = freezed,
   }) {
     return _then(
       _$UserImpl(
@@ -133,6 +193,22 @@ class __$$UserImplCopyWithImpl<$Res>
             ? _value.role
             : role // ignore: cast_nullable_to_non_nullable
                   as UserRole,
+        createdAt: freezed == createdAt
+            ? _value.createdAt
+            : createdAt // ignore: cast_nullable_to_non_nullable
+                  as DateTime?,
+        avatarKey: freezed == avatarKey
+            ? _value.avatarKey
+            : avatarKey // ignore: cast_nullable_to_non_nullable
+                  as String?,
+        useGravatar: null == useGravatar
+            ? _value.useGravatar
+            : useGravatar // ignore: cast_nullable_to_non_nullable
+                  as bool,
+        preferences: freezed == preferences
+            ? _value._preferences
+            : preferences // ignore: cast_nullable_to_non_nullable
+                  as Map<String, dynamic>?,
       ),
     );
   }
@@ -146,7 +222,11 @@ class _$UserImpl implements _User {
     required this.email,
     required this.displayName,
     required this.role,
-  });
+    this.createdAt,
+    this.avatarKey,
+    this.useGravatar = false,
+    final Map<String, dynamic>? preferences,
+  }) : _preferences = preferences;
 
   factory _$UserImpl.fromJson(Map<String, dynamic> json) =>
       _$$UserImplFromJson(json);
@@ -159,10 +239,40 @@ class _$UserImpl implements _User {
   final String displayName;
   @override
   final UserRole role;
+  // Slice P1 — profile screen additions. All optional on the client so
+  // the model stays backward-compatible with older `/api/auth/me`
+  // payloads (e.g. between rolling app + API upgrades).
+  //
+  // - `createdAt`: ISO-8601 string on the wire; freezed + json_serializable
+  //   decode to a DateTime automatically.
+  // - `avatarKey`: object-storage key, not a URL. The media-serving
+  //   route arrives in a later slice; the ProfileHeader widget
+  //   composes a display URL then. For now, a non-null key is a
+  //   signal that an avatar exists; we still render initials.
+  // - `useGravatar`: opt-in fallback flag (defaults off to match
+  //   backend default).
+  // - `preferences`: free-form bag (theme / playback / a11y) — Slice
+  //   P4 introduces a strongly-typed wrapper on top.
+  @override
+  final DateTime? createdAt;
+  @override
+  final String? avatarKey;
+  @override
+  @JsonKey()
+  final bool useGravatar;
+  final Map<String, dynamic>? _preferences;
+  @override
+  Map<String, dynamic>? get preferences {
+    final value = _preferences;
+    if (value == null) return null;
+    if (_preferences is EqualUnmodifiableMapView) return _preferences;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableMapView(value);
+  }
 
   @override
   String toString() {
-    return 'User(id: $id, email: $email, displayName: $displayName, role: $role)';
+    return 'User(id: $id, email: $email, displayName: $displayName, role: $role, createdAt: $createdAt, avatarKey: $avatarKey, useGravatar: $useGravatar, preferences: $preferences)';
   }
 
   @override
@@ -174,12 +284,32 @@ class _$UserImpl implements _User {
             (identical(other.email, email) || other.email == email) &&
             (identical(other.displayName, displayName) ||
                 other.displayName == displayName) &&
-            (identical(other.role, role) || other.role == role));
+            (identical(other.role, role) || other.role == role) &&
+            (identical(other.createdAt, createdAt) ||
+                other.createdAt == createdAt) &&
+            (identical(other.avatarKey, avatarKey) ||
+                other.avatarKey == avatarKey) &&
+            (identical(other.useGravatar, useGravatar) ||
+                other.useGravatar == useGravatar) &&
+            const DeepCollectionEquality().equals(
+              other._preferences,
+              _preferences,
+            ));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
   @override
-  int get hashCode => Object.hash(runtimeType, id, email, displayName, role);
+  int get hashCode => Object.hash(
+    runtimeType,
+    id,
+    email,
+    displayName,
+    role,
+    createdAt,
+    avatarKey,
+    useGravatar,
+    const DeepCollectionEquality().hash(_preferences),
+  );
 
   /// Create a copy of User
   /// with the given fields replaced by the non-null parameter values.
@@ -201,6 +331,10 @@ abstract class _User implements User {
     required final String email,
     required final String displayName,
     required final UserRole role,
+    final DateTime? createdAt,
+    final String? avatarKey,
+    final bool useGravatar,
+    final Map<String, dynamic>? preferences,
   }) = _$UserImpl;
 
   factory _User.fromJson(Map<String, dynamic> json) = _$UserImpl.fromJson;
@@ -212,7 +346,28 @@ abstract class _User implements User {
   @override
   String get displayName;
   @override
-  UserRole get role;
+  UserRole get role; // Slice P1 — profile screen additions. All optional on the client so
+  // the model stays backward-compatible with older `/api/auth/me`
+  // payloads (e.g. between rolling app + API upgrades).
+  //
+  // - `createdAt`: ISO-8601 string on the wire; freezed + json_serializable
+  //   decode to a DateTime automatically.
+  // - `avatarKey`: object-storage key, not a URL. The media-serving
+  //   route arrives in a later slice; the ProfileHeader widget
+  //   composes a display URL then. For now, a non-null key is a
+  //   signal that an avatar exists; we still render initials.
+  // - `useGravatar`: opt-in fallback flag (defaults off to match
+  //   backend default).
+  // - `preferences`: free-form bag (theme / playback / a11y) — Slice
+  //   P4 introduces a strongly-typed wrapper on top.
+  @override
+  DateTime? get createdAt;
+  @override
+  String? get avatarKey;
+  @override
+  bool get useGravatar;
+  @override
+  Map<String, dynamic>? get preferences;
 
   /// Create a copy of User
   /// with the given fields replaced by the non-null parameter values.

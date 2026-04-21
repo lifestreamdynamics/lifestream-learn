@@ -4,6 +4,8 @@ import { ForbiddenError, NotFoundError } from '@/utils/errors';
 import { parseResponseFor } from '@/validators/cue-payloads';
 import { grade, type GradingResult } from '@/services/grading';
 import { hasCourseAccess } from '@/services/course-access';
+import { progressService } from '@/services/progress.service';
+import { logger } from '@/config/logger';
 
 export interface SubmitAttemptResult {
   attempt: Attempt;
@@ -76,6 +78,23 @@ export function createAttemptService(
           scoreJson: (result.scoreJson ?? null) as any,
         },
       });
+
+      // Slice P2 — invalidate the progress cache so the learner's next
+      // dashboard fetch sees this attempt. Best-effort only; never let
+      // a cache-invalidation failure fail the attempt write. Errors are
+      // swallowed inside the service itself (logged at warn).
+      void progressService
+        .invalidateForAttempt({
+          userId,
+          videoId: cue.videoId,
+          courseId: cue.video.courseId,
+        })
+        .catch((err) => {
+          logger.warn(
+            { err, userId, videoId: cue.videoId, courseId: cue.video.courseId },
+            'progress cache invalidation on attempt failed',
+          );
+        });
 
       // IMPORTANT: never echo cue.payload.answerIndex / .pairs. Only the
       // grading result goes back to the client.

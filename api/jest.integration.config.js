@@ -9,6 +9,22 @@ module.exports = {
     '^@/(.*)$': '<rootDir>/src/$1',
     '^@tests/(.*)$': '<rootDir>/tests/$1',
   },
+  // Slice P7a — otplib and its transitive deps (`@scure/base`,
+  // `@noble/hashes@2`) ship ESM-only (`"type": "module"`) builds. Jest
+  // defaults to NOT transforming node_modules; we opt those packages
+  // into a babel-jest transform that downlevels their ESM source to
+  // CJS so the existing Jest classic runtime can load them. Mirrors
+  // jest.config.js (unit suite).
+  transform: {
+    '^.+\\.tsx?$': ['ts-jest', {}],
+    '^.+\\.(m?jsx?)$': [
+      'babel-jest',
+      { presets: [['@babel/preset-env', { targets: { node: 'current' } }]] },
+    ],
+  },
+  transformIgnorePatterns: [
+    '/node_modules/(?!(otplib|@otplib|@scure|@noble)/)',
+  ],
   setupFiles: ['<rootDir>/tests/integration/env.ts'],
   globalSetup: '<rootDir>/tests/integration/global-setup.ts',
   // Module singletons (prisma, shared ioredis, BullMQ queue) live for the

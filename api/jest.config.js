@@ -6,6 +6,23 @@ module.exports = {
   roots: ['<rootDir>/src', '<rootDir>/tests/unit'],
   testMatch: ['**/*.test.ts', '**/*.spec.ts'],
   testPathIgnorePatterns: ['/node_modules/', '/dist/', '/tests/integration/'],
+  // Slice P7a — `otplib` (and its `@scure/base` dep) ship ESM-only
+  // builds. Jest defaults to NOT transforming node_modules, which
+  // means `import { ... } from '@scure/base'` lands as raw `export`
+  // syntax inside a CommonJS context and blows up at parse time.
+  // We opt those packages INTO a plain babel-jest transform (ts-jest
+  // only handles .ts). Keep this list tight — every entry widens the
+  // transform surface area and slows test warm-up.
+  transform: {
+    '^.+\\.tsx?$': ['ts-jest', {}],
+    '^.+\\.(m?jsx?)$': [
+      'babel-jest',
+      { presets: [['@babel/preset-env', { targets: { node: 'current' } }]] },
+    ],
+  },
+  transformIgnorePatterns: [
+    '/node_modules/(?!(otplib|@otplib|@scure|@noble)/)',
+  ],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
     '^@tests/(.*)$': '<rootDir>/tests/$1',
@@ -22,6 +39,9 @@ module.exports = {
     'src/services/video.service.ts',
     'src/services/cue.service.ts',
     'src/services/attempt.service.ts',
+    'src/services/progress.service.ts',
+    'src/services/progress.service.streak.ts',
+    'src/services/achievement.service.ts',
     'src/services/grading/**/*.ts',
     'src/services/ffmpeg/**/*.ts',
     'src/services/object-store.ts',
@@ -49,6 +69,32 @@ module.exports = {
     // on branches/lines/functions/statements for this subtree.
     'src/services/grading/**/*.ts': {
       branches: 95,
+      functions: 95,
+      lines: 95,
+      statements: 95,
+    },
+    // Slice P2 — progress aggregation is grading-adjacent: grade letters
+    // and accuracy are computed from `Attempt.correct`, so a regression
+    // here mis-credits a learner. Hold to the same ≥95% bar as grading.
+    'src/services/progress.service.ts': {
+      branches: 90,
+      functions: 95,
+      lines: 95,
+      statements: 95,
+    },
+    // Slice P3 — achievement unlock evaluator. Miscredit here equals a
+    // reward the learner didn't earn (or worse, a silently-missed
+    // unlock). Same 95% bar as grading/progress.
+    'src/services/achievement.service.ts': {
+      branches: 90,
+      functions: 95,
+      lines: 95,
+      statements: 95,
+    },
+    // Streak helper is pure arithmetic but shared between progress +
+    // achievement services — same bar.
+    'src/services/progress.service.streak.ts': {
+      branches: 90,
       functions: 95,
       lines: 95,
       statements: 95,

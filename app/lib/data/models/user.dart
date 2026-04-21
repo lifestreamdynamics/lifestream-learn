@@ -35,6 +35,24 @@ class User with _$User {
     required String email,
     required String displayName,
     required UserRole role,
+    // Slice P1 — profile screen additions. All optional on the client so
+    // the model stays backward-compatible with older `/api/auth/me`
+    // payloads (e.g. between rolling app + API upgrades).
+    //
+    // - `createdAt`: ISO-8601 string on the wire; freezed + json_serializable
+    //   decode to a DateTime automatically.
+    // - `avatarKey`: object-storage key, not a URL. The media-serving
+    //   route arrives in a later slice; the ProfileHeader widget
+    //   composes a display URL then. For now, a non-null key is a
+    //   signal that an avatar exists; we still render initials.
+    // - `useGravatar`: opt-in fallback flag (defaults off to match
+    //   backend default).
+    // - `preferences`: free-form bag (theme / playback / a11y) — Slice
+    //   P4 introduces a strongly-typed wrapper on top.
+    DateTime? createdAt,
+    String? avatarKey,
+    @Default(false) bool useGravatar,
+    Map<String, dynamic>? preferences,
   }) = _User;
 
   factory User.fromJson(Map<String, dynamic> json) => _$UserFromJson(json);

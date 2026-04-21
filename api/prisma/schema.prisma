@@ -43,6 +43,14 @@ enum CueType {
   VOICE
 }
 
+// Slice P7a — discriminator for a single MfaCredential row.
+// TOTP is populated now; WEBAUTHN is reserved for P7b so the migration
+// history is monotonic (no enum churn at P7b time).
+enum MfaKind {
+  TOTP
+  WEBAUTHN
+}
+
 model User {
   id           String   @id @default(uuid()) @db.Uuid
   email        String   @unique
@@ -52,14 +60,159 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  designerApp    DesignerApplication?
-  enrollments    Enrollment[]
-  attempts       Attempt[]
-  ownedCourses   Course[]             @relation("CourseOwner")
-  collaborations CourseCollaborator[]
-  analytics      AnalyticsEvent[]
+  // Slice P1 — profile screen.
+  // `avatarKey` stores the object-storage key of the user-uploaded avatar
+  // under `learn-uploads/avatars/<userId>/<uuid>.<ext>`. A separate media
+  // serving route (later slice) composes a display URL from it.
+  // `useGravatar` is an opt-in fallback; off-by-default to match our
+  // self-host privacy posture — enabling it sends a hash of the user's
+  // email to a third-party service.
+  // `preferences` is a client-authoritative bag for theme / playback /
+  // accessibility prefs; schema stays loose so settings slices can grow
+  // without adding columns.
+  avatarKey    String?
+  useGravatar  Boolean  @default(false)
+  preferences  Json?
+
+  // Slice P5 — account security fields.
+  // `passwordChangedAt` is bumped on every successful POST /api/me/password
+  // AND on soft-delete. The refresh handler rejects any refresh token whose
+  // `iat` claim is strictly earlier than this timestamp, which gives us a
+  // cheap "invalidate all refresh tokens on password change" without adding
+  // a per-session Session table yet (that lands with P6). Access tokens
+  // remain valid for their remaining TTL (up to 15 minutes) — matches the
+  // industry-standard grace window (Google, GitHub).
+  //
+  // `deletedAt` marks the account as soft-deleted; `deletionPurgeAt` is
+  // the 30-day recovery cutoff. The login + refresh paths reject any user
+  // with a non-null `deletedAt`. No rows are removed — hard-purge is a
+  // deferred ops cron.
+  passwordChangedAt DateTime?
+  deletedAt         DateTime?
+  deletionPurgeAt   DateTime?
+
+  // Slice P7a — account-level MFA state.
+  //
+  // `mfaEnabled` flips true the first time a factor is confirmed and
+  // back to false only when every factor has been removed. The login
+  // flow short-circuits on this flag so a user with a password but
+  // no MFA row still flows through the legacy path.
+  //
+  // `mfaBackupCodes` is an array of bcrypt-hashed one-time codes. We
+  // use bcrypt (not argon2) because it's already the password-hash
+  // primitive in this repo and 10-char codes don't warrant adding a
+  // second KDF. Plaintext codes are returned to the client exactly
+  // once at enrolment; each entry is burned (removed from the array)
+  // on first successful use.
+  mfaEnabled     Boolean  @default(false)
+  mfaBackupCodes String[] @default([])
+
+  designerApp     DesignerApplication?
+  enrollments     Enrollment[]
+  attempts        Attempt[]
+  ownedCourses    Course[]             @relation("CourseOwner")
+  collaborations  CourseCollaborator[]
+  analytics       AnalyticsEvent[]
+  achievements    UserAchievement[]
+  sessions        Session[]
+  mfaCredentials  MfaCredential[]
 
   @@index([role])
+}
+
+// Slice P7a — one row per enrolled MFA factor.
+//
+// TOTP: the authenticator-app secret is AES-256-GCM encrypted at rest
+// with env.MFA_ENCRYPTION_KEY — `totpSecretEncrypted` holds
+// `base64(iv || tag || ct)` so a key rotation can re-wrap in place.
+//
+// WebAuthn (P7b): `credentialId`, `publicKey`, `signCount`, `transports`,
+// `aaguid` are reserved now so P7b only adds behaviour, not columns.
+// They're all nullable so a TOTP row validates without them.
+model MfaCredential {
+  id                  String    @id @default(uuid()) @db.Uuid
+  userId              String    @db.Uuid
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind                MfaKind
+  label               String?
+  totpSecretEncrypted String?
+  credentialId        Bytes?    @unique
+  publicKey           Bytes?
+  signCount           Int?      @default(0)
+  transports          String[]  @default([])
+  aaguid              String?
+  createdAt           DateTime  @default(now())
+  lastUsedAt          DateTime?
+
+  @@index([userId])
+}
+
+// Slice P6 — per-device refresh-session tracking. One row per refresh-token
+// lifetime; rotated on every successful refresh (the old row is marked
+// `revokedAt` and a new row is minted for the new `jti`). Enables the
+// "Active sessions" UX + server-side logout + "Sign out all other devices".
+//
+// `refreshJti` mirrors the `jti` claim of the refresh token — same identifier
+// as the Redis revocation primitive so both stores key off a single value
+// and an attacker replaying a token hits both the Redis atomic-revoke gate
+// and the `revokedAt` DB gate.
+//
+// `ipHash` is `sha256(ip + ':' + IP_HASH_SALT)` truncated to 32 hex chars —
+// enough for a user to eyeball "same device" without storing raw IPs.
+// `deviceLabel` is a coarse hand-rolled parse of the User-Agent header
+// (`"Android"`, `"iPhone"`, …) — no new deps.
+model Session {
+  id          String    @id @default(uuid()) @db.Uuid
+  userId      String    @db.Uuid
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshJti  String    @unique
+  deviceLabel String?
+  ipHash      String?
+  createdAt   DateTime  @default(now())
+  lastSeenAt  DateTime  @default(now())
+  revokedAt   DateTime?
+
+  @@index([userId, revokedAt])
+  @@index([refreshJti])
+}
+
+// Slice P3 — achievements catalog. Rows are seeded in `prisma/seed.ts`
+// with stable slug IDs (e.g. `streak_7`, `first_lesson`) so the client
+// code can reference specific achievements by ID without a lookup.
+//
+// `criteriaJson` is a discriminated union by `type`:
+//   - `{"type":"lessons_completed","count":1}` — distinct video_complete events
+//   - `{"type":"streak","days":7}` — consecutive-day activity streak
+//   - `{"type":"perfect_lesson"}` — any lesson where every cue is correct
+//   - `{"type":"course_complete"}` — every READY video in an enrolled course completed
+//   - `{"type":"cues_correct","count":100}` — distinct cues where the latest attempt is correct
+//   - `{"type":"cues_correct_by_type","cueType":"MCQ","count":25}` — same filtered by cue type
+//
+// `iconKey` is a Material icon identifier the Flutter client maps to an
+// `IconData` constant; no image upload is needed for v1.
+model Achievement {
+  id           String   @id                   // stable slug like "streak_7"
+  title        String
+  description  String
+  iconKey      String                         // Material icon name, consumed by Flutter
+  criteriaJson Json                           // {"type":"streak","days":7} etc.
+  userUnlocks  UserAchievement[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// Slice P3 — per-user unlock record. Evaluated pull-not-push inside
+// `progress.service.getOverallProgress` so the grading hot path stays
+// cheap (per `CLAUDE.md` / plan constraint).
+model UserAchievement {
+  userId        String      @db.Uuid
+  achievementId String
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  achievement   Achievement @relation(fields: [achievementId], references: [id], onDelete: Cascade)
+  unlockedAt    DateTime    @default(now())
+
+  @@id([userId, achievementId])
+  @@index([userId, unlockedAt])
 }
 
 model DesignerApplication {

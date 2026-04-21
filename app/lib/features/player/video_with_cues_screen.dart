@@ -30,6 +30,7 @@ class VideoWithCuesScreen extends StatefulWidget {
     required this.cueRepo,
     required this.attemptRepo,
     required this.enrollmentRepo,
+    this.initialPosition,
     this.controllerCache,
     this.cueAnalyticsSink = const NoopCueAnalyticsSink(),
     this.videoAnalyticsSink = const NoopVideoAnalyticsSink(),
@@ -41,6 +42,13 @@ class VideoWithCuesScreen extends StatefulWidget {
   final CueRepository cueRepo;
   final AttemptRepository attemptRepo;
   final EnrollmentRepository enrollmentRepo;
+
+  /// Slice P2 — when the screen is entered via a Resume deep-link
+  /// (`/videos/:id/watch?t=<ms>`), this carries the starting position.
+  /// We seek to it once the controller is ready. A null value (the
+  /// common case, launched from the feed) means "start from the
+  /// natural position the controller already has".
+  final Duration? initialPosition;
 
   /// Optional shared cache so the screen can share controllers with the
   /// feed's cache. If null, a dedicated cache with capacity=1 is used.
@@ -115,6 +123,19 @@ class _VideoWithCuesScreenState extends State<VideoWithCuesScreen>
     final cues = _cues;
     if (cues == null) return;
     if (_scheduler != null) return;
+    // Slice P2 — seek to the deep-link target (`?t=<ms>`) if one was
+    // supplied. We do this BEFORE starting the scheduler so the first
+    // cue evaluation happens against the seeked position rather than
+    // the natural start. Fire-and-forget: a seek failure shouldn't
+    // block playback; worst case the user starts from the top.
+    final initial = widget.initialPosition;
+    if (initial != null) {
+      final duration = controller.value.duration;
+      final clamped = (duration > Duration.zero && initial > duration)
+          ? duration
+          : initial;
+      unawaited(controller.seekTo(clamped));
+    }
     final scheduler = CueScheduler(
       controller: controller,
       cues: cues,

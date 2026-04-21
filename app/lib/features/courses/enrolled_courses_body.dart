@@ -123,7 +123,22 @@ class _EnrolledCoursesBodyState extends State<EnrolledCoursesBody> {
               title: Text(row.course.title),
               subtitle: Text(lastHint),
               trailing: const Icon(Icons.play_arrow),
-              onTap: () => GoRouter.of(context).go('/feed'),
+              // Slice P2 — fix the known UX gap where tapping an
+              // enrolled course jumped to `/feed` instead of resuming.
+              // If we know a last-watched video, deep-link straight
+              // into the player at the saved position. Otherwise fall
+              // back to the course detail screen so the learner can
+              // pick a lesson.
+              onTap: () {
+                final lastVideoId = row.lastVideoId;
+                if (lastVideoId != null) {
+                  final t = row.lastPosMs ?? 0;
+                  GoRouter.of(context)
+                      .go('/videos/$lastVideoId/watch?t=$t');
+                } else {
+                  GoRouter.of(context).go('/courses/${row.courseId}');
+                }
+              },
             ),
           );
         },

@@ -10,6 +10,7 @@ import { feedRouter } from '@/routes/feed.routes';
 import { designerApplicationsRouter } from '@/routes/designer-applications.routes';
 import { enrollmentsRouter } from '@/routes/enrollments.routes';
 import { eventsRouter } from '@/routes/events.routes';
+import { meRouter } from '@/routes/me.routes';
 
 export const apiRouter = Router();
 
@@ -27,3 +28,4 @@ apiRouter.use('/feed', feedRouter);
 apiRouter.use('/designer-applications', designerApplicationsRouter);
 apiRouter.use('/enrollments', enrollmentsRouter);
 apiRouter.use('/events', eventsRouter);
+apiRouter.use('/me', meRouter);

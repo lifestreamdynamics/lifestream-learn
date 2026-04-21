@@ -24,4 +24,26 @@ void main() {
       }
     });
   });
+
+  group('formatMemberSinceMonthYear', () {
+    test('null -> empty string (caller renders unconditionally)', () {
+      expect(formatMemberSinceMonthYear(null), '');
+    });
+
+    test('renders "<Month> <year>" in local time', () {
+      // Pick a UTC date that stays in the same month when converted to
+      // any plausible local timezone (mid-April, well away from
+      // month boundaries).
+      final dt = DateTime.utc(2026, 4, 15, 12);
+      expect(formatMemberSinceMonthYear(dt), 'April 2026');
+    });
+
+    test('handles all 12 months', () {
+      for (int m = 1; m <= 12; m++) {
+        // Day 15 avoids TZ-rollover flakiness on month boundaries.
+        final dt = DateTime.utc(2026, m, 15, 12);
+        expect(formatMemberSinceMonthYear(dt), isNotEmpty);
+      }
+    });
+  });
 }
