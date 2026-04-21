@@ -15,6 +15,203 @@ final _privateConstructorUsedError = UnsupportedError(
   'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#adding-getters-and-methods-to-our-models',
 );
 
+CaptionTrack _$CaptionTrackFromJson(Map<String, dynamic> json) {
+  return _CaptionTrack.fromJson(json);
+}
+
+/// @nodoc
+mixin _$CaptionTrack {
+  String get language => throw _privateConstructorUsedError;
+  String get url => throw _privateConstructorUsedError;
+  DateTime get expiresAt => throw _privateConstructorUsedError;
+
+  /// Serializes this CaptionTrack to a JSON map.
+  Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
+
+  /// Create a copy of CaptionTrack
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  $CaptionTrackCopyWith<CaptionTrack> get copyWith =>
+      throw _privateConstructorUsedError;
+}
+
+/// @nodoc
+abstract class $CaptionTrackCopyWith<$Res> {
+  factory $CaptionTrackCopyWith(
+    CaptionTrack value,
+    $Res Function(CaptionTrack) then,
+  ) = _$CaptionTrackCopyWithImpl<$Res, CaptionTrack>;
+  @useResult
+  $Res call({String language, String url, DateTime expiresAt});
+}
+
+/// @nodoc
+class _$CaptionTrackCopyWithImpl<$Res, $Val extends CaptionTrack>
+    implements $CaptionTrackCopyWith<$Res> {
+  _$CaptionTrackCopyWithImpl(this._value, this._then);
+
+  // ignore: unused_field
+  final $Val _value;
+  // ignore: unused_field
+  final $Res Function($Val) _then;
+
+  /// Create a copy of CaptionTrack
+  /// with the given fields replaced by the non-null parameter values.
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? language = null,
+    Object? url = null,
+    Object? expiresAt = null,
+  }) {
+    return _then(
+      _value.copyWith(
+            language: null == language
+                ? _value.language
+                : language // ignore: cast_nullable_to_non_nullable
+                      as String,
+            url: null == url
+                ? _value.url
+                : url // ignore: cast_nullable_to_non_nullable
+                      as String,
+            expiresAt: null == expiresAt
+                ? _value.expiresAt
+                : expiresAt // ignore: cast_nullable_to_non_nullable
+                      as DateTime,
+          )
+          as $Val,
+    );
+  }
+}
+
+/// @nodoc
+abstract class _$$CaptionTrackImplCopyWith<$Res>
+    implements $CaptionTrackCopyWith<$Res> {
+  factory _$$CaptionTrackImplCopyWith(
+    _$CaptionTrackImpl value,
+    $Res Function(_$CaptionTrackImpl) then,
+  ) = __$$CaptionTrackImplCopyWithImpl<$Res>;
+  @override
+  @useResult
+  $Res call({String language, String url, DateTime expiresAt});
+}
+
+/// @nodoc
+class __$$CaptionTrackImplCopyWithImpl<$Res>
+    extends _$CaptionTrackCopyWithImpl<$Res, _$CaptionTrackImpl>
+    implements _$$CaptionTrackImplCopyWith<$Res> {
+  __$$CaptionTrackImplCopyWithImpl(
+    _$CaptionTrackImpl _value,
+    $Res Function(_$CaptionTrackImpl) _then,
+  ) : super(_value, _then);
+
+  /// Create a copy of CaptionTrack
+  /// with the given fields replaced by the non-null parameter values.
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? language = null,
+    Object? url = null,
+    Object? expiresAt = null,
+  }) {
+    return _then(
+      _$CaptionTrackImpl(
+        language: null == language
+            ? _value.language
+            : language // ignore: cast_nullable_to_non_nullable
+                  as String,
+        url: null == url
+            ? _value.url
+            : url // ignore: cast_nullable_to_non_nullable
+                  as String,
+        expiresAt: null == expiresAt
+            ? _value.expiresAt
+            : expiresAt // ignore: cast_nullable_to_non_nullable
+                  as DateTime,
+      ),
+    );
+  }
+}
+
+/// @nodoc
+@JsonSerializable()
+class _$CaptionTrackImpl implements _CaptionTrack {
+  const _$CaptionTrackImpl({
+    required this.language,
+    required this.url,
+    required this.expiresAt,
+  });
+
+  factory _$CaptionTrackImpl.fromJson(Map<String, dynamic> json) =>
+      _$$CaptionTrackImplFromJson(json);
+
+  @override
+  final String language;
+  @override
+  final String url;
+  @override
+  final DateTime expiresAt;
+
+  @override
+  String toString() {
+    return 'CaptionTrack(language: $language, url: $url, expiresAt: $expiresAt)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is _$CaptionTrackImpl &&
+            (identical(other.language, language) ||
+                other.language == language) &&
+            (identical(other.url, url) || other.url == url) &&
+            (identical(other.expiresAt, expiresAt) ||
+                other.expiresAt == expiresAt));
+  }
+
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  @override
+  int get hashCode => Object.hash(runtimeType, language, url, expiresAt);
+
+  /// Create a copy of CaptionTrack
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  @override
+  @pragma('vm:prefer-inline')
+  _$$CaptionTrackImplCopyWith<_$CaptionTrackImpl> get copyWith =>
+      __$$CaptionTrackImplCopyWithImpl<_$CaptionTrackImpl>(this, _$identity);
+
+  @override
+  Map<String, dynamic> toJson() {
+    return _$$CaptionTrackImplToJson(this);
+  }
+}
+
+abstract class _CaptionTrack implements CaptionTrack {
+  const factory _CaptionTrack({
+    required final String language,
+    required final String url,
+    required final DateTime expiresAt,
+  }) = _$CaptionTrackImpl;
+
+  factory _CaptionTrack.fromJson(Map<String, dynamic> json) =
+      _$CaptionTrackImpl.fromJson;
+
+  @override
+  String get language;
+  @override
+  String get url;
+  @override
+  DateTime get expiresAt;
+
+  /// Create a copy of CaptionTrack
+  /// with the given fields replaced by the non-null parameter values.
+  @override
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  _$$CaptionTrackImplCopyWith<_$CaptionTrackImpl> get copyWith =>
+      throw _privateConstructorUsedError;
+}
+
 VideoSummary _$VideoSummaryFromJson(Map<String, dynamic> json) {
   return _VideoSummary.fromJson(json);
 }
@@ -590,6 +787,8 @@ PlaybackInfo _$PlaybackInfoFromJson(Map<String, dynamic> json) {
 mixin _$PlaybackInfo {
   String get masterPlaylistUrl => throw _privateConstructorUsedError;
   DateTime get expiresAt => throw _privateConstructorUsedError;
+  List<CaptionTrack> get captions => throw _privateConstructorUsedError;
+  String? get defaultCaptionLanguage => throw _privateConstructorUsedError;
 
   /// Serializes this PlaybackInfo to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -608,7 +807,12 @@ abstract class $PlaybackInfoCopyWith<$Res> {
     $Res Function(PlaybackInfo) then,
   ) = _$PlaybackInfoCopyWithImpl<$Res, PlaybackInfo>;
   @useResult
-  $Res call({String masterPlaylistUrl, DateTime expiresAt});
+  $Res call({
+    String masterPlaylistUrl,
+    DateTime expiresAt,
+    List<CaptionTrack> captions,
+    String? defaultCaptionLanguage,
+  });
 }
 
 /// @nodoc
@@ -625,7 +829,12 @@ class _$PlaybackInfoCopyWithImpl<$Res, $Val extends PlaybackInfo>
   /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
-  $Res call({Object? masterPlaylistUrl = null, Object? expiresAt = null}) {
+  $Res call({
+    Object? masterPlaylistUrl = null,
+    Object? expiresAt = null,
+    Object? captions = null,
+    Object? defaultCaptionLanguage = freezed,
+  }) {
     return _then(
       _value.copyWith(
             masterPlaylistUrl: null == masterPlaylistUrl
@@ -636,6 +845,14 @@ class _$PlaybackInfoCopyWithImpl<$Res, $Val extends PlaybackInfo>
                 ? _value.expiresAt
                 : expiresAt // ignore: cast_nullable_to_non_nullable
                       as DateTime,
+            captions: null == captions
+                ? _value.captions
+                : captions // ignore: cast_nullable_to_non_nullable
+                      as List<CaptionTrack>,
+            defaultCaptionLanguage: freezed == defaultCaptionLanguage
+                ? _value.defaultCaptionLanguage
+                : defaultCaptionLanguage // ignore: cast_nullable_to_non_nullable
+                      as String?,
           )
           as $Val,
     );
@@ -651,7 +868,12 @@ abstract class _$$PlaybackInfoImplCopyWith<$Res>
   ) = __$$PlaybackInfoImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({String masterPlaylistUrl, DateTime expiresAt});
+  $Res call({
+    String masterPlaylistUrl,
+    DateTime expiresAt,
+    List<CaptionTrack> captions,
+    String? defaultCaptionLanguage,
+  });
 }
 
 /// @nodoc
@@ -667,7 +889,12 @@ class __$$PlaybackInfoImplCopyWithImpl<$Res>
   /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
-  $Res call({Object? masterPlaylistUrl = null, Object? expiresAt = null}) {
+  $Res call({
+    Object? masterPlaylistUrl = null,
+    Object? expiresAt = null,
+    Object? captions = null,
+    Object? defaultCaptionLanguage = freezed,
+  }) {
     return _then(
       _$PlaybackInfoImpl(
         masterPlaylistUrl: null == masterPlaylistUrl
@@ -678,6 +905,14 @@ class __$$PlaybackInfoImplCopyWithImpl<$Res>
             ? _value.expiresAt
             : expiresAt // ignore: cast_nullable_to_non_nullable
                   as DateTime,
+        captions: null == captions
+            ? _value._captions
+            : captions // ignore: cast_nullable_to_non_nullable
+                  as List<CaptionTrack>,
+        defaultCaptionLanguage: freezed == defaultCaptionLanguage
+            ? _value.defaultCaptionLanguage
+            : defaultCaptionLanguage // ignore: cast_nullable_to_non_nullable
+                  as String?,
       ),
     );
   }
@@ -689,7 +924,9 @@ class _$PlaybackInfoImpl implements _PlaybackInfo {
   const _$PlaybackInfoImpl({
     required this.masterPlaylistUrl,
     required this.expiresAt,
-  });
+    final List<CaptionTrack> captions = const <CaptionTrack>[],
+    this.defaultCaptionLanguage,
+  }) : _captions = captions;
 
   factory _$PlaybackInfoImpl.fromJson(Map<String, dynamic> json) =>
       _$$PlaybackInfoImplFromJson(json);
@@ -698,10 +935,21 @@ class _$PlaybackInfoImpl implements _PlaybackInfo {
   final String masterPlaylistUrl;
   @override
   final DateTime expiresAt;
+  final List<CaptionTrack> _captions;
+  @override
+  @JsonKey()
+  List<CaptionTrack> get captions {
+    if (_captions is EqualUnmodifiableListView) return _captions;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_captions);
+  }
+
+  @override
+  final String? defaultCaptionLanguage;
 
   @override
   String toString() {
-    return 'PlaybackInfo(masterPlaylistUrl: $masterPlaylistUrl, expiresAt: $expiresAt)';
+    return 'PlaybackInfo(masterPlaylistUrl: $masterPlaylistUrl, expiresAt: $expiresAt, captions: $captions, defaultCaptionLanguage: $defaultCaptionLanguage)';
   }
 
   @override
@@ -712,12 +960,21 @@ class _$PlaybackInfoImpl implements _PlaybackInfo {
             (identical(other.masterPlaylistUrl, masterPlaylistUrl) ||
                 other.masterPlaylistUrl == masterPlaylistUrl) &&
             (identical(other.expiresAt, expiresAt) ||
-                other.expiresAt == expiresAt));
+                other.expiresAt == expiresAt) &&
+            const DeepCollectionEquality().equals(other._captions, _captions) &&
+            (identical(other.defaultCaptionLanguage, defaultCaptionLanguage) ||
+                other.defaultCaptionLanguage == defaultCaptionLanguage));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
   @override
-  int get hashCode => Object.hash(runtimeType, masterPlaylistUrl, expiresAt);
+  int get hashCode => Object.hash(
+    runtimeType,
+    masterPlaylistUrl,
+    expiresAt,
+    const DeepCollectionEquality().hash(_captions),
+    defaultCaptionLanguage,
+  );
 
   /// Create a copy of PlaybackInfo
   /// with the given fields replaced by the non-null parameter values.
@@ -737,6 +994,8 @@ abstract class _PlaybackInfo implements PlaybackInfo {
   const factory _PlaybackInfo({
     required final String masterPlaylistUrl,
     required final DateTime expiresAt,
+    final List<CaptionTrack> captions,
+    final String? defaultCaptionLanguage,
   }) = _$PlaybackInfoImpl;
 
   factory _PlaybackInfo.fromJson(Map<String, dynamic> json) =
@@ -746,6 +1005,10 @@ abstract class _PlaybackInfo implements PlaybackInfo {
   String get masterPlaylistUrl;
   @override
   DateTime get expiresAt;
+  @override
+  List<CaptionTrack> get captions;
+  @override
+  String? get defaultCaptionLanguage;
 
   /// Create a copy of PlaybackInfo
   /// with the given fields replaced by the non-null parameter values.

@@ -1,8 +1,25 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lifestream_learn_app/core/http/error_envelope.dart';
 import 'package:lifestream_learn_app/data/models/cue.dart';
+import 'package:lifestream_learn_app/data/models/video.dart';
+import 'package:lifestream_learn_app/data/repositories/caption_repository.dart';
+import 'package:lifestream_learn_app/data/repositories/cue_repository.dart';
+import 'package:lifestream_learn_app/data/repositories/enrollment_repository.dart';
+import 'package:lifestream_learn_app/data/repositories/video_repository.dart';
+import 'package:lifestream_learn_app/features/designer/captions_section.dart';
 import 'package:lifestream_learn_app/features/designer/cue_form_sheet.dart';
 import 'package:lifestream_learn_app/features/designer/video_editor_screen.dart';
+import 'package:mocktail/mocktail.dart';
+import 'package:visibility_detector/visibility_detector.dart';
+
+class _MockVideoRepository extends Mock implements VideoRepository {}
+
+class _MockCueRepository extends Mock implements CueRepository {}
+
+class _MockCaptionRepository extends Mock implements CaptionRepository {}
+
+class _MockEnrollmentRepository extends Mock implements EnrollmentRepository {}
 
 Cue _cue({
   required String id,
@@ -128,5 +145,63 @@ void main() {
     expect(payload['question'], 'A or B?');
     expect(payload['choices'], ['A', 'B']);
     expect(payload['answerIndex'], 1);
+  });
+
+  testWidgets('VideoEditorScreen includes CaptionsSection after load',
+      (tester) async {
+    VisibilityDetectorController.instance.updateInterval = Duration.zero;
+
+    final videoRepo = _MockVideoRepository();
+    final cueRepo = _MockCueRepository();
+    final captionRepo = _MockCaptionRepository();
+    final enrollmentRepo = _MockEnrollmentRepository();
+
+    final video = VideoSummary(
+      id: 'v1',
+      courseId: 'c1',
+      title: 'Test video',
+      orderIndex: 0,
+      status: VideoStatus.ready,
+      createdAt: DateTime.utc(2026, 4, 21),
+    );
+
+    when(() => videoRepo.get('v1')).thenAnswer((_) => Future.value(video));
+    when(() => cueRepo.listForVideo('v1')).thenAnswer((_) => Future.value(const []));
+    when(() => captionRepo.list('v1')).thenAnswer((_) => Future.value(const []));
+    // Player will try to get playback; surface a CONFLICT so it renders
+    // an inline error without crashing the test.
+    when(() => videoRepo.playback(any())).thenThrow(const ApiException(
+      code: 'CONFLICT',
+      statusCode: 409,
+      message: 'not ready',
+    ));
+    when(() => videoRepo.invalidate(any())).thenReturn(null);
+
+    await tester.pumpWidget(MaterialApp(
+      home: VideoEditorScreen(
+        videoId: 'v1',
+        videoRepo: videoRepo,
+        cueRepo: cueRepo,
+        captionRepo: captionRepo,
+        enrollmentRepo: enrollmentRepo,
+      ),
+    ));
+    // Multiple pumps: the first flushes the initial frame. The second
+    // processes the microtasks from Future.value() calls (mock repos). The
+    // third processes the setState rebuild. The fourth lets CaptionsSection
+    // kick its own list() call, and the fifth processes that result.
+    await tester.pumpAndSettle();
+
+    // CaptionsSection may be beyond the test viewport (the 9:16 player
+    // takes most of the 600px test screen height). Scroll the sliver list
+    // to bring it into view.
+    await tester.scrollUntilVisible(
+      find.byType(CaptionsSection),
+      200,
+      scrollable: find.byType(Scrollable),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(CaptionsSection), findsOneWidget);
   });
 }

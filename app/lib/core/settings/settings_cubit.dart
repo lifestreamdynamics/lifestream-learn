@@ -48,7 +48,7 @@ class SettingsCubit extends Cubit<SettingsState> {
   /// Also pushes the `analyticsEnabled` value into the buffer so the
   /// gate is correct before the first flush.
   Future<void> load() async {
-    final results = await Future.wait<Object>([
+    final results = await Future.wait<Object?>([
       _store.readThemeMode(),
       _store.readPlaybackSpeed(),
       _store.readCaptionsDefault(),
@@ -57,6 +57,7 @@ class SettingsCubit extends Cubit<SettingsState> {
       _store.readTextScaleMultiplier(),
       _store.readReduceMotion(),
       _store.readBiometricUnlock(),
+      _store.readCaptionLanguage(),
     ]);
 
     final themeMode = results[0] as ThemeMode;
@@ -67,6 +68,7 @@ class SettingsCubit extends Cubit<SettingsState> {
     final textScale = results[5] as double;
     final reduceMotion = results[6] as bool;
     final biometricUnlock = results[7] as bool;
+    final captionLanguage = results[8] as String?;
 
     // Crash reporting comes from the CrashConsentBloc — the source of
     // truth — not from our own store. The bloc's state is a tri-state
@@ -79,6 +81,7 @@ class SettingsCubit extends Cubit<SettingsState> {
       themeMode: themeMode,
       playbackSpeed: playbackSpeed,
       captionsDefault: captionsDefault,
+      captionLanguage: captionLanguage,
       dataSaver: dataSaver,
       analyticsEnabled: analyticsEnabled,
       crashReportingEnabled: crashEnabled,
@@ -115,6 +118,13 @@ class SettingsCubit extends Cubit<SettingsState> {
   Future<void> setCaptionsDefault(bool value) async {
     await _store.writeCaptionsDefault(value);
     emit(state.copyWith(captionsDefault: value));
+  }
+
+  /// Stores a BCP-47 language code as the caption preference. Pass null
+  /// to clear the preference (player falls through to video default).
+  Future<void> setCaptionLanguage(String? language) async {
+    await _store.writeCaptionLanguage(language);
+    emit(state.copyWith(captionLanguage: language));
   }
 
   Future<void> setDataSaver(bool value) async {

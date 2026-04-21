@@ -65,6 +65,18 @@ dependencies:
   # import `package:crypto/crypto.dart` without triggering
   # `depend_on_referenced_packages` lint.
   crypto: ^3.0.3
+  # Slice-H follow-up: three small platform plugins that unblock real
+  # wiring in Playback / Privacy / About settings sections. Each
+  # replaces a placeholder:
+  # - connectivity_plus → data-saver honours cellular vs Wi-Fi in the
+  #   video player (pauses auto-play on cellular when enabled).
+  # - url_launcher → Privacy Policy / Terms tiles open the system
+  #   browser instead of copying to clipboard.
+  # - package_info_plus → About → Version tracks pubspec.yaml instead
+  #   of a pinned constant.
+  connectivity_plus: ^6.1.0
+  url_launcher: ^6.3.1
+  package_info_plus: ^8.1.0
 
 dev_dependencies:
   flutter_test:

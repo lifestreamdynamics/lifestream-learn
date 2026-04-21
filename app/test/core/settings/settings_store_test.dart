@@ -120,6 +120,29 @@ void main() {
     });
   });
 
+  group('SettingsStore captionLanguage', () {
+    test('default → null (no preference stored)', () async {
+      expect(await store.readCaptionLanguage(), isNull);
+    });
+
+    test('write + read round-trip', () async {
+      await store.writeCaptionLanguage('en');
+      expect(await store.readCaptionLanguage(), 'en');
+
+      await store.writeCaptionLanguage('fr');
+      expect(await store.readCaptionLanguage(), 'fr');
+    });
+
+    test('writeCaptionLanguage(null) deletes the key', () async {
+      await store.writeCaptionLanguage('en');
+      expect(fake.data.containsKey('settings.captionLanguage'), isTrue);
+
+      await store.writeCaptionLanguage(null);
+      expect(fake.data.containsKey('settings.captionLanguage'), isFalse);
+      expect(await store.readCaptionLanguage(), isNull);
+    });
+  });
+
   group('SettingsStore malformed values fall back to defaults', () {
     test('bogus themeMode string -> system', () async {
       // Simulate a corrupted / future-version write.

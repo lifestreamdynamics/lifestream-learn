@@ -13,6 +13,7 @@ class SettingsState {
     this.themeMode = ThemeMode.system,
     this.playbackSpeed = 1.0,
     this.captionsDefault = false,
+    this.captionLanguage,
     this.dataSaver = false,
     this.analyticsEnabled = true,
     this.crashReportingEnabled = false,
@@ -33,9 +34,11 @@ class SettingsState {
   final double playbackSpeed;
 
   /// Default state of the captions toggle on new playback sessions.
-  /// (Captions themselves are not yet implemented; see TODO in the
-  /// player.)
   final bool captionsDefault;
+
+  /// User's preferred caption language (BCP-47 code). When null, the
+  /// player falls through to the video's `defaultCaptionLanguage`.
+  final String? captionLanguage;
 
   /// When true, cap ABR at 540p on cellular. UI-only today; wiring a
   /// real bandwidth cap needs `connectivity_plus` which isn't a dep.
@@ -65,10 +68,17 @@ class SettingsState {
   /// disk (vs. returned defaults synchronously).
   final bool loaded;
 
+  // Sentinel used by copyWith to distinguish "caller passed null explicitly"
+  // from "caller omitted the argument". Required for nullable fields
+  // (`captionLanguage`) where null is a valid target value.
+  static const Object _absent = Object();
+
   SettingsState copyWith({
     ThemeMode? themeMode,
     double? playbackSpeed,
     bool? captionsDefault,
+    // ignore: avoid_annotating_with_dynamic
+    Object? captionLanguage = _absent,
     bool? dataSaver,
     bool? analyticsEnabled,
     bool? crashReportingEnabled,
@@ -81,6 +91,9 @@ class SettingsState {
         themeMode: themeMode ?? this.themeMode,
         playbackSpeed: playbackSpeed ?? this.playbackSpeed,
         captionsDefault: captionsDefault ?? this.captionsDefault,
+        captionLanguage: identical(captionLanguage, _absent)
+            ? this.captionLanguage
+            : captionLanguage as String?,
         dataSaver: dataSaver ?? this.dataSaver,
         analyticsEnabled: analyticsEnabled ?? this.analyticsEnabled,
         crashReportingEnabled:
@@ -99,6 +112,7 @@ class SettingsState {
           other.themeMode == themeMode &&
           other.playbackSpeed == playbackSpeed &&
           other.captionsDefault == captionsDefault &&
+          other.captionLanguage == captionLanguage &&
           other.dataSaver == dataSaver &&
           other.analyticsEnabled == analyticsEnabled &&
           other.crashReportingEnabled == crashReportingEnabled &&
@@ -112,6 +126,7 @@ class SettingsState {
         themeMode,
         playbackSpeed,
         captionsDefault,
+        captionLanguage,
         dataSaver,
         analyticsEnabled,
         crashReportingEnabled,

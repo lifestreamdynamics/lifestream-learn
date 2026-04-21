@@ -163,7 +163,7 @@ class _ProfileBodyState extends State<_ProfileBody> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            ProfileHeader(user: user),
+            ProfileHeader(user: user, meRepo: meRepo),
             // Quick-stats strip pulls numbers from the Slice P2 bloc
             // when available; otherwise falls back to dashes (the
             // widget's placeholder state).
@@ -296,6 +296,46 @@ class _ProfileBodyState extends State<_ProfileBody> {
                     title: const Text('Apply to become a course designer'),
                     onTap: () =>
                         GoRouter.of(context).go('/designer-application'),
+                  ),
+                ],
+              ),
+
+            // Slice-H follow-up — role-specific shortcuts. Designer sees
+            // a jump to the Courses tab where authoring (create / edit
+            // course, video cues) lives; Admin sees a jump to Admin
+            // tools. Both destinations already exist in the router —
+            // these tiles just make them discoverable from the profile
+            // surface rather than relying on the bottom-nav icon alone.
+            if (user.role == UserRole.courseDesigner)
+              _SectionCard(
+                title: 'Authoring',
+                children: [
+                  ListTile(
+                    key: const Key('profile.designer.myCourses'),
+                    leading: const Icon(Icons.edit_note_outlined),
+                    title: const Text('My courses (authoring)'),
+                    subtitle: const Text(
+                      'Edit your courses and video cues',
+                    ),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => GoRouter.of(context).go('/courses'),
+                  ),
+                ],
+              ),
+
+            if (user.role == UserRole.admin)
+              _SectionCard(
+                title: 'Admin',
+                children: [
+                  ListTile(
+                    key: const Key('profile.admin.tools'),
+                    leading: const Icon(Icons.admin_panel_settings_outlined),
+                    title: const Text('Admin tools'),
+                    subtitle: const Text(
+                      'Designer applications, analytics',
+                    ),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => GoRouter.of(context).go('/admin'),
                   ),
                 ],
               ),

@@ -9,6 +9,7 @@ import '../../data/models/user.dart';
 import '../../data/repositories/admin_analytics_repository.dart';
 import '../../data/repositories/admin_designer_application_repository.dart';
 import '../../data/repositories/attempt_repository.dart';
+import '../../data/repositories/caption_repository.dart';
 import '../../data/repositories/course_repository.dart';
 import '../../data/repositories/cue_repository.dart';
 import '../../data/repositories/designer_application_repository.dart';
@@ -64,6 +65,7 @@ GoRouter createRouter(
   required VideoRepository videoRepo,
   required EnrollmentRepository enrollmentRepo,
   required CueRepository cueRepo,
+  required CaptionRepository captionRepo,
   required AttemptRepository attemptRepo,
   required DesignerApplicationRepository designerAppRepo,
   required AdminDesignerApplicationRepository adminDesignerAppRepo,
@@ -150,6 +152,7 @@ GoRouter createRouter(
           videoId: state.pathParameters['id']!,
           videoRepo: videoRepo,
           cueRepo: cueRepo,
+          captionRepo: captionRepo,
           enrollmentRepo: enrollmentRepo,
         ),
       ),

@@ -11,6 +11,7 @@ import { designerApplicationsRouter } from '@/routes/designer-applications.route
 import { enrollmentsRouter } from '@/routes/enrollments.routes';
 import { eventsRouter } from '@/routes/events.routes';
 import { meRouter } from '@/routes/me.routes';
+import { usersRouter } from '@/routes/users.routes';
 
 export const apiRouter = Router();
 
@@ -29,3 +30,4 @@ apiRouter.use('/designer-applications', designerApplicationsRouter);
 apiRouter.use('/enrollments', enrollmentsRouter);
 apiRouter.use('/events', eventsRouter);
 apiRouter.use('/me', meRouter);
+apiRouter.use('/users', usersRouter);

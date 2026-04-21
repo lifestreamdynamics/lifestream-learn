@@ -3,6 +3,20 @@ import 'package:freezed_annotation/freezed_annotation.dart';
 part 'video.freezed.dart';
 part 'video.g.dart';
 
+/// A single caption track returned as part of [PlaybackInfo].
+/// Represents a signed URL for a specific BCP-47 language track.
+@freezed
+class CaptionTrack with _$CaptionTrack {
+  const factory CaptionTrack({
+    required String language,
+    required String url,
+    required DateTime expiresAt,
+  }) = _CaptionTrack;
+
+  factory CaptionTrack.fromJson(Map<String, dynamic> json) =>
+      _$CaptionTrackFromJson(json);
+}
+
 /// Status mirror of Prisma `VideoStatus`. Only `READY` is playable; anything
 /// else should be treated as "not yet available" by the UI.
 enum VideoStatus {
@@ -62,6 +76,8 @@ class PlaybackInfo with _$PlaybackInfo {
   const factory PlaybackInfo({
     required String masterPlaylistUrl,
     required DateTime expiresAt,
+    @Default(<CaptionTrack>[]) List<CaptionTrack> captions,
+    String? defaultCaptionLanguage,
   }) = _PlaybackInfo;
 
   factory PlaybackInfo.fromJson(Map<String, dynamic> json) =>

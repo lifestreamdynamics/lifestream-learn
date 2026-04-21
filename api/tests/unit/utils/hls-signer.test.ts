@@ -1,7 +1,7 @@
 import '@tests/unit/setup';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
-import { computeHash, signPlaybackUrl, signPosterUrl } from '@/utils/hls-signer';
+import { computeHash, signPlaybackUrl, signPosterUrl, signCaptionUrl } from '@/utils/hls-signer';
 
 const SCRIPT = path.resolve(__dirname, '..', '..', '..', '..', 'infra/scripts/sign-hls-url.sh');
 
@@ -127,6 +127,82 @@ describe('hls-signer', () => {
 
     it('rejects a videoId containing a slash', () => {
       expect(() => signPosterUrl('a/b')).toThrow(/slash/i);
+    });
+  });
+
+  describe('signCaptionUrl', () => {
+    it('produces a URL matching the expected path shape', () => {
+      const { url, expiresAt } = signCaptionUrl('abc', 'en', 60);
+      expect(url).toMatch(
+        /^.+\/hls\/[A-Za-z0-9_-]+\/\d+\/abc\/captions\/en\.vtt$/,
+      );
+      expect(url).not.toContain('?');
+      expect(expiresAt).toBeInstanceOf(Date);
+    });
+
+    it('embeds the language subtag in the tail', () => {
+      const { url } = signCaptionUrl('vid123', 'zh-CN', 60);
+      expect(url).toMatch(/\/captions\/zh-CN\.vtt$/);
+    });
+
+    it('all three helpers produce byte-identical sig+expires for the same videoId (frozen clock)', () => {
+      // Cross-cutting invariant: a single nginx token issued at login-time
+      // must authorise master.m3u8, poster.jpg, AND every caption track
+      // because all three share the same signed prefix `/hls/{videoId}/`.
+      // If any helper ever uses a different prefix or secret, that helper's
+      // URLs will 403 mid-playback without a visible error on the API side.
+      jest.useFakeTimers();
+      jest.setSystemTime(new Date('2030-01-01T00:00:00.000Z'));
+      try {
+        const playback = signPlaybackUrl('testvid', 3600);
+        const poster = signPosterUrl('testvid', 3600);
+        const caption = signCaptionUrl('testvid', 'en', 3600);
+
+        // Extract the {sig}/{expires}/{videoId}/ common prefix from each URL.
+        const prefixRe = /\/hls\/([A-Za-z0-9_-]+\/\d+\/testvid\/)/;
+        const playbackPrefix = playback.url.match(prefixRe)![1];
+        const posterPrefix = poster.url.match(prefixRe)![1];
+        const captionPrefix = caption.url.match(prefixRe)![1];
+
+        expect(posterPrefix).toBe(playbackPrefix);
+        expect(captionPrefix).toBe(playbackPrefix);
+
+        // expiresAt must also be identical
+        expect(poster.expiresAt.getTime()).toBe(playback.expiresAt.getTime());
+        expect(caption.expiresAt.getTime()).toBe(playback.expiresAt.getTime());
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('rejects a videoId containing a slash', () => {
+      expect(() => signCaptionUrl('a/b', 'en')).toThrow(/slash/i);
+    });
+
+    it('rejects an empty videoId', () => {
+      expect(() => signCaptionUrl('', 'en')).toThrow(/non-empty/i);
+    });
+
+    describe('BCP-47 language validation — accepted values', () => {
+      const valid = ['en', 'zh-CN', 'zh-Hant', 'pt-BR', 'yue', 'es-419'];
+      it.each(valid)('accepts %s', (lang) => {
+        expect(() => signCaptionUrl('vid', lang, 60)).not.toThrow();
+      });
+    });
+
+    describe('BCP-47 language validation — rejected values', () => {
+      const invalid = [
+        ['EN', 'uppercased language code'],
+        ['english', 'full word instead of subtag'],
+        ['en_US', 'underscore separator'],
+        ['en-us', 'lowercase region'],
+        ['', 'empty string'],
+        ['zh-hant', 'lowercase script'],
+        ['zh-CN-extra-junk', 'too many subtags'],
+      ];
+      it.each(invalid)('rejects %s (%s)', (lang) => {
+        expect(() => signCaptionUrl('vid', lang, 60)).toThrow(/BCP-47/i);
+      });
     });
   });
 });

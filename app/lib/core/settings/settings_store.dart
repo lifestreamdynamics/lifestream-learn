@@ -32,6 +32,7 @@ class SettingsStore {
   static const _kTextScaleMultiplier = 'settings.textScaleMultiplier';
   static const _kReduceMotion = 'settings.reduceMotion';
   static const _kBiometricUnlock = 'settings.biometricUnlock';
+  static const _kCaptionLanguage = 'settings.captionLanguage';
 
   // --- Defaults ---------------------------------------------------------
   // Match whatever the app currently ships so first-launch users don't
@@ -48,6 +49,9 @@ class SettingsStore {
   static const double defaultTextScaleMultiplier = 1.0;
   static const bool defaultReduceMotion = false;
   static const bool defaultBiometricUnlock = false;
+  // captionLanguage default is null — no preference means fall through to
+  // the video's own defaultCaptionLanguage on load.
+  static const String? defaultCaptionLanguage = null;
 
   /// Allowed playback speeds. Kept as a strict list so UI dropdowns
   /// can't drift from what the parser accepts.
@@ -123,6 +127,10 @@ class SettingsStore {
   Future<bool> readBiometricUnlock() async =>
       _readBool(_kBiometricUnlock, defaultBiometricUnlock);
 
+  /// Returns the stored BCP-47 language code, or null if none has been set.
+  Future<String?> readCaptionLanguage() async =>
+      _storage.read(key: _kCaptionLanguage);
+
   // --- Typed setters ----------------------------------------------------
 
   Future<void> writeThemeMode(ThemeMode mode) async {
@@ -175,6 +183,15 @@ class SettingsStore {
 
   Future<void> writeBiometricUnlock(bool value) =>
       _writeBool(_kBiometricUnlock, value);
+
+  /// Stores a BCP-47 language code. Pass null to clear the preference.
+  Future<void> writeCaptionLanguage(String? value) async {
+    if (value == null) {
+      await _storage.delete(key: _kCaptionLanguage);
+    } else {
+      await _storage.write(key: _kCaptionLanguage, value: value);
+    }
+  }
 
   // --- internals --------------------------------------------------------
 

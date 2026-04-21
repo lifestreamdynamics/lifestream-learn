@@ -1,25 +1,43 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/utils/date_formatters.dart';
 import '../../../data/models/user.dart';
+import '../../../data/repositories/me_repository.dart';
+import 'avatar_bytes_cache.dart';
 
 /// Avatar + identity block for the profile screen.
 ///
-/// Resolution order: user-uploaded avatar (deferred until the media-serving
-/// route lands — `user.avatarKey` is captured server-side today but there's
-/// no URL to fetch it from yet) → Gravatar fallback (opt-in via
-/// `user.useGravatar`) → initials-on-colored-circle. The Gravatar URL is
-/// built client-side from `sha256(email.trim().toLowerCase())` with
-/// `?d=404` so a missing Gravatar falls cleanly through to initials
-/// without a render glitch. Per the plan's §D privacy note, Gravatar is
-/// an opt-in third-party request keyed on an email hash.
+/// Resolution order: user-uploaded avatar (fetched from the GET
+/// `/api/me/avatar` media-serving route via [AvatarBytesCache]) →
+/// Gravatar fallback (opt-in via `user.useGravatar`) →
+/// initials-on-colored-circle. The Gravatar URL is built client-side
+/// from `sha256(email.trim().toLowerCase())` with `?d=404` so a missing
+/// Gravatar falls cleanly through to initials without a render glitch.
+/// Per the plan's §D privacy note, Gravatar is an opt-in third-party
+/// request keyed on an email hash.
 class ProfileHeader extends StatelessWidget {
-  const ProfileHeader({required this.user, super.key});
+  const ProfileHeader({
+    required this.user,
+    this.meRepo,
+    this.avatarCache,
+    super.key,
+  });
 
   final User user;
+
+  /// Repository used to fetch uploaded avatar bytes from
+  /// `GET /api/me/avatar`. Optional so widget tests that don't assert
+  /// the uploaded branch don't need to wire one.
+  final MeRepository? meRepo;
+
+  /// Cache backing the avatar load. Defaults to the shared singleton
+  /// (see [AvatarBytesCache.instance]); tests inject their own to
+  /// isolate state between runs.
+  final AvatarBytesCache? avatarCache;
 
   @override
   Widget build(BuildContext context) {
@@ -35,6 +53,9 @@ class ProfileHeader extends StatelessWidget {
             displayName: user.displayName,
             userId: user.id,
             gravatarUrl: _gravatarUrlFor(user),
+            avatarKey: user.avatarKey,
+            meRepo: meRepo,
+            cache: avatarCache ?? AvatarBytesCache.instance,
           ),
           const SizedBox(width: 16),
           Expanded(
@@ -89,20 +110,26 @@ class ProfileHeader extends StatelessWidget {
   }
 }
 
-/// Two-letter initials on a colored circle, optionally overlaid by a
-/// Gravatar image when the user has opted in. Initial colour is derived
-/// from a stable hash of `userId` so the same user always gets the same
+/// Two-letter initials on a colored circle, optionally overlaid by an
+/// uploaded avatar or a Gravatar image. Initial colour is derived from
+/// a stable hash of `userId` so the same user always gets the same
 /// colour and bucketing across users is roughly uniform.
 class _Avatar extends StatelessWidget {
   const _Avatar({
     required this.displayName,
     required this.userId,
+    required this.cache,
     this.gravatarUrl,
+    this.avatarKey,
+    this.meRepo,
   });
 
   final String displayName;
   final String userId;
+  final AvatarBytesCache cache;
   final String? gravatarUrl;
+  final String? avatarKey;
+  final MeRepository? meRepo;
 
   @override
   Widget build(BuildContext context) {
@@ -130,33 +157,70 @@ class _Avatar extends StatelessWidget {
       ),
     );
 
-    // TODO(follow-up): when the media-serving route lands for uploaded
-    // avatars, try `user.avatarKey`-derived URL first, fall through to
-    // Gravatar, then initials. Today we go straight to the Gravatar
-    // branch when opted in — no upload serving exists yet.
-    final CircleAvatar circle;
-    if (gravatarUrl != null) {
-      circle = CircleAvatar(
-        key: const Key('profile.avatar'),
-        radius: 32,
-        backgroundColor: bg,
-        foregroundImage: NetworkImage(gravatarUrl!),
-        // Rendered behind the image; shown if the network load fails
-        // (d=404 on Gravatar) so initials stay as the hard fallback.
-        child: initials,
-      );
-    } else {
-      circle = CircleAvatar(
-        key: const Key('profile.avatar'),
-        radius: 32,
-        backgroundColor: bg,
-        child: initials,
+    final repo = meRepo;
+    final key = avatarKey;
+
+    // Uploaded avatar wins when we can resolve one. The cache is keyed
+    // by avatarKey, which rotates on every upload, so stale bytes
+    // aren't a concern. While the future is resolving we render the
+    // Gravatar (if opted in) or initials fallback — zero flash.
+    if (repo != null && key != null && key.isNotEmpty) {
+      return Semantics(
+        label: 'Avatar for $displayName',
+        child: FutureBuilder<Uint8List?>(
+          future: cache.load(key, repo),
+          builder: (context, snapshot) {
+            final bytes = snapshot.data;
+            if (bytes != null) {
+              return CircleAvatar(
+                key: const Key('profile.avatar'),
+                radius: 32,
+                backgroundColor: bg,
+                foregroundImage: MemoryImage(bytes),
+                child: initials,
+              );
+            }
+            return _fallbackCircle(
+              bg: bg,
+              initials: initials,
+              gravatarUrl: gravatarUrl,
+            );
+          },
+        ),
       );
     }
 
     return Semantics(
       label: 'Avatar for $displayName',
-      child: circle,
+      child: _fallbackCircle(
+        bg: bg,
+        initials: initials,
+        gravatarUrl: gravatarUrl,
+      ),
+    );
+  }
+
+  CircleAvatar _fallbackCircle({
+    required Color bg,
+    required Text initials,
+    required String? gravatarUrl,
+  }) {
+    if (gravatarUrl != null) {
+      return CircleAvatar(
+        key: const Key('profile.avatar'),
+        radius: 32,
+        backgroundColor: bg,
+        foregroundImage: NetworkImage(gravatarUrl),
+        // Rendered behind the image; shown if the network load fails
+        // (d=404 on Gravatar) so initials stay as the hard fallback.
+        child: initials,
+      );
+    }
+    return CircleAvatar(
+      key: const Key('profile.avatar'),
+      radius: 32,
+      backgroundColor: bg,
+      child: initials,
     );
   }
 

@@ -43,4 +43,5 @@ class AnalyticsEventTypes {
   static const String videoComplete = 'video_complete';
   static const String cueShown = 'cue_shown';
   static const String cueAnswered = 'cue_answered';
+  static const String captionLanguageSelected = 'caption_language_selected';
 }

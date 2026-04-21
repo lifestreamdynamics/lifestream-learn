@@ -66,6 +66,7 @@ type MockObjectStore = {
   uploadDirectory: jest.Mock;
   deleteObject: jest.Mock;
   putObject: jest.Mock;
+  getObjectStream: jest.Mock;
 };
 
 function buildMockObjectStore(): MockObjectStore {
@@ -76,6 +77,7 @@ function buildMockObjectStore(): MockObjectStore {
     deleteObject: jest.fn().mockResolvedValue(undefined),
     // Optional fast-path our service detects at runtime.
     putObject: jest.fn().mockResolvedValue(undefined),
+    getObjectStream: jest.fn(),
   };
 }
 
@@ -198,7 +200,9 @@ describe('user.service', () => {
         contentType: 'image/jpeg',
       });
       expect(res.avatarKey).toMatch(/^avatars\/[^/]+\/[^/]+\.jpg$/);
-      expect(res.avatarUrl).toBeNull();
+      // Media-serving route shipped; avatarUrl now points at it so the
+      // client doesn't need to reason about the storage key.
+      expect(res.avatarUrl).toBe('/api/me/avatar');
       expect(store.putObject).toHaveBeenCalledTimes(1);
       expect(store.deleteObject).not.toHaveBeenCalled();
     });
@@ -284,6 +288,63 @@ describe('user.service', () => {
           contentType: 'image/jpeg',
         }),
       ).rejects.toBeInstanceOf(ValidationError);
+    });
+  });
+
+  describe('getAvatar', () => {
+    it('returns the object stream when the user has an avatarKey', async () => {
+      const prisma = buildMockPrisma();
+      prisma.user.findUnique.mockResolvedValueOnce({
+        avatarKey: 'avatars/u/abc.png',
+      });
+      const store = buildMockObjectStore();
+      const { Readable } = await import('node:stream');
+      const fakeStream = Readable.from([Buffer.from('png')]);
+      store.getObjectStream.mockResolvedValueOnce({
+        stream: fakeStream,
+        contentType: 'image/png',
+        contentLength: 3,
+      });
+      const svc = createUserService(
+        prisma as unknown as PrismaClient,
+        store as unknown as ObjectStore,
+      );
+
+      const res = await svc.getAvatar(USER_ID);
+      expect(res).not.toBeNull();
+      expect(res?.contentType).toBe('image/png');
+      expect(res?.contentLength).toBe(3);
+      expect(res?.stream).toBe(fakeStream);
+      // Confirm the right bucket+key is consulted — the service reads
+      // `env.S3_UPLOAD_BUCKET` so we just assert the stored key flows through.
+      expect(store.getObjectStream).toHaveBeenCalledWith(
+        expect.any(String),
+        'avatars/u/abc.png',
+      );
+    });
+
+    it('returns null when the user exists but has no avatarKey', async () => {
+      const prisma = buildMockPrisma();
+      prisma.user.findUnique.mockResolvedValueOnce({ avatarKey: null });
+      const store = buildMockObjectStore();
+      const svc = createUserService(
+        prisma as unknown as PrismaClient,
+        store as unknown as ObjectStore,
+      );
+
+      const res = await svc.getAvatar(USER_ID);
+      expect(res).toBeNull();
+      expect(store.getObjectStream).not.toHaveBeenCalled();
+    });
+
+    it('throws NotFoundError when the user does not exist', async () => {
+      const prisma = buildMockPrisma();
+      prisma.user.findUnique.mockResolvedValueOnce(null);
+      const svc = createUserService(prisma as unknown as PrismaClient);
+
+      await expect(svc.getAvatar(USER_ID)).rejects.toBeInstanceOf(
+        NotFoundError,
+      );
     });
   });
 

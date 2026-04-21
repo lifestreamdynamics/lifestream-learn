@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 
 import '../../data/models/cue.dart';
 import '../../data/models/video.dart';
+import '../../data/repositories/caption_repository.dart';
 import '../../data/repositories/cue_repository.dart';
 import '../../data/repositories/enrollment_repository.dart';
 import '../../data/repositories/video_repository.dart';
 import '../feed/video_controller_cache.dart';
 import '../player/learn_video_player.dart';
+import 'captions_section.dart';
 import 'cue_form_sheet.dart';
 
 /// Designer authoring surface for a single video.
@@ -24,6 +26,7 @@ class VideoEditorScreen extends StatefulWidget {
     required this.videoId,
     required this.videoRepo,
     required this.cueRepo,
+    required this.captionRepo,
     required this.enrollmentRepo,
     super.key,
   });
@@ -31,6 +34,7 @@ class VideoEditorScreen extends StatefulWidget {
   final String videoId;
   final VideoRepository videoRepo;
   final CueRepository cueRepo;
+  final CaptionRepository captionRepo;
   final EnrollmentRepository enrollmentRepo;
 
   @override
@@ -172,42 +176,48 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
       appBar: AppBar(
         title: Text(video.title),
       ),
-      body: Column(
-        children: [
-          AspectRatio(
-            aspectRatio: 9 / 16,
-            child: LearnVideoPlayer(
-              video: video,
-              courseId: video.courseId,
-              videoRepo: widget.videoRepo,
-              enrollmentRepo: widget.enrollmentRepo,
-              controllerCache: _cache,
-              autoPlayWhenVisible: false,
+      body: CustomScrollView(
+        slivers: [
+          SliverToBoxAdapter(
+            child: AspectRatio(
+              aspectRatio: 9 / 16,
+              child: LearnVideoPlayer(
+                video: video,
+                courseId: video.courseId,
+                videoRepo: widget.videoRepo,
+                enrollmentRepo: widget.enrollmentRepo,
+                controllerCache: _cache,
+                autoPlayWhenVisible: false,
+              ),
             ),
           ),
-          _CueTimeline(
-            cues: cues,
-            durationMs: video.durationMs ?? 0,
-            onTapCue: (cue) => _openCueForm(existing: cue),
+          SliverToBoxAdapter(
+            child: _CueTimeline(
+              cues: cues,
+              durationMs: video.durationMs ?? 0,
+              onTapCue: (cue) => _openCueForm(existing: cue),
+            ),
           ),
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton.icon(
-                    key: const Key('video.addCue'),
-                    onPressed: () => _openCueForm(atMs: 0),
-                    icon: const Icon(Icons.add),
-                    label: const Text('Add cue at current time'),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      key: const Key('video.addCue'),
+                      onPressed: () => _openCueForm(atMs: 0),
+                      icon: const Icon(Icons.add),
+                      label: const Text('Add cue at current time'),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.all(8),
+          SliverPadding(
+            padding: const EdgeInsets.all(8),
+            sliver: SliverList.list(
               children: [
                 for (final c in cues)
                   Card(
@@ -234,6 +244,13 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
                     ),
                   ),
               ],
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: CaptionsSection(
+              key: const Key('video.captionsSection'),
+              videoId: widget.videoId,
+              captionRepo: widget.captionRepo,
             ),
           ),
         ],

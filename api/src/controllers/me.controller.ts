@@ -13,6 +13,9 @@ import {
 import { userService, AVATAR_MAX_BYTES } from '@/services/user.service';
 import type { AvatarUploadInput } from '@/services/user.service';
 import { UnauthorizedError, ValidationError } from '@/utils/errors';
+import { streamAvatar } from '@/controllers/utils/stream-avatar';
+
+const AVATAR_CACHE_CONTROL = 'private, max-age=300';
 
 const ALLOWED_AVATAR_CONTENT_TYPES: ReadonlySet<AvatarUploadInput['contentType']> = new Set([
   'image/jpeg',
@@ -123,6 +126,30 @@ export async function uploadAvatar(req: Request, res: Response): Promise<void> {
     contentType: contentType as AvatarUploadInput['contentType'],
   });
   res.status(200).json(result);
+}
+
+/**
+ * @openapi
+ * /api/me/avatar:
+ *   get:
+ *     tags: [Me]
+ *     summary: Fetch the caller's avatar bytes.
+ *     description: |
+ *       Streams the stored avatar image with its original content type.
+ *       Returns 204 when the caller has no avatar set so the client can
+ *       fall through to Gravatar or initials. Cache-Control is private
+ *       with a short TTL; the avatarKey rotates on every upload so stale
+ *       copies self-heal on refresh.
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: Avatar bytes. }
+ *       204: { description: No avatar set. }
+ *       401: { description: Unauthenticated. }
+ */
+export async function getOwnAvatar(req: Request, res: Response): Promise<void> {
+  if (!req.user) throw new UnauthorizedError('Not authenticated');
+  const result = await userService.getAvatar(req.user.id);
+  await streamAvatar(res, result, AVATAR_CACHE_CONTROL);
 }
 
 /**

@@ -6,6 +6,20 @@ part of 'video.dart';
 // JsonSerializableGenerator
 // **************************************************************************
 
+_$CaptionTrackImpl _$$CaptionTrackImplFromJson(Map<String, dynamic> json) =>
+    _$CaptionTrackImpl(
+      language: json['language'] as String,
+      url: json['url'] as String,
+      expiresAt: DateTime.parse(json['expiresAt'] as String),
+    );
+
+Map<String, dynamic> _$$CaptionTrackImplToJson(_$CaptionTrackImpl instance) =>
+    <String, dynamic>{
+      'language': instance.language,
+      'url': instance.url,
+      'expiresAt': instance.expiresAt.toIso8601String(),
+    };
+
 _$VideoSummaryImpl _$$VideoSummaryImplFromJson(Map<String, dynamic> json) =>
     _$VideoSummaryImpl(
       id: json['id'] as String,
@@ -63,12 +77,20 @@ _$PlaybackInfoImpl _$$PlaybackInfoImplFromJson(Map<String, dynamic> json) =>
     _$PlaybackInfoImpl(
       masterPlaylistUrl: json['masterPlaylistUrl'] as String,
       expiresAt: DateTime.parse(json['expiresAt'] as String),
+      captions:
+          (json['captions'] as List<dynamic>?)
+              ?.map((e) => CaptionTrack.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          const <CaptionTrack>[],
+      defaultCaptionLanguage: json['defaultCaptionLanguage'] as String?,
     );
 
 Map<String, dynamic> _$$PlaybackInfoImplToJson(_$PlaybackInfoImpl instance) =>
     <String, dynamic>{
       'masterPlaylistUrl': instance.masterPlaylistUrl,
       'expiresAt': instance.expiresAt.toIso8601String(),
+      'captions': instance.captions,
+      'defaultCaptionLanguage': instance.defaultCaptionLanguage,
     };
 
 _$VideoUploadTicketImpl _$$VideoUploadTicketImplFromJson(

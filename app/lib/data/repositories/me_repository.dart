@@ -74,6 +74,33 @@ class MeRepository {
     }
   }
 
+  /// Fetch the caller's stored avatar bytes.
+  ///
+  /// GETs `/api/me/avatar`. Returns null when the server responds 204
+  /// (no avatar set) so callers can fall through to Gravatar / initials
+  /// without distinguishing "no avatar" from a hard error. The dio
+  /// interceptor attaches the bearer token; bytes come back in-memory
+  /// because the payload is capped at 2 MB.
+  Future<Uint8List?> fetchMyAvatar() async {
+    try {
+      final response = await _dio.get<List<int>>(
+        '/api/me/avatar',
+        options: Options(responseType: ResponseType.bytes),
+      );
+      if (response.statusCode == 204) return null;
+      final data = response.data;
+      if (data == null || data.isEmpty) return null;
+      return Uint8List.fromList(data);
+    } on DioException catch (e) {
+      // A 204 sometimes surfaces as a DioException with an empty body —
+      // treat any "no content" response as "no avatar" rather than an
+      // error. Everything else propagates as an ApiException so the
+      // caller can distinguish network failure from an absent avatar.
+      if (e.response?.statusCode == 204) return null;
+      throw _unwrap(e);
+    }
+  }
+
   /// Upload a new avatar. The server accepts a raw image body (not
   /// multipart) with one of `image/jpeg`, `image/png`, `image/webp`
   /// as the content type. Max 2 MB.

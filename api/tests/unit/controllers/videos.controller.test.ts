@@ -21,11 +21,25 @@ jest.mock('@/utils/hls-signer', () => ({
   }),
 }));
 
+jest.mock('@/services/caption.service', () => ({
+  captionService: {
+    uploadCaption: jest.fn(),
+    listCaptions: jest.fn(),
+    deleteCaption: jest.fn(),
+    getCaptionsForPlayback: jest.fn().mockResolvedValue({
+      captions: [],
+      defaultCaptionLanguage: null,
+    }),
+  },
+  CAPTION_MAX_BYTES: 512 * 1024,
+}));
+
 import type { Request, Response } from 'express';
 import { ZodError } from 'zod';
 import * as videosController from '@/controllers/videos.controller';
 import { videoService } from '@/services/video.service';
 import { signPlaybackUrl } from '@/utils/hls-signer';
+import { captionService } from '@/services/caption.service';
 import {
   ConflictError,
   ForbiddenError,
@@ -185,6 +199,70 @@ describe('videos.controller', () => {
       expect(typeof payload.expiresAt).toBe('string');
       // No posterKey persisted → posterUrl is null in the response.
       expect(payload.posterUrl).toBeNull();
+    });
+
+    it('includes captions and defaultCaptionLanguage in the response', async () => {
+      (videoService.canAccessVideo as jest.Mock).mockResolvedValueOnce({
+        allowed: true,
+        video: {
+          id: VIDEO_ID,
+          status: 'READY',
+          hlsPrefix: 'vod/x',
+          posterKey: null,
+          courseId: COURSE_ID,
+        },
+      });
+      const captionExpiresAt = new Date('2099-01-01T00:00:00.000Z');
+      (captionService.getCaptionsForPlayback as jest.Mock).mockResolvedValueOnce({
+        captions: [
+          { language: 'en', url: 'http://signed.example/captions/en.vtt', expiresAt: captionExpiresAt },
+          { language: 'fr', url: 'http://signed.example/captions/fr.vtt', expiresAt: captionExpiresAt },
+        ],
+        defaultCaptionLanguage: 'en',
+      });
+
+      const req = makeReq({ params: { id: VIDEO_ID } });
+      const res = makeRes();
+
+      await videosController.getPlayback(req, res);
+
+      expect(captionService.getCaptionsForPlayback).toHaveBeenCalledWith(VIDEO_ID);
+      const payload = (res.json as jest.Mock).mock.calls[0][0];
+      expect(payload.captions).toHaveLength(2);
+      expect(payload.captions[0]).toEqual({
+        language: 'en',
+        url: 'http://signed.example/captions/en.vtt',
+        expiresAt: captionExpiresAt.toISOString(),
+      });
+      expect(payload.defaultCaptionLanguage).toBe('en');
+    });
+
+    it('returns empty captions array and null defaultCaptionLanguage when no captions exist', async () => {
+      (videoService.canAccessVideo as jest.Mock).mockResolvedValueOnce({
+        allowed: true,
+        video: {
+          id: VIDEO_ID,
+          status: 'READY',
+          hlsPrefix: 'vod/x',
+          posterKey: null,
+          courseId: COURSE_ID,
+        },
+      });
+      // The module-level mock already returns { captions: [], defaultCaptionLanguage: null }
+      // but we explicitly verify it here to document the contract.
+      (captionService.getCaptionsForPlayback as jest.Mock).mockResolvedValueOnce({
+        captions: [],
+        defaultCaptionLanguage: null,
+      });
+
+      const req = makeReq({ params: { id: VIDEO_ID } });
+      const res = makeRes();
+
+      await videosController.getPlayback(req, res);
+
+      const payload = (res.json as jest.Mock).mock.calls[0][0];
+      expect(payload.captions).toEqual([]);
+      expect(payload.defaultCaptionLanguage).toBeNull();
     });
 
     it('returns a posterUrl when the video has a posterKey', async () => {

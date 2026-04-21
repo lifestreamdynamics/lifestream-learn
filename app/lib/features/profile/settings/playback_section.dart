@@ -2,17 +2,87 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../core/settings/settings_cubit.dart';
+import '../../../core/settings/settings_state.dart';
 import '../../../core/settings/settings_store.dart';
+import '../../../core/utils/bcp47_labels.dart';
 
-/// Playback section — default playback speed, captions default, data
-/// saver.
-///
-/// The speed is consumed by [LearnVideoPlayer] when a controller
-/// initialises. Captions and data saver are persisted but not yet
-/// fully wired — both are flagged as "coming soon" in copy so users
-/// aren't surprised.
+/// Playback section — default playback speed, captions default,
+/// caption language preference, and data saver.
 class PlaybackSection extends StatelessWidget {
   const PlaybackSection({super.key});
+
+  void _showLanguagePicker(
+    BuildContext context,
+    SettingsState state,
+    SettingsCubit cubit,
+  ) {
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Sheet handle.
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Container(
+                  width: 32,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Theme.of(ctx).dividerColor,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Caption language',
+                    style:
+                        TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                  ),
+                ),
+              ),
+              const Divider(height: 0),
+              // "Use video default" row.
+              ListTile(
+                key: const Key('settings.captionLanguage.default'),
+                title: const Text('Use video default'),
+                trailing: state.captionLanguage == null
+                    ? const Icon(
+                        Icons.check,
+                        key: Key('settings.captionLanguage.default.check'),
+                      )
+                    : null,
+                onTap: () {
+                  cubit.setCaptionLanguage(null);
+                  Navigator.of(ctx).pop();
+                },
+              ),
+              // Supported languages.
+              for (final code in kSupportedCaptionLanguages)
+                ListTile(
+                  key: Key('settings.captionLanguage.$code'),
+                  title: Text(captionLanguageLabel(code)),
+                  trailing: state.captionLanguage == code
+                      ? Icon(Icons.check,
+                          key: Key('settings.captionLanguage.$code.check'))
+                      : null,
+                  onTap: () {
+                    cubit.setCaptionLanguage(code);
+                    Navigator.of(ctx).pop();
+                  },
+                ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -49,11 +119,41 @@ class PlaybackSection extends StatelessWidget {
             secondary: const Icon(Icons.closed_caption_outlined),
             title: const Text('Show captions by default'),
             subtitle: const Text(
-              'Captions are coming soon. Your preference is saved for '
-              'when they land.',
+              'When on, captions load automatically at the start of each '
+              'video.',
             ),
             value: state.captionsDefault,
             onChanged: cubit.setCaptionsDefault,
+          ),
+          const Divider(height: 0),
+          ListTile(
+            key: const Key('settings.playback.captionLanguage'),
+            enabled: state.captionsDefault,
+            leading: Icon(
+              Icons.language,
+              color: state.captionsDefault ? null : Theme.of(context).disabledColor,
+            ),
+            title: Text(
+              'Caption language',
+              style: TextStyle(
+                color: state.captionsDefault
+                    ? null
+                    : Theme.of(context).disabledColor,
+              ),
+            ),
+            subtitle: Text(
+              state.captionLanguage != null
+                  ? captionLanguageLabel(state.captionLanguage!)
+                  : 'Use video default',
+              style: TextStyle(
+                color: state.captionsDefault
+                    ? null
+                    : Theme.of(context).disabledColor,
+              ),
+            ),
+            onTap: state.captionsDefault
+                ? () => _showLanguagePicker(context, state, cubit)
+                : null,
           ),
           const Divider(height: 0),
           SwitchListTile(
@@ -61,7 +161,8 @@ class PlaybackSection extends StatelessWidget {
             secondary: const Icon(Icons.data_saver_off_outlined),
             title: const Text('Data saver'),
             subtitle: const Text(
-              'Limits video quality on cellular — coming soon.',
+              'On cellular, videos wait for you to tap play instead of '
+              'auto-playing — saves data when you\'re off Wi-Fi.',
             ),
             value: state.dataSaver,
             onChanged: cubit.setDataSaver,

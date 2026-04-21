@@ -10,6 +10,9 @@ describe('contentTypeForPath', () => {
     ['init_0.mp4', 'video/mp4'],
     ['source.MP4', 'video/mp4'],
     ['legacy.ts', 'video/mp2t'],
+    // WebVTT captions — charset=utf-8 must be included for multibyte content.
+    ['captions/en.vtt', 'text/vtt; charset=utf-8'],
+    ['captions/zh-CN.VTT', 'text/vtt; charset=utf-8'],
     ['unknown.bin', 'application/octet-stream'],
     ['noext', 'application/octet-stream'],
     ['', 'application/octet-stream'],

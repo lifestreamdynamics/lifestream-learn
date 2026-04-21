@@ -2,8 +2,9 @@ import { randomUUID } from 'node:crypto';
 import type { Prisma, PrismaClient } from '@prisma/client';
 import { prisma as defaultPrisma } from '@/config/prisma';
 import { NotFoundError, ValidationError } from '@/utils/errors';
-import type { ObjectStore } from '@/services/object-store';
+import type { ObjectStore, ObjectStreamResult } from '@/services/object-store';
 import { objectStore as defaultObjectStore } from '@/services/object-store';
+import { uploadBytes } from '@/utils/object-store-utils';
 import { env } from '@/config/env';
 import type { PublicUser } from '@/services/auth.service';
 import { hashPassword, requireCurrentPassword } from '@/utils/password';
@@ -60,12 +61,20 @@ export interface DeleteAccountInput {
 export interface AvatarUploadResult {
   avatarKey: string;
   /**
-   * Relative display URL. Null for now — the media-serving route lands
-   * in a later slice. Clients compose the full URL from `avatarKey`
-   * once that route is live.
+   * Relative display URL pointing at the media-serving route. Clients
+   * absolute-ify against the API base URL. The indirection keeps the
+   * storage layout private and gives us a single seam to front with a
+   * CDN later without touching every client call-site.
    */
-  avatarUrl: string | null;
+  avatarUrl: string;
 }
+
+/**
+ * Public path for the caller's own avatar. Kept as a module constant so
+ * the controller, service return shape, and client-side expectations
+ * all agree on a single source of truth.
+ */
+export const OWN_AVATAR_URL = '/api/me/avatar';
 
 // Hard caps on avatar bytes (mirrors the multipart guard). Kept as a
 // module constant so the service boundary can be tested without
@@ -110,10 +119,18 @@ export interface UserService {
   /**
    * Upload a new avatar. Writes to `S3_UPLOAD_BUCKET` under
    * `avatars/<userId>/<uuid>.<ext>`, persists the key, and deletes any
-   * previous avatar best-effort. Returns the new key + a display URL
-   * (null until the media-serving route lands).
+   * previous avatar best-effort. Returns the new key + the relative
+   * display URL clients should compose against the API base URL.
    */
   uploadAvatar(input: AvatarUploadInput): Promise<AvatarUploadResult>;
+  /**
+   * Fetch the stored avatar bytes for a user as a stream. Returns
+   * `null` when the user exists but has no avatarKey — the controller
+   * maps that to 204 so the client cleanly falls through to Gravatar
+   * / initials. Throws [NotFoundError] when the user itself doesn't
+   * exist (deliberately 404, not 403, to avoid account enumeration).
+   */
+  getAvatar(userId: string): Promise<ObjectStreamResult | null>;
   /**
    * Slice P5 — change the caller's password. Requires current-password
    * re-verification. On success: hashes + writes the new password and
@@ -216,11 +233,18 @@ export function createUserService(
       // without a bang.
       return {
         avatarKey: updated.avatarKey ?? key,
-        // Null for now — the media-serving route lands in a later slice.
-        // Clients compose the full URL from `avatarKey` when that route
-        // is live.
-        avatarUrl: null,
+        avatarUrl: OWN_AVATAR_URL,
       };
+    },
+
+    async getAvatar(userId) {
+      const row = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { avatarKey: true },
+      });
+      if (!row) throw new NotFoundError('User not found');
+      if (!row.avatarKey) return null;
+      return objectStore.getObjectStream(env.S3_UPLOAD_BUCKET, row.avatarKey);
     },
 
     async changePassword(userId, { currentPassword, newPassword }) {
@@ -290,50 +314,6 @@ export function createUserService(
       await sessions.revokeAllForUser(userId);
     },
   };
-}
-
-/**
- * Bridge between a raw Buffer (what the HTTP layer hands us) and the
- * file-oriented `ObjectStore.uploadFile()`. Uses the S3 client's
- * PutObjectCommand directly so we don't have to write a temp file just
- * to upload a 2 MB buffer.
- *
- * Split out so `createUserService`'s happy-path uses a single codepath
- * whether the ObjectStore is the production singleton or a test double.
- */
-async function uploadBytes(
-  objectStore: ObjectStore,
-  bucket: string,
-  key: string,
-  bytes: Buffer,
-  contentType: string,
-): Promise<void> {
-  // If the ObjectStore implementation has a `putObject` helper, use it.
-  // Otherwise fall back to writing to a temp file and invoking uploadFile.
-  const maybePut = (objectStore as unknown as {
-    putObject?: (b: string, k: string, body: Buffer, ct: string) => Promise<void>;
-  }).putObject;
-  if (typeof maybePut === 'function') {
-    await maybePut.call(objectStore, bucket, key, bytes, contentType);
-    return;
-  }
-  // Fallback: write to a temp file and use the file-based uploader. This
-  // keeps the ObjectStore interface stable for existing callers; a future
-  // refactor can promote `putObject` to the interface if more call-sites
-  // need in-memory uploads.
-  const os = await import('node:os');
-  const path = await import('node:path');
-  const fs = await import('node:fs/promises');
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'learn-avatar-'));
-  const tmpPath = path.join(tmpDir, 'avatar.bin');
-  try {
-    await fs.writeFile(tmpPath, bytes);
-    await objectStore.uploadFile(bucket, key, tmpPath, contentType);
-  } finally {
-    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {
-      // Cleanup is best-effort.
-    });
-  }
 }
 
 export const userService = createUserService();

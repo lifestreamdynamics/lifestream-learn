@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
@@ -12,10 +13,13 @@ import '../../core/analytics/analytics_sinks.dart';
 import '../../core/http/error_envelope.dart';
 import '../../core/settings/settings_cubit.dart';
 import '../../core/settings/settings_state.dart';
+import '../../core/utils/bcp47_labels.dart';
 import '../../data/models/video.dart';
 import '../../data/repositories/enrollment_repository.dart';
 import '../../data/repositories/video_repository.dart';
 import '../feed/video_controller_cache.dart';
+import 'caption_loader.dart';
+import 'caption_picker_sheet.dart';
 
 /// Vertical-feed video player. Owns:
 /// - Resolving the signed playback URL (via `VideoRepository`, cached).
@@ -39,6 +43,8 @@ class LearnVideoPlayer extends StatefulWidget {
     this.onError,
     this.autoPlayWhenVisible = true,
     this.analyticsSink,
+    this.connectivity,
+    this.captionLoader,
     super.key,
   });
 
@@ -48,6 +54,12 @@ class LearnVideoPlayer extends StatefulWidget {
   final EnrollmentRepository enrollmentRepo;
   final VideoControllerCache controllerCache;
   final VoidCallback? onError;
+
+  /// Optional `connectivity_plus` injection point. Defaults to a fresh
+  /// [Connectivity] instance at first-use. Widget tests swap this for a
+  /// deterministic fake so the cellular branch doesn't depend on the
+  /// platform channel.
+  final Connectivity? connectivity;
 
   /// When false, the player won't auto-play even if visible. Used by
   /// widget tests and by future (Slice E) designer preview that wants
@@ -59,6 +71,10 @@ class LearnVideoPlayer extends StatefulWidget {
   /// instance at 90% watched. Defaults to no-op — existing tests don't
   /// need to wire it up.
   final VideoAnalyticsSink? analyticsSink;
+
+  /// Optional [CaptionLoader] override. Defaults to a live instance.
+  /// Widget tests inject a fake so caption-fetch does not touch the network.
+  final CaptionLoader? captionLoader;
 
   @override
   State<LearnVideoPlayer> createState() => _LearnVideoPlayerState();
@@ -95,6 +111,28 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
   String? _errorMessage;
   bool _loading = true;
   bool _isVisible = false;
+
+  /// The most recent playback info; kept on state so caption reloads can
+  /// look up the track list after initial load.
+  PlaybackInfo? _playback;
+
+  /// Active caption language. Null means captions are off.
+  String? _currentCaptionLanguage;
+
+  /// Caption fetcher — uses widget override when provided, otherwise default.
+  CaptionLoader get _captionLoader =>
+      widget.captionLoader ?? CaptionLoader();
+
+  /// Latch: when data-saver is on and the device is on cellular, the
+  /// player defers auto-play until the user taps. We also surface a
+  /// one-shot snackbar so the behaviour is discoverable rather than
+  /// mysterious. `video_player` doesn't expose a track-selection API
+  /// for ABR capping, so this is the honest user-visible effect —
+  /// pausing auto-play saves the user from an unexpected cellular
+  /// bitrate spike without pretending to throttle bitrate we can't
+  /// actually control.
+  bool _dataSaverCellularSuppressed = false;
+  bool _dataSaverSnackbarShown = false;
 
   /// Overlay play/pause fade.
   double _overlayOpacity = 0;
@@ -159,6 +197,37 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
     }
   }
 
+  /// True when the current connection includes cellular. A failure to
+  /// resolve connectivity (platform channel hiccup, test environment
+  /// without the plugin) is treated as "not cellular" — the conservative
+  /// choice here is to NOT suppress auto-play if we can't tell, since
+  /// data-saver's purpose is to protect cellular usage, not to break
+  /// the player on unknown transports.
+  Future<bool> _isOnCellular() async {
+    try {
+      final connectivity = widget.connectivity ?? Connectivity();
+      final result = await connectivity.checkConnectivity();
+      return result.contains(ConnectivityResult.mobile);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  void _maybeShowDataSaverSnackbar() {
+    if (_dataSaverSnackbarShown) return;
+    _dataSaverSnackbarShown = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          key: Key('player.dataSaver.cellularSnackbar'),
+          content: Text('Data saver is on — tap to start on cellular'),
+          duration: Duration(seconds: 3),
+        ),
+      );
+    });
+  }
+
   Future<void> _load() async {
     try {
       final playback = await widget.videoRepo.playback(widget.video.id);
@@ -191,19 +260,52 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
           // player is loading — a failure here is non-fatal (playback
           // still happens at 1.0x). Swallow and move on.
         }
-        // TODO(Slice P4 follow-up): apply `settings.captionsDefault`
-        // when captions are implemented (video_player doesn't expose
-        // a captions toggle surface today).
-        // TODO(Slice P4 follow-up): honour `settings.dataSaver` by
-        // capping ABR at 540p on cellular — needs connectivity_plus
-        // to detect the transport, which isn't yet a dep.
       }
+
+      // Slice C — resolve effective caption language and apply on load.
+      // Priority: (1) user preference, (2) video default (only when
+      // captionsDefault setting is on), (3) off.
+      String? effectiveLanguage;
+      if (settings != null && settings.captionsDefault) {
+        final userPref = settings.captionLanguage;
+        if (userPref != null &&
+            playback.captions.any((t) => t.language == userPref)) {
+          effectiveLanguage = userPref;
+        } else if (playback.defaultCaptionLanguage != null &&
+            playback.captions
+                .any((t) => t.language == playback.defaultCaptionLanguage)) {
+          effectiveLanguage = playback.defaultCaptionLanguage;
+        }
+      }
+
+      if (effectiveLanguage != null) {
+        final track = playback.captions
+            .firstWhere((t) => t.language == effectiveLanguage);
+        await _applyCaption(controller, track, playback);
+      }
+
+      // Slice-H follow-up — honour `settings.dataSaver` on cellular.
+      // `video_player` exposes no per-variant track-selection API, so
+      // we can't cap ABR bitrate from here. The honest effect is to
+      // suppress auto-play on cellular when data-saver is on: the user
+      // has to tap to start, which surfaces the cellular cost to them
+      // explicitly rather than silently streaming a high-bitrate variant.
+      _dataSaverCellularSuppressed = false;
+      if (settings?.dataSaver == true) {
+        _dataSaverCellularSuppressed = await _isOnCellular();
+      }
+
       setState(() {
+        _playback = playback;
         _controller = controller;
         _loading = false;
       });
-      if (widget.autoPlayWhenVisible && _isVisible) {
+      if (widget.autoPlayWhenVisible &&
+          _isVisible &&
+          !_dataSaverCellularSuppressed) {
         await controller.play();
+      } else if (_dataSaverCellularSuppressed && _isVisible) {
+        _maybeShowDataSaverSnackbar();
       }
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -349,8 +451,10 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
     final c = _controller;
     if (c == null) return;
     if (nowVisible) {
-      if (widget.autoPlayWhenVisible) {
+      if (widget.autoPlayWhenVisible && !_dataSaverCellularSuppressed) {
         unawaited(c.play());
+      } else if (_dataSaverCellularSuppressed) {
+        _maybeShowDataSaverSnackbar();
       }
     } else {
       unawaited(c.pause());
@@ -363,6 +467,10 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
     if (c.value.isPlaying) {
       unawaited(c.pause());
     } else {
+      // User tapped to start — they've consented to the cellular cost
+      // this session. Clear the suppression so visibility changes
+      // resume auto-play normally.
+      _dataSaverCellularSuppressed = false;
       unawaited(c.play());
     }
     setState(() => _overlayOpacity = 1);
@@ -419,6 +527,83 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
   void _onScrubberChanged(double valueMs) {
     _scrubberPos = valueMs;
     unawaited(_controller?.seekTo(Duration(milliseconds: valueMs.toInt())));
+  }
+
+  /// Fetches [track] via [CaptionLoader] and attaches it to [controller].
+  /// On a 404, invalidates the playback cache so the next load refetches
+  /// the track list. On any other error, logs and continues — captions
+  /// failing must never break video playback.
+  Future<void> _applyCaption(
+    VideoPlayerController controller,
+    CaptionTrack track,
+    PlaybackInfo playback,
+  ) async {
+    try {
+      final file = await _captionLoader.load(track);
+      if (!mounted) return;
+      await controller.setClosedCaptionFile(Future.value(file));
+      setState(() => _currentCaptionLanguage = track.language);
+    } on ApiException catch (e) {
+      debugPrint(
+        'LearnVideoPlayer: caption load failed '
+        '(${e.statusCode}/${e.code}): ${e.message}',
+      );
+      if (e.statusCode == 404) {
+        // The signed URL for this language is gone — invalidate so the
+        // next swipe refetches the playback and gets an updated track list.
+        widget.videoRepo.invalidate(widget.video.id);
+      }
+      // captions off — continue without them.
+    } catch (e) {
+      debugPrint('LearnVideoPlayer: caption load unexpected error: $e');
+    }
+  }
+
+  /// Handles the CC button tap: shows the picker, applies the result.
+  Future<void> _onCcTapped() async {
+    final playback = _playback;
+    final controller = _controller;
+    if (playback == null || controller == null) return;
+
+    final result = await showCaptionPicker(
+      context: context,
+      tracks: playback.captions,
+      currentLanguage: _currentCaptionLanguage,
+    );
+
+    if (!mounted) return;
+
+    if (result.cancelled) return;
+
+    try {
+      if (result.off) {
+        await controller.setClosedCaptionFile(null);
+        setState(() => _currentCaptionLanguage = null);
+        _readSettingsCubit()?.setCaptionLanguage(null);
+        widget.analyticsSink
+            ?.onCaptionLanguageSelected(widget.video.id, null);
+      } else if (result.language != null) {
+        final lang = result.language!;
+        final track = playback.captions.firstWhere((t) => t.language == lang);
+        await _applyCaption(controller, track, playback);
+        _readSettingsCubit()?.setCaptionLanguage(lang);
+        widget.analyticsSink
+            ?.onCaptionLanguageSelected(widget.video.id, lang);
+      }
+    } catch (e) {
+      debugPrint('LearnVideoPlayer: CC change error: $e');
+    }
+  }
+
+  /// Best-effort lookup of [SettingsCubit] from the widget tree — same
+  /// try/catch pattern as [_readSettings] so tests without a BlocProvider
+  /// keep passing.
+  SettingsCubit? _readSettingsCubit() {
+    try {
+      return context.read<SettingsCubit>();
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> _retryLoad() async {
@@ -504,6 +689,8 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
     }
 
     final duration = c.value.duration.inMilliseconds.toDouble();
+    final playback = _playback;
+    final hasCaptions = playback != null && playback.captions.isNotEmpty;
     return GestureDetector(
       onTap: _toggleOverlay,
       onLongPressStart: (_) => _showScrubber(),
@@ -516,6 +703,31 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
             child: AspectRatio(
               aspectRatio: c.value.aspectRatio == 0 ? 9 / 16 : c.value.aspectRatio,
               child: VideoPlayer(c),
+            ),
+          ),
+          // Closed-caption overlay — renders the current VTT cue near the
+          // bottom of the video, above the title chrome. For RTL caption
+          // languages (ar/he/fa/ur) the text direction flips so cues render
+          // with the correct alignment.
+          Positioned(
+            left: 16,
+            right: 16,
+            bottom: 80,
+            child: IgnorePointer(
+              child: Directionality(
+                textDirection: _currentCaptionLanguage != null &&
+                        isRtlCaptionLanguage(_currentCaptionLanguage!)
+                    ? TextDirection.rtl
+                    : TextDirection.ltr,
+                child: ClosedCaption(
+                  text: c.value.caption.text,
+                  textStyle: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    backgroundColor: Color(0xAA000000),
+                  ),
+                ),
+              ),
             ),
           ),
           // Double-tap seek — full-height left / right zones on top of
@@ -590,6 +802,27 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
               ],
             ),
           ),
+          // CC (captions) button — top-right corner, only when tracks exist.
+          if (hasCaptions)
+            Positioned(
+              top: 8,
+              right: 8,
+              child: Semantics(
+                button: true,
+                label: 'Caption language',
+                child: IconButton(
+                  key: const Key('player.cc'),
+                  icon: Icon(
+                    _currentCaptionLanguage != null
+                        ? Icons.closed_caption
+                        : Icons.closed_caption_outlined,
+                    color: Colors.white,
+                  ),
+                  tooltip: 'Caption language',
+                  onPressed: _onCcTapped,
+                ),
+              ),
+            ),
           // Long-press scrubber.
           if (_scrubberVisible && duration > 0)
             Positioned(

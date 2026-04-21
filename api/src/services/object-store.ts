@@ -11,6 +11,13 @@ import {
 } from '@aws-sdk/client-s3';
 import { s3Client } from '@/config/s3';
 import { contentTypeForPath } from '@/utils/content-type';
+import { NotFoundError } from '@/utils/errors';
+
+export interface ObjectStreamResult {
+  stream: Readable;
+  contentType: string;
+  contentLength: number | null;
+}
 
 export interface ObjectStore {
   downloadToFile(bucket: string, key: string, localPath: string): Promise<void>;
@@ -22,6 +29,14 @@ export interface ObjectStore {
     opts?: { concurrency?: number },
   ): Promise<{ uploaded: number }>;
   deleteObject(bucket: string, key: string): Promise<void>;
+  /**
+   * Fetch an object as a readable stream. Callers are expected to pipe
+   * the stream directly to their HTTP response and let backpressure
+   * flow through — no bytes touch local disk. Throws [NotFoundError]
+   * when the object is missing so route handlers can map that to a
+   * 404 uniformly.
+   */
+  getObjectStream(bucket: string, key: string): Promise<ObjectStreamResult>;
 }
 
 /**
@@ -127,7 +142,44 @@ export function createObjectStore(s3: S3Client = s3Client): ObjectStore {
     await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
   }
 
-  return { downloadToFile, uploadFile, uploadDirectory, deleteObject };
+  async function getObjectStream(
+    bucket: string,
+    key: string,
+  ): Promise<ObjectStreamResult> {
+    let res;
+    try {
+      res = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+    } catch (err) {
+      if (isS3NotFound(err)) throw new NotFoundError('Object not found');
+      throw err;
+    }
+    if (!res.Body) {
+      throw new Error(`s3 GetObject returned no body for ${bucket}/${key}`);
+    }
+    return {
+      // Same cast rationale as downloadToFile: the runtime body is a
+      // Node Readable even though the SDK union is wider.
+      stream: res.Body as Readable,
+      contentType: res.ContentType ?? 'application/octet-stream',
+      contentLength: res.ContentLength ?? null,
+    };
+  }
+
+  return { downloadToFile, uploadFile, uploadDirectory, deleteObject, getObjectStream };
+}
+
+/**
+ * SeaweedFS and AWS both surface a missing object as an error with a
+ * `NoSuchKey` / `NotFound` code or a 404 metadata. Centralised so both
+ * `getObjectStream` and any future helper treat the same shapes.
+ */
+function isS3NotFound(err: unknown): boolean {
+  if (err == null || typeof err !== 'object') return false;
+  const e = err as { name?: string; Code?: string; $metadata?: { httpStatusCode?: number } };
+  if (e.name === 'NoSuchKey' || e.name === 'NotFound') return true;
+  if (e.Code === 'NoSuchKey' || e.Code === 'NotFound') return true;
+  if (e.$metadata?.httpStatusCode === 404) return true;
+  return false;
 }
 
 /**
