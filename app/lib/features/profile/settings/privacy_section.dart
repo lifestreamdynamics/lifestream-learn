@@ -28,9 +28,9 @@ class PrivacySection extends StatelessWidget {
   final UrlLauncher? launcher;
 
   static const String _privacyPolicyUrl =
-      'https://lifestream.example/learn/privacy';
+      'https://learn.REDACTED-BRAND-DOMAIN/privacy';
   static const String _termsUrl =
-      'https://lifestream.example/learn/terms';
+      'https://learn.REDACTED-BRAND-DOMAIN/terms';
 
   @override
   Widget build(BuildContext context) {

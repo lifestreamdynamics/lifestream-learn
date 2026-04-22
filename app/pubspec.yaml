@@ -2,7 +2,7 @@
 # Flutter Android app for Lifestream Learn.
 # License: AGPL-3.0-or-later (see ../LICENSE).
 name: lifestream_learn_app
-description: "Lifestream Learn — Flutter Android app (learner feed + designer authoring)."
+description: "Lifestream Learn — interactive video courses with personalized exercises."
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -77,6 +77,7 @@ dependencies:
   connectivity_plus: ^6.1.0
   url_launcher: ^6.3.1
   package_info_plus: ^8.1.0
+  cupertino_icons: ^1.0.9
 
 dev_dependencies:
   flutter_test:
