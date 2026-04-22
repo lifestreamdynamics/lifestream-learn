@@ -338,7 +338,10 @@ class _CueTimeline extends StatelessWidget {
           return Stack(
             children: [
               Positioned.fill(
-                child: Container(color: Colors.grey.shade300),
+                child: Container(
+                  color:
+                      Theme.of(context).colorScheme.surfaceContainerHighest,
+                ),
               ),
               if (durationMs > 0)
                 for (final c in cues)

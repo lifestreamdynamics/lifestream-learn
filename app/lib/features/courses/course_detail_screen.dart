@@ -121,8 +121,9 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
             child: Image.network(
               course.coverImageUrl!,
               fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) =>
-                  Container(color: Colors.grey.shade300),
+              errorBuilder: (_, __, ___) => Container(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              ),
             ),
           ),
         const SizedBox(height: 16),

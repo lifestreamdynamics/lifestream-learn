@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:skeletonizer/skeletonizer.dart';
 
 import 'brand_colors.dart';
 import 'component_themes.dart';
@@ -33,12 +34,22 @@ class AppTheme {
 
     final components = buildComponentThemes(scheme);
 
+    // Skeletonizer shimmer colors tuned to the current brightness so loading
+    // placeholders feel part of the surface, not a pop-in Material-grey.
+    final skeletonizerConfig = SkeletonizerConfigData(
+      effect: ShimmerEffect(
+        baseColor: scheme.surfaceContainer,
+        highlightColor: scheme.surfaceContainerHigh,
+      ),
+    );
+
     return ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
       scaffoldBackgroundColor: brightness == Brightness.dark
           ? BrandColors.darkBg
           : BrandColors.lightBg,
+      extensions: <ThemeExtension<dynamic>>[skeletonizerConfig],
       filledButtonTheme: components.filledButtonTheme,
       elevatedButtonTheme: components.elevatedButtonTheme,
       outlinedButtonTheme: components.outlinedButtonTheme,

@@ -13,6 +13,7 @@ import '../../core/analytics/analytics_sinks.dart';
 import '../../core/http/error_envelope.dart';
 import '../../core/settings/settings_cubit.dart';
 import '../../core/settings/settings_state.dart';
+import '../../core/theme/brand_gradients.dart';
 import '../../core/utils/bcp47_labels.dart';
 import '../../data/models/video.dart';
 import '../../data/repositories/enrollment_repository.dart';
@@ -845,9 +846,8 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
             bottom: 0,
             child: ShaderMask(
               blendMode: BlendMode.srcIn,
-              shaderCallback: (rect) => const LinearGradient(
-                colors: [Color(0xFF22D3EE), Color(0xFF38BDF8)],
-              ).createShader(rect),
+              shaderCallback: (rect) =>
+                  BrandGradients.primary.createShader(rect),
               child: LinearProgressIndicator(
                 key: const Key('player.progressBar'),
                 value: duration > 0

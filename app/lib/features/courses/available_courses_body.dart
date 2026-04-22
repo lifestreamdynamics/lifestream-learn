@@ -101,13 +101,18 @@ class _AvailableGrid extends StatelessWidget {
                                   course.coverImageUrl!,
                                   fit: BoxFit.cover,
                                   errorBuilder: (_, __, ___) => Container(
-                                    color: Colors.grey.shade300,
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .surfaceContainerHighest,
                                     child: const Icon(Icons.image_rounded),
                                   ),
                                 )
                               : Container(
-                                  color: Colors.grey.shade300,
-                                  child: const Icon(Icons.school_rounded, size: 36),
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .surfaceContainerHighest,
+                                  child: const Icon(Icons.school_rounded,
+                                      size: 36),
                                 ),
                         ),
                         Padding(

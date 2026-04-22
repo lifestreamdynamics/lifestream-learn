@@ -1,7 +1,7 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lifestream_learn_app/core/theme/app_theme.dart';
 import 'package:lifestream_learn_app/core/theme/brand_colors.dart';
+import 'package:skeletonizer/skeletonizer.dart';
 
 void main() {
   group('AppTheme', () {
@@ -35,6 +35,14 @@ void main() {
       // Resolved default shape should be StadiumBorder.
       final shape = style.shape!.resolve({});
       expect(shape, isA<StadiumBorder>());
+    });
+
+    test('skeletonizer config is attached on both themes', () {
+      for (final t in [AppTheme.light, AppTheme.dark]) {
+        final cfg = t.extension<SkeletonizerConfigData>();
+        expect(cfg, isNotNull,
+            reason: 'SkeletonizerConfigData must be a ThemeExtension');
+      }
     });
   });
 }
