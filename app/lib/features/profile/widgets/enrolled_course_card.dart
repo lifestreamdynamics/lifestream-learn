@@ -256,7 +256,9 @@ class _CoverImage extends StatelessWidget {
         child: Image.network(
           url!,
           fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => Container(color: Colors.grey.shade300),
+          errorBuilder: (_, __, ___) => Container(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          ),
         ),
       ),
     );
