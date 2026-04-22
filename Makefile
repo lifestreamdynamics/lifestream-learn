@@ -42,7 +42,8 @@ NGINX_HOST_PORT := $(shell \
 	fi)
 API_BASE_URL_EMULATOR := http://10.0.2.2:$(NGINX_HOST_PORT)
 
-.PHONY: help bootstrap up down reset api worker app app-deps seed migrate logs status
+.PHONY: help bootstrap up down reset api worker app app-deps app-prod seed migrate logs status \
+	deploy-prod deploy-prod-dry-run deploy-status
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -138,3 +139,52 @@ status: ## One-line status report for local services
 	devices=$$(adb devices 2>/dev/null | awk 'NR>1 && $$2=="device"{print $$1}' | paste -sd',' - || true); \
 	echo "AVD (adb devices)            : $${devices:-none}"; \
 	echo "Flutter API_BASE_URL         : $(API_BASE_URL_EMULATOR)"
+
+# ---------------------------------------------------------------------------
+# Production deploy targets
+#
+# These are thin wrappers around deploy/deploy-production.sh. The real
+# deploy logic — SSH ControlMaster, atomic release swap, nginx reload,
+# health check — lives in that script. These targets exist so operators
+# get the same muscle-memory entrypoint (`make`) for local and remote
+# work, and so the prod-flavor Flutter build recipe lives next to the
+# dev-flavor one.
+#
+# The deploy script itself is delivered by a parallel slice (see
+# the Phasing section of the production-deploy plan). Running these
+# targets before that script lands will print a friendly error.
+# ---------------------------------------------------------------------------
+
+# Extra args forwarded to deploy/deploy-production.sh (e.g. --skip-tests,
+# --skip-ssl, --sync-env, --rollback). Example:
+#   make deploy-prod DEPLOY_ARGS="--skip-tests --sync-env"
+DEPLOY_ARGS ?=
+DEPLOY_SCRIPT := $(ROOT)/deploy/deploy-production.sh
+
+app-prod: ## Build the production-flavor Flutter APK (release, prod API URL)
+	@cd "$(APP_DIR)" && $(FLUTTER) build apk --flavor prod --release \
+		--dart-define=API_BASE_URL=https://learn-api.lifestreamdynamics.com
+
+deploy-prod: ## Run the production deploy script (SSH, atomic release swap, nginx reload)
+	@if [ ! -x "$(DEPLOY_SCRIPT)" ]; then \
+		echo "ERROR: $(DEPLOY_SCRIPT) not found or not executable." >&2; \
+		echo "       The deploy script is delivered by the deploy-automation slice." >&2; \
+		exit 1; \
+	fi
+	@"$(DEPLOY_SCRIPT)" $(DEPLOY_ARGS)
+
+deploy-prod-dry-run: ## Print the deploy plan without making remote changes
+	@if [ ! -x "$(DEPLOY_SCRIPT)" ]; then \
+		echo "ERROR: $(DEPLOY_SCRIPT) not found or not executable." >&2; \
+		echo "       The deploy script is delivered by the deploy-automation slice." >&2; \
+		exit 1; \
+	fi
+	@"$(DEPLOY_SCRIPT)" --dry-run $(DEPLOY_ARGS)
+
+deploy-status: ## SSH to the VPS and show pm2 status for learn-api + transcode worker
+	@if [ ! -x "$(DEPLOY_SCRIPT)" ]; then \
+		echo "ERROR: $(DEPLOY_SCRIPT) not found or not executable." >&2; \
+		echo "       The deploy script is delivered by the deploy-automation slice." >&2; \
+		exit 1; \
+	fi
+	@"$(DEPLOY_SCRIPT)" --status

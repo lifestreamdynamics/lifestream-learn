@@ -5,14 +5,37 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Lifestream Learn — short-video learning, interactive cues</title>
   <meta name="description" content="Android-first short-video educational app with interactive pause-points. Self-hostable under AGPL-3.0.">
+
+  <!-- Favicon (self-hosted, no external fetch) -->
+  <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon.png">
+  <link rel="icon" type="image/png" sizes="256x256" href="/assets/logo-256.png">
+  <link rel="apple-touch-icon" href="/assets/logo-256.png">
+
+  <!-- OpenGraph / Twitter card -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Lifestream Learn">
+  <meta property="og:title" content="Lifestream Learn — short-video learning, interactive cues">
+  <meta property="og:description" content="Android-first short-video educational app with interactive pause-points. Self-hostable under AGPL-3.0.">
+  <meta property="og:url" content="https://learn.lifestreamdynamics.com/">
+  <meta property="og:image" content="https://learn.lifestreamdynamics.com/assets/logo-og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Lifestream Learn logo">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Lifestream Learn — short-video learning, interactive cues">
+  <meta name="twitter:description" content="Android-first short-video educational app with interactive pause-points. Self-hostable under AGPL-3.0.">
+  <meta name="twitter:image" content="https://learn.lifestreamdynamics.com/assets/logo-og.png">
+
   <style>
     :root {
-      --bg: #0f172a;
-      --panel: #111827;
+      /* Cyan brand palette — exact match with the Flutter app's BrandColors. */
+      --bg: #050A14;          /* app BrandColors.darkBg */
+      --panel: #0F1724;       /* app BrandColors.darkSurface */
       --text: #e5e7eb;
-      --muted: #9ca3af;
-      --accent: #34d399;
-      --accent-dark: #059669;
+      --muted: #94a3b8;
+      --accent: #22D3EE;      /* app BrandColors.cyan400 — dark-mode primary */
+      --accent-dark: #0891B2; /* app BrandColors.cyan700 — light-mode primary */
+      --border: #1e3a5f;
       --radius: 12px;
     }
     * { box-sizing: border-box; }
@@ -31,6 +54,16 @@
       max-width: 720px;
       margin: 0 auto;
       padding: 3rem 1.5rem 2rem;
+    }
+    .hero {
+      text-align: center;
+      margin: 0 0 2rem;
+    }
+    .hero img {
+      display: block;
+      max-width: 100%;
+      height: auto;
+      margin: 0 auto 1.5rem;
     }
     header h1 {
       font-size: 2rem;
@@ -56,7 +89,7 @@
       gap: 0.75rem;
       padding: 0.75rem 1.25rem;
       background: var(--panel);
-      border: 1px solid #1f2937;
+      border: 1px solid var(--border);
       border-radius: var(--radius);
       text-decoration: none;
       color: var(--text);
@@ -79,7 +112,7 @@
     .store-badge .small { font-size: 0.7rem; color: var(--muted); }
     .store-badge .big { font-size: 1rem; font-weight: 600; }
     footer {
-      border-top: 1px solid #1f2937;
+      border-top: 1px solid var(--border);
       padding: 1.5rem;
       text-align: center;
       color: var(--muted);
@@ -91,6 +124,10 @@
 </head>
 <body>
   <main>
+    <div class="hero">
+      <img src="/assets/logo-hero.png" alt="Lifestream Learn" width="1200" height="332">
+    </div>
+
     <header>
       <h1>Lifestream Learn</h1>
       <p class="tagline">Short-video learning, with interactive cues that actually stick.</p>
@@ -115,7 +152,7 @@
         Using a styled div badge here avoids depending on Google's hosted
         image (which has its own brand guidelines and external fetch).
       -->
-      <a class="store-badge" href="#" aria-label="Get it on Google Play (coming soon)">
+      <a class="store-badge" href="#" rel="noopener" aria-label="Get it on Google Play (coming soon)">
         <span class="mark" aria-hidden="true">L</span>
         <span class="text">
           <span class="small">GET IT ON</span>
@@ -130,9 +167,13 @@
       <a href="/terms">Terms</a>
       <a href="/privacy">Privacy</a>
       <!--
-        NOTE: the GitHub org slug below is a placeholder. The public org
-        name may change before first public push; update all three links
-        in this directory (index/terms/privacy) when finalised.
+        FLAG FOR USER CONFIRMATION: the GitHub repo slug below
+        (`lifestream-dynamics/lifestream-learn-app`) is a PLACEHOLDER.
+        The public org/repo name may change before first public push.
+        DO NOT assume this is correct — confirm with the operator and
+        update all three landing-page files (index/terms/privacy) in
+        one pass when the final slug is known. Left UNCHANGED during
+        the Slice D1 landing-polish pass per task direction.
       -->
       <a href="https://github.com/lifestream-dynamics/lifestream-learn-app" rel="noopener">Source</a>
     </nav>

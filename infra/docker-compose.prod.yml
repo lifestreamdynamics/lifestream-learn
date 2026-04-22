@@ -1,0 +1,77 @@
+# Production overlay for the Lifestream Learn infra compose stack.
+#
+# Usage (on the VPS, after sourcing /etc/learn-infra/.env):
+#   docker compose \
+#     -f docker-compose.yml \
+#     -f docker-compose.prod.yml \
+#     up -d
+#
+# What this overlay changes vs. the base compose file:
+#   1. Drops the local `nginx` service entirely. Production uses the
+#      system-level nginx installed on the VPS, with its site files rendered
+#      from deploy/nginx/ by the deploy script. The compose-provided nginx
+#      is dev-only.
+#   2. Binds SeaweedFS + tusd to 127.0.0.1 so the only public-facing edge is
+#      the system nginx. Public S3 or public tusd on the VPS would be a
+#      security regression.
+#   3. Sets `restart: unless-stopped` on the daemons so they come back after
+#      a VPS reboot without manual intervention.
+#   4. Points SeaweedFS at the host block-storage mount at
+#      ${SEAWEEDFS_DATA_DIR:-/mnt/seaweedfs-data}. The base file's named
+#      volume `seaweedfs_data:` is overridden with a bind mount so data
+#      survives a `docker compose down -v`.
+#   5. Forces tusd to call the API on the host (not a peer container) —
+#      learn-api runs under PM2 on the host in prod, same as dev.
+
+services:
+  seaweedfs:
+    restart: unless-stopped
+    # Bind S3 / master / filer to loopback only. System nginx is the single
+    # public edge; anything binding 0.0.0.0 on the VPS is a mistake.
+    ports:
+      - "127.0.0.1:${SEAWEEDFS_S3_HOST_PORT:-8333}:8333"
+      - "127.0.0.1:${SEAWEEDFS_MASTER_HOST_PORT:-9333}:9333"
+      - "127.0.0.1:${SEAWEEDFS_FILER_HOST_PORT:-8888}:8888"
+    volumes:
+      # Override the base file's named volume with a bind mount on the
+      # block-storage volume. Falls back to ./seaweedfs-data-prod if the env
+      # var is unset — fine for a smoke test, NOT fine long-term (attach a
+      # real volume first; see deploy/README.md).
+      - ${SEAWEEDFS_DATA_DIR:-./seaweedfs-data-prod}:/data
+      - ./seaweedfs/s3.json:/config/s3.json:ro
+
+  tusd:
+    restart: unless-stopped
+    # Same loopback-bind story as seaweedfs: system nginx proxies /uploads/*
+    # to 127.0.0.1:1080.
+    ports:
+      - "127.0.0.1:${TUSD_HOST_PORT:-1080}:1080"
+    # The base compose targets http://host.docker.internal:3011 — which is
+    # wrong in prod (learn-api listens on 3101). Rewriting the hooks-http
+    # flag requires re-declaring the full command array, matching the base
+    # file's flags except for the hook URL and max-size.
+    command:
+      - "-s3-bucket=learn-uploads"
+      - "-s3-endpoint=http://seaweedfs:8333"
+      - "-hooks-http=http://host.docker.internal:3101/internal/hooks/tusd?token=${TUSD_HOOK_SECRET:?TUSD_HOOK_SECRET must be set in /etc/learn-infra/.env}"
+      - "-hooks-enabled-events=pre-create,pre-finish,post-finish"
+      - "-max-size=${TUSD_MAX_SIZE_BYTES:-2147483648}"
+      - "-port=1080"
+
+  # NOTE: the `nginx` service from docker-compose.yml is intentionally NOT
+  # overridden here. Compose overlays merge by service name — you cannot
+  # "delete" a base service from an overlay. On the VPS, start the stack
+  # with `--scale nginx=0` to suppress the dev nginx:
+  #
+  #   docker compose \
+  #     -f docker-compose.yml -f docker-compose.prod.yml \
+  #     up -d --scale nginx=0 seaweedfs tusd
+  #
+  # The deploy script wraps this so operators don't need to remember the flag.
+
+volumes:
+  # The base file declares a named volume `seaweedfs_data`. We override the
+  # service's volumes: list above to use a bind mount, so this named volume
+  # remains declared but unused — harmless, and keeps `compose config`
+  # validation happy.
+  seaweedfs_data:

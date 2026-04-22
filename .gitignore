@@ -55,10 +55,18 @@ Thumbs.db
 *.log
 npm-debug.log*
 yarn-error.log
+# Deploy script log directory (created by deploy/deploy-production.sh)
+logs/
 
 # ---- Runtime volumes (docker-compose, seaweedfs, postgres local) ----
 infra/data/
 infra/volumes/
+# Production compose overlay's block-storage fallback dir (only used when
+# SEAWEEDFS_DATA_DIR is unset, e.g. during a local dry-run of the prod stack).
+infra/seaweedfs-data-prod/
+
+# ---- Deploy staging (local-build artefacts rsynced to the VPS) ----
+deploy/.deploy-stage/
 
 # ---- Tool state ----
 .claude/
