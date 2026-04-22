@@ -47,6 +47,7 @@ class LearnVideoPlayer extends StatefulWidget {
     this.captionLoader,
     this.positionNotifier,
     this.seekNotifier,
+    this.onFullscreenRequested,
     super.key,
   });
 
@@ -89,6 +90,11 @@ class LearnVideoPlayer extends StatefulWidget {
   /// null. Used by the designer editor to drive timeline-tap seeking without
   /// needing direct controller access.
   final ValueNotifier<Duration?>? seekNotifier;
+
+  /// When provided and the video is landscape (`aspectRatio > 1`), a
+  /// fullscreen button is shown in the controls overlay. Tapping it calls
+  /// this callback so the parent can push `FullscreenPlayerPage`.
+  final VoidCallback? onFullscreenRequested;
 
   @override
   State<LearnVideoPlayer> createState() => _LearnVideoPlayerState();
@@ -974,6 +980,34 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
               ),
             ),
           ),
+          // Fullscreen button — bottom-right, only for landscape videos.
+          // Only rendered when the overlay is visible and a callback exists.
+          if (widget.onFullscreenRequested != null &&
+              c.value.aspectRatio > 1)
+            Positioned(
+              right: 4,
+              bottom: 48,
+              child: AnimatedOpacity(
+                opacity: _overlayOpacity,
+                duration: const Duration(milliseconds: 200),
+                child: IgnorePointer(
+                  ignoring: _overlayOpacity == 0,
+                  child: Semantics(
+                    button: true,
+                    label: 'Fullscreen',
+                    child: IconButton(
+                      key: const Key('player.fullscreen'),
+                      icon: const Icon(
+                        Icons.fullscreen_rounded,
+                        color: Colors.white,
+                      ),
+                      tooltip: 'Fullscreen',
+                      onPressed: widget.onFullscreenRequested,
+                    ),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );

@@ -16,12 +16,20 @@ export const DEFAULT_LADDER: LadderRung[] = [
  * upscale. If the source is shorter than the smallest rung, still emit the
  * smallest rung (FFmpeg will downscale on the fly) so playback always has
  * something to play.
+ *
+ * For portrait sources (rotationDegrees 90 or 270) the stored width/height
+ * are the raw sensor dimensions before the transpose filter is applied, so
+ * the effective landscape height is `probe.width`. We use that value when
+ * selecting rungs so a 1080×1920 portrait source is treated the same as a
+ * 1920×1080 landscape source.
  */
 export function selectLadder(
-  probe: Pick<ProbeResult, 'height'>,
+  probe: Pick<ProbeResult, 'width' | 'height' | 'rotationDegrees'>,
   ladder: LadderRung[] = DEFAULT_LADDER,
 ): LadderRung[] {
-  const filtered = ladder.filter((rung) => rung.height <= probe.height);
+  const isTransposed = probe.rotationDegrees === 90 || probe.rotationDegrees === 270;
+  const effectiveHeight = isTransposed ? probe.width : probe.height;
+  const filtered = ladder.filter((rung) => rung.height <= effectiveHeight);
   if (filtered.length === 0) return [ladder[0]];
   return filtered;
 }

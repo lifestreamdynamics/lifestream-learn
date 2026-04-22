@@ -142,7 +142,11 @@ export async function runTranscodePipeline(
       );
     }
 
-    const ladder = selectLadder(probe);
+    const ladder = selectLadder({
+      width: probe.width,
+      height: probe.height,
+      rotationDegrees: probe.rotationDegrees,
+    });
     const outputDir = path.join(tmp, 'out');
     await fs.mkdir(outputDir, { recursive: true });
     // Pre-create per-variant subdirs because ffmpeg's `%v` expansion does not
