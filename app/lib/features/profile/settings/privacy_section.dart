@@ -75,7 +75,7 @@ class PrivacySection extends StatelessWidget {
               'Download a JSON copy of your profile, activity, and '
               'enrollments. Available once per day.',
             ),
-            trailing: const Icon(Icons.chevron_right),
+            trailing: const Icon(Icons.chevron_right_rounded),
             onTap: () => GoRouter.of(context).push('/profile/export'),
           ),
           const Divider(),
@@ -125,7 +125,7 @@ class _LinkTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListTile(
       key: keyValue,
-      leading: const Icon(Icons.open_in_new),
+      leading: const Icon(Icons.open_in_new_rounded),
       title: Text(title),
       subtitle: Text(
         url,

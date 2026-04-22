@@ -196,7 +196,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                     onPressed: _uploadProgress != null
                         ? null
                         : () => _startUpload(course),
-                    icon: const Icon(Icons.upload_file),
+                    icon: const Icon(Icons.upload_file_rounded),
                     label: const Text('Upload video'),
                   ),
                 ],
@@ -235,7 +235,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                       leading: _statusIcon(v.status),
                       title: Text(v.title),
                       subtitle: Text(_statusLabel(v.status)),
-                      trailing: const Icon(Icons.chevron_right),
+                      trailing: const Icon(Icons.chevron_right_rounded),
                       onTap: v.status == VideoStatus.ready
                           ? () {
                               GoRouter.of(context)
@@ -254,13 +254,13 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
   Widget _statusIcon(VideoStatus s) {
     switch (s) {
       case VideoStatus.ready:
-        return const Icon(Icons.check_circle, color: Colors.green);
+        return const Icon(Icons.check_circle_rounded, color: Colors.green);
       case VideoStatus.uploading:
-        return const Icon(Icons.cloud_upload, color: Colors.blue);
+        return const Icon(Icons.cloud_upload_rounded, color: Colors.blue);
       case VideoStatus.transcoding:
-        return const Icon(Icons.hourglass_top, color: Colors.orange);
+        return const Icon(Icons.hourglass_top_rounded, color: Colors.orange);
       case VideoStatus.failed:
-        return const Icon(Icons.error, color: Colors.red);
+        return const Icon(Icons.error_rounded, color: Colors.red);
     }
   }
 

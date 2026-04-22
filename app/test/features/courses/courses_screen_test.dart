@@ -149,7 +149,7 @@ void main() {
       expect(find.byKey(const Key('myCourses.empty')), findsOneWidget);
       expect(find.byKey(const Key('myCourses.empty.browse')), findsOneWidget);
       // The learner-specific copy is the short enrollment message.
-      expect(find.text('No enrollments yet.'), findsOneWidget);
+      expect(find.text('No enrollments yet'), findsOneWidget);
     });
 
     testWidgets('designer sees myCourses.empty text but NO browse button',

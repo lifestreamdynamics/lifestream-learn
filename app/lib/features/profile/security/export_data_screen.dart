@@ -238,7 +238,7 @@ class _ExportDataScreenState extends State<ExportDataScreen> {
                   padding: EdgeInsets.all(16),
                   child: Row(
                     children: [
-                      Icon(Icons.info_outline, size: 20),
+                      Icon(Icons.info_outline_rounded, size: 20),
                       SizedBox(width: 8),
                       Expanded(
                         child: Text(
@@ -280,7 +280,7 @@ class _ExportDataScreenState extends State<ExportDataScreen> {
                         Row(
                           children: [
                             Icon(
-                              Icons.check_circle_outline,
+                              Icons.check_circle_outline_rounded,
                               color: theme.colorScheme.onPrimaryContainer,
                             ),
                             const SizedBox(width: 8),
@@ -312,7 +312,7 @@ class _ExportDataScreenState extends State<ExportDataScreen> {
                     child: Row(
                       children: [
                         Icon(
-                          Icons.error_outline,
+                          Icons.error_outline_rounded,
                           color: theme.colorScheme.onErrorContainer,
                         ),
                         const SizedBox(width: 8),

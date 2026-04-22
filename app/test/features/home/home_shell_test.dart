@@ -94,7 +94,7 @@ void main() {
     test('courses tab uses school icons (filled + outlined)', () {
       final learnerCourses = tabsForRole(UserRole.learner)[1];
       expect(learnerCourses.icon, Icons.school_outlined);
-      expect(learnerCourses.selectedIcon, Icons.school);
+      expect(learnerCourses.selectedIcon, Icons.school_rounded);
     });
   });
 }

@@ -167,15 +167,15 @@ class _LessonRow extends StatelessWidget {
         child: ListTile(
           leading: Icon(
             lesson.completed
-                ? Icons.check_circle_outline
-                : Icons.play_circle_outline,
+                ? Icons.check_circle_outline_rounded
+                : Icons.play_circle_outline_rounded,
             color: lesson.completed
                 ? theme.colorScheme.primary
                 : theme.colorScheme.onSurfaceVariant,
           ),
           title: Text(lesson.title),
           subtitle: Text(subtitle),
-          trailing: const Icon(Icons.chevron_right),
+          trailing: const Icon(Icons.chevron_right_rounded),
           onTap: () => context.push(
             '/courses/$courseId/lessons/${lesson.videoId}/review',
           ),

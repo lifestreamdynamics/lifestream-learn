@@ -100,7 +100,7 @@ class _CoursesScreenState extends State<CoursesScreen>
                       key: const Key('courses.create'),
                       onPressed: () =>
                           GoRouter.of(context).push('/designer/courses/new'),
-                      icon: const Icon(Icons.add),
+                      icon: const Icon(Icons.add_rounded),
                       label: const Text('Create course'),
                     );
                   },

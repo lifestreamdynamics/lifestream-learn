@@ -220,7 +220,7 @@ class _DesignerApplicationScreenState extends State<DesignerApplicationScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.hourglass_top, size: 48),
+              const Icon(Icons.hourglass_top_rounded, size: 48),
               const SizedBox(height: 12),
               Text(
                 'Your application is under review',
@@ -255,7 +255,7 @@ class _DesignerApplicationScreenState extends State<DesignerApplicationScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.celebration, size: 48),
+              const Icon(Icons.celebration_rounded, size: 48),
               const SizedBox(height: 12),
               Text(
                 "You're now a Course Designer!",

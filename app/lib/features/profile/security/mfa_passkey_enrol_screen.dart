@@ -334,7 +334,7 @@ class _BackupStep extends StatelessWidget {
                 ),
               );
             },
-            icon: const Icon(Icons.copy),
+            icon: const Icon(Icons.copy_rounded),
             label: const Text('Copy all'),
           ),
           const SizedBox(height: 16),

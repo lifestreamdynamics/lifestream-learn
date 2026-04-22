@@ -294,26 +294,26 @@ class _AchievementTile extends StatelessWidget {
 IconData iconForKey(String key) {
   switch (key) {
     case 'school':
-      return Icons.school;
+      return Icons.school_rounded;
     case 'local_fire_department':
-      return Icons.local_fire_department;
+      return Icons.local_fire_department_rounded;
     case 'whatshot':
-      return Icons.whatshot;
+      return Icons.whatshot_rounded;
     case 'emoji_events':
-      return Icons.emoji_events;
+      return Icons.emoji_events_rounded;
     case 'verified':
-      return Icons.verified;
+      return Icons.verified_rounded;
     case 'workspace_premium':
-      return Icons.workspace_premium;
+      return Icons.workspace_premium_rounded;
     case 'military_tech':
-      return Icons.military_tech;
+      return Icons.military_tech_rounded;
     case 'radio_button_checked':
-      return Icons.radio_button_checked;
+      return Icons.radio_button_checked_rounded;
     case 'extension':
-      return Icons.extension;
+      return Icons.extension_rounded;
     case 'edit_note':
-      return Icons.edit_note;
+      return Icons.edit_note_rounded;
     default:
-      return Icons.emoji_events;
+      return Icons.emoji_events_rounded;
   }
 }

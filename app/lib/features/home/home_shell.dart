@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/auth/auth_bloc.dart';
 import '../../core/auth/auth_state.dart';
+import '../../core/haptics.dart';
 import '../../data/models/user.dart';
 
 /// Shell hosting the `BottomNavigationBar` + `IndexedStack` child
@@ -52,6 +53,7 @@ class HomeShell extends StatelessWidget {
             key: const Key('home.nav'),
             selectedIndex: safeSelected,
             onDestinationSelected: (i) {
+              Haptics.selection();
               final target = tabs[i];
               navigationShell.goBranch(
                 target.branchIndex,
@@ -107,8 +109,8 @@ List<HomeTabSpec> tabsForRole(UserRole role) {
     key: 'feed',
     branchIndex: 0,
     path: '/feed',
-    icon: Icons.play_circle_outline,
-    selectedIcon: Icons.play_circle,
+    icon: Icons.play_circle_outline_rounded,
+    selectedIcon: Icons.play_circle_rounded,
     label: 'Feed',
   );
   const courses = HomeTabSpec(
@@ -116,7 +118,7 @@ List<HomeTabSpec> tabsForRole(UserRole role) {
     branchIndex: 1,
     path: '/courses',
     icon: Icons.school_outlined,
-    selectedIcon: Icons.school,
+    selectedIcon: Icons.school_rounded,
     label: 'Courses',
   );
   const admin = HomeTabSpec(
@@ -124,15 +126,15 @@ List<HomeTabSpec> tabsForRole(UserRole role) {
     branchIndex: 2,
     path: '/admin',
     icon: Icons.admin_panel_settings_outlined,
-    selectedIcon: Icons.admin_panel_settings,
+    selectedIcon: Icons.admin_panel_settings_rounded,
     label: 'Admin',
   );
   const profile = HomeTabSpec(
     key: 'profile',
     branchIndex: 3,
     path: '/profile',
-    icon: Icons.person_outline,
-    selectedIcon: Icons.person,
+    icon: Icons.person_outline_rounded,
+    selectedIcon: Icons.person_rounded,
     label: 'Profile',
   );
   switch (role) {

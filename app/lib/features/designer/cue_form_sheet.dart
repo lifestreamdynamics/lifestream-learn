@@ -356,7 +356,7 @@ class _CueFormSheetState extends State<CueFormSheet> {
             ),
             if (_mcqChoices.length > 2)
               IconButton(
-                icon: const Icon(Icons.remove_circle_outline),
+                icon: const Icon(Icons.remove_circle_outline_rounded),
                 onPressed: () => setState(() {
                   _mcqChoices.removeAt(i).dispose();
                   if (_mcqAnswer >= _mcqChoices.length) {
@@ -372,7 +372,7 @@ class _CueFormSheetState extends State<CueFormSheet> {
           onPressed: () => setState(() {
             _mcqChoices.add(TextEditingController());
           }),
-          icon: const Icon(Icons.add),
+          icon: const Icon(Icons.add_rounded),
           label: const Text('Add choice'),
         ),
       const SizedBox(height: 8),
@@ -412,7 +412,7 @@ class _CueFormSheetState extends State<CueFormSheet> {
             const Text('Case sensitive'),
             if (_blanksAccept.length > 1)
               IconButton(
-                icon: const Icon(Icons.remove_circle_outline),
+                icon: const Icon(Icons.remove_circle_outline_rounded),
                 onPressed: () => setState(() {
                   final row = _blanksAccept.removeAt(i);
                   for (final c in row) {
@@ -437,7 +437,7 @@ class _CueFormSheetState extends State<CueFormSheet> {
               ),
               if (_blanksAccept[i].length > 1)
                 IconButton(
-                  icon: const Icon(Icons.remove_circle_outline),
+                  icon: const Icon(Icons.remove_circle_outline_rounded),
                   onPressed: () => setState(() {
                     _blanksAccept[i].removeAt(j).dispose();
                   }),
@@ -449,7 +449,7 @@ class _CueFormSheetState extends State<CueFormSheet> {
           onPressed: () => setState(() {
             _blanksAccept[i].add(TextEditingController());
           }),
-          icon: const Icon(Icons.add),
+          icon: const Icon(Icons.add_rounded),
           label: const Text('Add synonym'),
         ),
       ],
@@ -459,7 +459,7 @@ class _CueFormSheetState extends State<CueFormSheet> {
           _blanksAccept.add([TextEditingController()]);
           _blanksCaseSensitive.add(false);
         }),
-        icon: const Icon(Icons.add),
+        icon: const Icon(Icons.add_rounded),
         label: const Text('Add blank'),
       ),
     ];
@@ -527,8 +527,8 @@ class _CueFormSheetState extends State<CueFormSheet> {
                   key: Key('cueform.matching.selectLeft.$i'),
                   icon: Icon(
                     _selectedLeft == i
-                        ? Icons.radio_button_checked
-                        : Icons.radio_button_off,
+                        ? Icons.radio_button_checked_rounded
+                        : Icons.radio_button_off_rounded,
                   ),
                   onPressed: () => setState(() {
                     _selectedLeft = _selectedLeft == i ? null : i;
@@ -537,7 +537,7 @@ class _CueFormSheetState extends State<CueFormSheet> {
               else
                 IconButton(
                   key: Key('cueform.matching.pairRight.$i'),
-                  icon: const Icon(Icons.link),
+                  icon: const Icon(Icons.link_rounded),
                   onPressed: _selectedLeft == null
                       ? null
                       : () => setState(() {
@@ -547,7 +547,7 @@ class _CueFormSheetState extends State<CueFormSheet> {
                 ),
               if (items.length > 2)
                 IconButton(
-                  icon: const Icon(Icons.remove_circle_outline),
+                  icon: const Icon(Icons.remove_circle_outline_rounded),
                   onPressed: () => setState(() {
                     items.removeAt(i).dispose();
                     // Clean any pair referencing the removed index.
@@ -566,7 +566,7 @@ class _CueFormSheetState extends State<CueFormSheet> {
           onPressed: () => setState(() {
             items.add(TextEditingController());
           }),
-          icon: const Icon(Icons.add),
+          icon: const Icon(Icons.add_rounded),
           label: const Text('Add'),
         ),
       ],

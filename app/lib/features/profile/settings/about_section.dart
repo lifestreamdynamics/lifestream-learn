@@ -40,7 +40,7 @@ class AboutSection extends StatelessWidget {
               ),
               ListTile(
                 key: const Key('settings.about.version'),
-                leading: const Icon(Icons.info_outline),
+                leading: const Icon(Icons.info_outline_rounded),
                 title: const Text('Version'),
                 subtitle: Text(version),
               ),
@@ -65,7 +65,7 @@ class AboutSection extends StatelessWidget {
                 key: const Key('settings.about.licenses'),
                 leading: const Icon(Icons.description_outlined),
                 title: const Text('Open source licences'),
-                trailing: const Icon(Icons.chevron_right),
+                trailing: const Icon(Icons.chevron_right_rounded),
                 onTap: () => showLicensePage(
                   context: context,
                   applicationName: 'Lifestream Learn',

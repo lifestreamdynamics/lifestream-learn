@@ -1,11 +1,19 @@
-# Slice F: splash screen generation config. Run:
+# Splash screen generation config. Run:
 #   dart run flutter_native_splash:create
 # to regenerate the drawable/colors resources.
+#
+# Both light and dark use the same dark-background brand splash intentionally —
+# the brand is dark-on-black and a 300ms flash is too short to justify two variants.
 flutter_native_splash:
-  color: "#FFFFFF"
-  color_dark: "#000000"
-  image: "assets/icon/app_icon.png"
+  color: "#050A14"
+  color_dark: "#050A14"
+  image: assets/icon/splash_logo.png
+  image_dark: assets/icon/splash_logo.png
+  android: true
+  ios: false
+  web: false
   android_12:
-    color: "#FFFFFF"
-    color_dark: "#000000"
-    image: "assets/icon/app_icon.png"
+    color: "#050A14"
+    color_dark: "#050A14"
+    image: assets/icon/app_icon_foreground.png
+    image_dark: assets/icon/app_icon_foreground.png

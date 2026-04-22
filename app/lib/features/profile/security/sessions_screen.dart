@@ -172,7 +172,7 @@ class _SessionsScreenState extends State<SessionsScreen> {
           padding: const EdgeInsets.all(16),
           child: FilledButton.tonalIcon(
             key: const Key('sessions.revokeAll'),
-            icon: const Icon(Icons.logout),
+            icon: const Icon(Icons.logout_rounded),
             label: const Text('Sign out all other devices'),
             onPressed: (_mutating || !hasOthers) ? null : _revokeAllOthers,
           ),

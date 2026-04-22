@@ -86,7 +86,7 @@ class _MfaChallengeScreenState extends State<MfaChallengeScreen> {
             appBar: AppBar(
               title: Text(_useBackup ? 'Backup code' : 'Two-factor code'),
               leading: IconButton(
-                icon: const Icon(Icons.arrow_back),
+                icon: const Icon(Icons.arrow_back_rounded),
                 onPressed: () {
                   context
                       .read<AuthBloc>()
@@ -158,7 +158,7 @@ class _MfaChallengeScreenState extends State<MfaChallengeScreen> {
                           : () => context
                               .read<AuthBloc>()
                               .add(const MfaPasskeySubmitted()),
-                      icon: const Icon(Icons.fingerprint),
+                      icon: const Icon(Icons.fingerprint_rounded),
                       label: const Text('Use passkey or security key'),
                     ),
                   if (challenge.availableMethods.contains('webauthn'))

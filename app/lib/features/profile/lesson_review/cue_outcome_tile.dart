@@ -122,7 +122,7 @@ class CueOutcomeTile extends StatelessWidget {
                 alignment: Alignment.centerRight,
                 child: ActionChip(
                   key: Key('review.cue.${outcome.cueId}.watchFrom'),
-                  avatar: const Icon(Icons.play_arrow, size: 18),
+                  avatar: const Icon(Icons.play_arrow_rounded, size: 18),
                   label: Text('Watch from ${formatDurationMs(outcome.atMs)}'),
                   onPressed: () => context.push(
                     '/videos/$videoId/watch?t=${outcome.atMs}',
@@ -146,7 +146,7 @@ class _StatusIcon extends StatelessWidget {
     final theme = Theme.of(context);
     if (!outcome.attempted) {
       return Icon(
-        Icons.radio_button_unchecked,
+        Icons.radio_button_unchecked_rounded,
         color: theme.colorScheme.onSurfaceVariant,
       );
     }
@@ -154,7 +154,7 @@ class _StatusIcon extends StatelessWidget {
     // Icon choice always pairs with per-tile text ("Your answer:
     // ..."/"Correct: ...") so colour is never the sole signal.
     return Icon(
-      isCorrect ? Icons.check_circle : Icons.cancel,
+      isCorrect ? Icons.check_circle_rounded : Icons.cancel_rounded,
       color: isCorrect
           ? theme.colorScheme.primary
           : theme.colorScheme.error,

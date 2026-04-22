@@ -207,7 +207,7 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
                     child: ElevatedButton.icon(
                       key: const Key('video.addCue'),
                       onPressed: () => _openCueForm(atMs: 0),
-                      icon: const Icon(Icons.add),
+                      icon: const Icon(Icons.add_rounded),
                       label: const Text('Add cue at current time'),
                     ),
                   ),
@@ -231,12 +231,12 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
                         children: [
                           IconButton(
                             key: Key('video.cue.${c.id}.edit'),
-                            icon: const Icon(Icons.edit),
+                            icon: const Icon(Icons.edit_rounded),
                             onPressed: () => _openCueForm(existing: c),
                           ),
                           IconButton(
                             key: Key('video.cue.${c.id}.delete'),
-                            icon: const Icon(Icons.delete),
+                            icon: const Icon(Icons.delete_rounded),
                             onPressed: () => _deleteCue(c),
                           ),
                         ],
@@ -261,13 +261,13 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
   IconData _iconFor(CueType t) {
     switch (t) {
       case CueType.mcq:
-        return Icons.quiz;
+        return Icons.quiz_rounded;
       case CueType.blanks:
-        return Icons.edit_note;
+        return Icons.edit_note_rounded;
       case CueType.matching:
-        return Icons.compare_arrows;
+        return Icons.compare_arrows_rounded;
       case CueType.voice:
-        return Icons.mic;
+        return Icons.mic_rounded;
     }
   }
 
@@ -352,7 +352,7 @@ class _CueTimeline extends StatelessWidget {
                       child: Container(
                         width: 12,
                         decoration: BoxDecoration(
-                          color: Colors.deepPurple,
+                          color: Theme.of(context).colorScheme.primaryContainer,
                           borderRadius: BorderRadius.circular(4),
                         ),
                       ),

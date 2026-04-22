@@ -79,7 +79,7 @@ class _MfaCardState extends State<MfaCard> {
         title: const Text('Two-factor authentication'),
         subtitle: Text(_error!),
         trailing: IconButton(
-          icon: const Icon(Icons.refresh),
+          icon: const Icon(Icons.refresh_rounded),
           onPressed: _load,
         ),
       );
@@ -91,7 +91,7 @@ class _MfaCardState extends State<MfaCard> {
         leading: const Icon(Icons.shield_outlined),
         title: const Text('Two-factor authentication'),
         subtitle: const Text('Off — set up an authenticator or passkey'),
-        trailing: const Icon(Icons.chevron_right),
+        trailing: const Icon(Icons.chevron_right_rounded),
         onTap: () async {
           // Offer a picker between TOTP and passkey. Keeping the
           // decision on a follow-up screen avoids doubling the size of
@@ -105,10 +105,10 @@ class _MfaCardState extends State<MfaCard> {
     final summary = _summaryFor(m);
     return ListTile(
       key: const Key('profile.mfa.manage'),
-      leading: const Icon(Icons.shield, color: Colors.green),
+      leading: const Icon(Icons.shield_rounded, color: Colors.green),
       title: const Text('Two-factor authentication'),
       subtitle: Text(summary),
-      trailing: const Icon(Icons.chevron_right),
+      trailing: const Icon(Icons.chevron_right_rounded),
       onTap: () async {
         // Prefer the passkeys list when passkeys are present — it also
         // offers "Add another passkey" so the user can grow their set
@@ -154,14 +154,14 @@ class _MfaCardState extends State<MfaCard> {
             children: [
               ListTile(
                 key: const Key('profile.mfa.picker.totp'),
-                leading: const Icon(Icons.password),
+                leading: const Icon(Icons.password_rounded),
                 title: const Text('Authenticator app (TOTP)'),
                 subtitle: const Text('Six-digit codes from an app you trust'),
                 onTap: () => Navigator.of(ctx).pop('totp'),
               ),
               ListTile(
                 key: const Key('profile.mfa.picker.passkey'),
-                leading: const Icon(Icons.fingerprint),
+                leading: const Icon(Icons.fingerprint_rounded),
                 title: const Text('Passkey'),
                 subtitle:
                     const Text("Use your device's biometrics or screen lock"),

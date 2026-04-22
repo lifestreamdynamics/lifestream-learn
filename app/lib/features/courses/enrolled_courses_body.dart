@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/art/brand_empty_state.dart';
 import '../../core/http/error_envelope.dart';
 import '../../core/utils/duration_formatters.dart';
 import '../../data/models/enrollment.dart';
@@ -114,15 +115,16 @@ class _EnrolledCoursesBodyState extends State<EnrolledCoursesBody> {
                         child: Image.network(
                           row.course.coverImageUrl!,
                           fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) =>
-                              Container(color: Colors.grey.shade300),
+                          errorBuilder: (_, __, ___) => Container(
+                                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                              ),
                         ),
                       ),
                     )
-                  : const Icon(Icons.school, size: 40),
+                  : const Icon(Icons.school_rounded, size: 40),
               title: Text(row.course.title),
               subtitle: Text(lastHint),
-              trailing: const Icon(Icons.play_arrow),
+              trailing: const Icon(Icons.play_arrow_rounded),
               // Slice P2 — fix the known UX gap where tapping an
               // enrolled course jumped to `/feed` instead of resuming.
               // If we know a last-watched video, deep-link straight
@@ -157,31 +159,22 @@ class _EmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isLearner = role == UserRole.learner;
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              isLearner
-                  ? 'No enrollments yet.'
-                  : "You don't enroll in courses — "
-                      'use the Available tab to browse the catalog.',
-              key: const Key('myCourses.empty'),
-              textAlign: TextAlign.center,
-            ),
-            if (isLearner) ...[
-              const SizedBox(height: 12),
-              ElevatedButton(
-                key: const Key('myCourses.empty.browse'),
-                onPressed: onSwitchToAvailable,
-                child: const Text('Browse courses'),
-              ),
-            ],
-          ],
-        ),
+    return BrandEmptyState(
+      key: const Key('myCourses.empty'),
+      painter: EmptyEnrollmentsPainter(
+        scheme: Theme.of(context).colorScheme,
       ),
+      title: isLearner ? 'No enrollments yet' : 'Browse the catalog',
+      subtitle: isLearner
+          ? 'Find a course you love and tap Enroll to get started.'
+          : "You don't enroll in courses — use the Available tab to browse the catalog.",
+      action: isLearner
+          ? ElevatedButton(
+              key: const Key('myCourses.empty.browse'),
+              onPressed: onSwitchToAvailable,
+              child: const Text('Browse courses'),
+            )
+          : null,
     );
   }
 }
