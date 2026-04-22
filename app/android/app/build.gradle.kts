@@ -1,8 +1,21 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+}
+
+// Production upload keystore lives in the git-ignored ops/keystore/.
+// If absent (e.g. on a dev machine without access to the keystore), release
+// builds fall through to the debug signing config so `flutter build` still
+// works; the produced APK is debug-signed and MUST NOT be distributed.
+val keystoreProperties = Properties()
+val keystorePropertiesFile = rootProject.file("../../ops/keystore/key.properties")
+val hasReleaseKeystore = keystorePropertiesFile.exists()
+if (hasReleaseKeystore) {
+    keystoreProperties.load(keystorePropertiesFile.inputStream())
 }
 
 android {
@@ -45,12 +58,28 @@ android {
         }
     }
 
+    signingConfigs {
+        if (hasReleaseKeystore) {
+            create("release") {
+                storeFile = rootProject.file(keystoreProperties["storeFile"] as String)
+                storePassword = keystoreProperties["storePassword"] as String
+                keyAlias = keystoreProperties["keyAlias"] as String
+                keyPassword = keystoreProperties["keyPassword"] as String
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // Debug keys for now so `flutter run --release` works on
-            // unsigned CI builds. Production signing is a TODO — see the
-            // README "Build flavors" section.
-            signingConfig = signingConfigs.getByName("debug")
+            // When the release keystore is present (ops/keystore/key.properties
+            // exists), sign with it. Otherwise fall through to debug signing —
+            // convenient for local `flutter build apk --release` on a dev
+            // machine but the APK MUST NOT be distributed.
+            signingConfig = if (hasReleaseKeystore) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
             // Enable R8/ProGuard across all release variants; the
             // `proguard-android-optimize.txt` that ships with AGP is a
             // safe default and the Flutter Gradle plugin adds its own
