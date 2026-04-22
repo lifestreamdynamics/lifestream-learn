@@ -47,6 +47,13 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
   String? _error;
   late final VideoControllerCache _cache;
 
+  /// Receives the live playback position (ms) from [LearnVideoPlayer].
+  final ValueNotifier<int> _positionNotifier = ValueNotifier(0);
+
+  /// Written by the timeline tap handler; [LearnVideoPlayer] watches and
+  /// calls seekTo() when a non-null value appears, then resets to null.
+  final ValueNotifier<Duration?> _seekNotifier = ValueNotifier(null);
+
   @override
   void initState() {
     super.initState();
@@ -57,6 +64,8 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
   @override
   void dispose() {
     _cache.evictAll();
+    _positionNotifier.dispose();
+    _seekNotifier.dispose();
     super.dispose();
   }
 
@@ -188,6 +197,8 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
                 enrollmentRepo: widget.enrollmentRepo,
                 controllerCache: _cache,
                 autoPlayWhenVisible: false,
+                positionNotifier: _positionNotifier,
+                seekNotifier: _seekNotifier,
               ),
             ),
           ),
@@ -195,7 +206,10 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
             child: _CueTimeline(
               cues: cues,
               durationMs: video.durationMs ?? 0,
+              positionNotifier: _positionNotifier,
               onTapCue: (cue) => _openCueForm(existing: cue),
+              onSeek: (ms) =>
+                  _seekNotifier.value = Duration(milliseconds: ms),
             ),
           ),
           SliverToBoxAdapter(
@@ -206,7 +220,8 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
                   Expanded(
                     child: ElevatedButton.icon(
                       key: const Key('video.addCue'),
-                      onPressed: () => _openCueForm(atMs: 0),
+                      onPressed: () =>
+                          _openCueForm(atMs: _positionNotifier.value),
                       icon: const Icon(Icons.add_rounded),
                       label: const Text('Add cue at current time'),
                     ),
@@ -293,8 +308,8 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
 }
 
 /// Horizontal bar showing cue markers proportionally positioned by
-/// `atMs / durationMs`. Rendered via `CustomPaint` so the marker layout
-/// adapts to the bar's width.
+/// `atMs / durationMs`. Tapping the track background seeks to that position.
+/// A playhead needle tracks the current position via [positionNotifier].
 ///
 /// Exposed under the test-only name `CueTimelineForTest` so the widget
 /// test file can render just the timeline without booting the platform
@@ -305,63 +320,138 @@ class CueTimelineForTest extends StatelessWidget {
     required this.cues,
     required this.durationMs,
     required this.onTapCue,
+    this.positionNotifier,
+    this.onSeek,
     super.key,
   });
 
   final List<Cue> cues;
   final int durationMs;
   final ValueChanged<Cue> onTapCue;
+  final ValueNotifier<int>? positionNotifier;
+  final ValueChanged<int>? onSeek;
 
   @override
-  Widget build(BuildContext context) =>
-      _CueTimeline(cues: cues, durationMs: durationMs, onTapCue: onTapCue);
+  Widget build(BuildContext context) => _CueTimeline(
+        cues: cues,
+        durationMs: durationMs,
+        onTapCue: onTapCue,
+        positionNotifier: positionNotifier,
+        onSeek: onSeek,
+      );
 }
 
-class _CueTimeline extends StatelessWidget {
+class _CueTimeline extends StatefulWidget {
   const _CueTimeline({
     required this.cues,
     required this.durationMs,
     required this.onTapCue,
+    this.positionNotifier,
+    this.onSeek,
   });
 
   final List<Cue> cues;
   final int durationMs;
   final ValueChanged<Cue> onTapCue;
+  final ValueNotifier<int>? positionNotifier;
+
+  /// Called when the user taps or drags the timeline background. The argument
+  /// is the target position in milliseconds, clamped to [0, durationMs].
+  final ValueChanged<int>? onSeek;
+
+  @override
+  State<_CueTimeline> createState() => _CueTimelineState();
+}
+
+class _CueTimelineState extends State<_CueTimeline> {
+  // Cached width from the last LayoutBuilder pass so the drag handler can
+  // convert an offset to ms without a BuildContext.
+  double _trackWidth = 0;
+
+  void _handleSeekGesture(double localX) {
+    if (widget.durationMs <= 0 || _trackWidth <= 0) return;
+    final fraction = (localX / _trackWidth).clamp(0.0, 1.0);
+    widget.onSeek?.call((fraction * widget.durationMs).round());
+  }
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 40,
+      height: 56,
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final w = constraints.maxWidth;
-          return Stack(
-            children: [
-              Positioned.fill(
-                child: Container(
-                  color:
-                      Theme.of(context).colorScheme.surfaceContainerHighest,
+          _trackWidth = constraints.maxWidth;
+          final w = _trackWidth;
+          return GestureDetector(
+            onTapDown: (d) => _handleSeekGesture(d.localPosition.dx),
+            onHorizontalDragUpdate: (d) =>
+                _handleSeekGesture(d.localPosition.dx),
+            child: Stack(
+              children: [
+                // Track background.
+                Positioned.fill(
+                  child: Container(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .surfaceContainerHighest,
+                  ),
                 ),
-              ),
-              if (durationMs > 0)
-                for (final c in cues)
-                  Positioned(
-                    left: (c.atMs / durationMs) * w - 6,
-                    top: 8,
-                    bottom: 8,
-                    child: GestureDetector(
-                      key: Key('video.marker.${c.id}'),
-                      onTap: () => onTapCue(c),
-                      child: Container(
-                        width: 12,
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.primaryContainer,
-                          borderRadius: BorderRadius.circular(4),
+                // Seek-hint label at bottom-left so designers know the track
+                // is interactive.
+                Positioned(
+                  left: 6,
+                  bottom: 4,
+                  child: Text(
+                    'Tap or drag to seek',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurface
+                              .withValues(alpha: 0.45),
+                        ),
+                  ),
+                ),
+                // Cue markers.
+                if (widget.durationMs > 0)
+                  for (final c in widget.cues)
+                    Positioned(
+                      left: (c.atMs / widget.durationMs) * w - 6,
+                      top: 6,
+                      bottom: 18,
+                      child: GestureDetector(
+                        key: Key('video.marker.${c.id}'),
+                        onTap: () => widget.onTapCue(c),
+                        child: Container(
+                          width: 12,
+                          decoration: BoxDecoration(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .primaryContainer,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
                         ),
                       ),
                     ),
+                // Playhead needle — repaints only when positionNotifier fires.
+                if (widget.positionNotifier != null && widget.durationMs > 0)
+                  ValueListenableBuilder<int>(
+                    valueListenable: widget.positionNotifier!,
+                    builder: (_, posMs, __) {
+                      final x =
+                          (posMs / widget.durationMs).clamp(0.0, 1.0) * w;
+                      return Positioned(
+                        left: x - 1,
+                        top: 0,
+                        bottom: 0,
+                        child: Container(
+                          width: 2,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                      );
+                    },
                   ),
-            ],
+              ],
+            ),
           );
         },
       ),

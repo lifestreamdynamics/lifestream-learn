@@ -45,6 +45,8 @@ class LearnVideoPlayer extends StatefulWidget {
     this.analyticsSink,
     this.connectivity,
     this.captionLoader,
+    this.positionNotifier,
+    this.seekNotifier,
     super.key,
   });
 
@@ -75,6 +77,18 @@ class LearnVideoPlayer extends StatefulWidget {
   /// Optional [CaptionLoader] override. Defaults to a live instance.
   /// Widget tests inject a fake so caption-fetch does not touch the network.
   final CaptionLoader? captionLoader;
+
+  /// When provided, the player writes the current playback position (ms)
+  /// into this notifier on each controller tick. Callers can listen or
+  /// read `.value` to get the live position without polling the controller
+  /// directly. Used by the designer editor to stamp cue times.
+  final ValueNotifier<int>? positionNotifier;
+
+  /// When provided, the player watches this notifier. A non-null Duration
+  /// value triggers a `seekTo()` call, after which the player resets it to
+  /// null. Used by the designer editor to drive timeline-tap seeking without
+  /// needing direct controller access.
+  final ValueNotifier<Duration?>? seekNotifier;
 
   @override
   State<LearnVideoPlayer> createState() => _LearnVideoPlayerState();
@@ -187,12 +201,17 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
   @override
   void initState() {
     super.initState();
+    widget.seekNotifier?.addListener(_onSeekNotifier);
     _load();
   }
 
   @override
   void didUpdateWidget(covariant LearnVideoPlayer oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.seekNotifier != widget.seekNotifier) {
+      oldWidget.seekNotifier?.removeListener(_onSeekNotifier);
+      widget.seekNotifier?.addListener(_onSeekNotifier);
+    }
     if (oldWidget.video.id != widget.video.id) {
       _tearDownListener();
       setState(() {
@@ -404,11 +423,13 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
     final c = _controller;
     if (c == null) return;
     final value = c.value;
+    final posMs = value.position.inMilliseconds;
+    widget.positionNotifier?.value = posMs;
     if (_overlayOpacity > 0) {
-      final posMs = value.position.inMilliseconds.toDouble();
-      if ((posMs - _seekBarLastRebuildPos).abs() >= 100) {
-        _seekBarLastRebuildPos = posMs;
-        setState(() => _seekBarPos = posMs);
+      final posMsDouble = posMs.toDouble();
+      if ((posMsDouble - _seekBarLastRebuildPos).abs() >= 100) {
+        _seekBarLastRebuildPos = posMsDouble;
+        setState(() => _seekBarPos = posMsDouble);
       }
     }
     if (value.isPlaying) {
@@ -451,9 +472,18 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
     _controller?.removeListener(_onControllerTick);
   }
 
+  void _onSeekNotifier() {
+    final target = widget.seekNotifier?.value;
+    if (target == null) return;
+    final c = _controller;
+    if (c != null) unawaited(c.seekTo(target));
+    widget.seekNotifier?.value = null;
+  }
+
   @override
   void dispose() {
     _tearDownListener();
+    widget.seekNotifier?.removeListener(_onSeekNotifier);
     _overlayHideTimer?.cancel();
     _leftTapResetTimer?.cancel();
     _rightTapResetTimer?.cancel();
