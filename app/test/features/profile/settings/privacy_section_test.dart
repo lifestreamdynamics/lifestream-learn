@@ -193,7 +193,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(launched, hasLength(1));
-    expect(launched.single.$1.toString(), 'https://lifestream.example/learn/privacy');
+    expect(launched.single.$1.toString(), 'https://learn.lifestreamdynamics.com/privacy');
     expect(launched.single.$2, LaunchMode.externalApplication);
 
     await cubit.close();
@@ -245,7 +245,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(
-      find.textContaining('Copied: https://lifestream.example/learn/terms'),
+      find.textContaining('Copied: https://learn.lifestreamdynamics.com/terms'),
       findsOneWidget,
     );
 

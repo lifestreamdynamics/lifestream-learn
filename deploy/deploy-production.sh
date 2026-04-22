@@ -464,7 +464,7 @@ check_remote_prerequisites() {
     log_step "Checking remote prerequisites"
 
     if $DRY_RUN; then
-        log_dry_run "Would check remote: node, npm, pm2, nginx, certbot, psql, ffmpeg, redis"
+        log_dry_run "Would check remote: node, npm, pm2, nginx, certbot, psql, ffmpeg, redis, aws"
         return
     fi
 
@@ -492,9 +492,14 @@ command -v certbot  &>/dev/null && info="${info}certbot:ok\n"  || warnings="${wa
 command -v psql     &>/dev/null && info="${info}psql:ok\n"     || warnings="${warnings}psql:missing\n"
 command -v pg_dump  &>/dev/null && info="${info}pg_dump:ok\n"  || warnings="${warnings}pg_dump:missing\n"
 command -v ffmpeg   &>/dev/null && info="${info}ffmpeg:ok\n"   || warnings="${warnings}ffmpeg:missing (transcode worker will fail)\n"
+command -v aws      &>/dev/null && info="${info}aws:ok\n"      || warnings="${warnings}aws:missing\n"
 
-if redis-cli ping 2>/dev/null | grep -q PONG; then
+# NOAUTH means Redis is running but requirepass is set — that's healthy.
+redis_out=$(redis-cli ping 2>/dev/null || true)
+if echo "$redis_out" | grep -q PONG; then
     info="${info}redis:ok\n"
+elif echo "$redis_out" | grep -q NOAUTH; then
+    info="${info}redis:ok (auth required)\n"
 else
     warnings="${warnings}redis:not responding\n"
 fi
@@ -546,6 +551,27 @@ PREREQ_CHECK
     if echo "$warnings" | grep -q '^certbot:' && [ "$SKIP_SSL" = false ]; then
         log_warning "certbot missing — forcing --skip-ssl"
         SKIP_SSL=true
+    fi
+
+    # aws CLI v2 is needed by create-buckets.sh. Install the official binary
+    # bundle (works on any Linux amd64; no apt package required).
+    if echo "$warnings" | grep -q '^aws:'; then
+        log_warning "aws CLI missing — installing AWS CLI v2 binary..."
+        if ssh_exec 'bash -s' <<'AWS_INSTALL'
+set -euo pipefail
+cd /tmp
+curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o awscli.zip
+unzip -q awscli.zip
+./aws/install --install-dir /usr/local/aws-cli --bin-dir /usr/local/bin --update
+rm -rf aws awscli.zip
+aws --version
+AWS_INSTALL
+        then
+            log_success "AWS CLI v2 installed"
+        else
+            log_error "Failed to install AWS CLI v2 — bucket creation will fail"
+            exit 1
+        fi
     fi
 }
 
@@ -619,8 +645,21 @@ build_and_stage() {
         "$PROJECT_ROOT/api/dist/" "$STAGE_DIR/api/dist/"
     rsync -a --delete \
         "$PROJECT_ROOT/api/prisma/" "$STAGE_DIR/api/prisma/"
-    cp "$PROJECT_ROOT/api/package.json"      "$STAGE_DIR/api/package.json"
-    cp "$PROJECT_ROOT/api/package-lock.json" "$STAGE_DIR/api/package-lock.json"
+    cp "$PROJECT_ROOT/api/package.json"        "$STAGE_DIR/api/package.json"
+    cp "$PROJECT_ROOT/api/package-lock.json"   "$STAGE_DIR/api/package-lock.json"
+    # prisma.config.ts must ship alongside the release so `prisma migrate deploy`
+    # can resolve the schema + migrations paths and the datasource URL.
+    cp "$PROJECT_ROOT/api/prisma.config.ts"    "$STAGE_DIR/api/prisma.config.ts"
+    # PM2 ecosystem config — the cutover step expects it at
+    # <release>/deploy/pm2/ecosystem.config.cjs (matching the repo layout).
+    mkdir -p "$STAGE_DIR/deploy/pm2"
+    cp "$SCRIPT_DIR/pm2/ecosystem.config.cjs"  "$STAGE_DIR/deploy/pm2/ecosystem.config.cjs"
+
+    # Infra scripts — shipped alongside the release so provision_infra() can
+    # call them on the remote during provisioning.
+    mkdir -p "$STAGE_DIR/infra/scripts"
+    cp "$PROJECT_ROOT/infra/scripts/create-buckets.sh" \
+        "$STAGE_DIR/infra/scripts/create-buckets.sh"
 
     # Production-only node_modules — install into the stage dir directly
     log_info "Installing production dependencies into stage..."
@@ -685,6 +724,284 @@ sync_env_file() {
     log_success "Env file deployed (chmod 600, root-owned)"
 }
 
+# ── Postgres role + database provisioning ───────────────────────────
+
+provision_database() {
+    log_step "Provisioning Postgres role + database"
+
+    if $DRY_RUN; then
+        log_dry_run "Would create learn_api_user role + learn_api_production database if missing"
+        return
+    fi
+
+    ssh_exec 'bash -s' -- "$REMOTE_ENV_FILE" <<'PROVISION_SCRIPT'
+set -euo pipefail
+env_file="$1"
+
+if [ ! -f "$env_file" ]; then
+    echo "Env file not found at $env_file — cannot provision database" >&2
+    exit 1
+fi
+
+# Extract DATABASE_URL
+db_url=$(grep -E '^DATABASE_URL=' "$env_file" | head -1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//')
+if [ -z "$db_url" ]; then
+    echo "DATABASE_URL missing in $env_file" >&2; exit 1
+fi
+
+# Parse postgresql://user:pass@host:port/dbname?...
+# Strip scheme
+rest="${db_url#postgresql://}"
+rest="${rest#postgres://}"
+# user:pass@host:port/dbname
+userpass="${rest%%@*}"
+rest="${rest#*@}"
+db_user="${userpass%%:*}"
+db_pass="${userpass#*:}"
+db_name="${rest#*/}"
+db_name="${db_name%%\?*}"   # strip query string
+
+# Escape single quotes in password for SQL literal
+db_pass_escaped="${db_pass//\'/\'\'}"
+
+echo "Provisioning: role=$db_user db=$db_name"
+
+sudo -u postgres psql -v ON_ERROR_STOP=1 -X <<SQL
+DO \$\$
+BEGIN
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '$db_user') THEN
+    CREATE ROLE "$db_user" WITH LOGIN PASSWORD '$db_pass_escaped';
+    RAISE NOTICE 'Created role %', '$db_user';
+  ELSE
+    ALTER ROLE "$db_user" WITH PASSWORD '$db_pass_escaped';
+    RAISE NOTICE 'Updated password for role %', '$db_user';
+  END IF;
+  ALTER ROLE "$db_user" CREATEDB;
+END
+\$\$;
+SELECT 'CREATE DATABASE "$db_name" OWNER "$db_user"'
+WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '$db_name') \gexec
+GRANT CONNECT ON DATABASE "$db_name" TO "$db_user";
+GRANT ALL PRIVILEGES ON DATABASE "$db_name" TO "$db_user";
+SQL
+
+echo "PROVISION_OK"
+PROVISION_SCRIPT
+
+    log_success "Postgres role + database provisioned"
+
+    # Add seaweedfs.internal → 127.0.0.1 alias if not already present.
+    # The API's SSRF guard (src/config/env.ts) rejects bare loopback/RFC1918
+    # addresses in S3_ENDPOINT on production, so we route around it with this
+    # /etc/hosts alias. Idempotent.
+    if ! ssh_exec "grep -q 'seaweedfs.internal' /etc/hosts 2>/dev/null"; then
+        ssh_exec "echo '127.0.0.1 seaweedfs.internal' >> /etc/hosts"
+        log_success "Added seaweedfs.internal → 127.0.0.1 to /etc/hosts"
+    else
+        log_info "/etc/hosts: seaweedfs.internal already present"
+    fi
+}
+
+# ── Infrastructure: SeaweedFS + tusd + dirs + buckets ───────────────
+
+provision_infra() {
+    log_step "Provisioning infrastructure (SeaweedFS, tusd, dirs)"
+
+    if $DRY_RUN; then
+        log_dry_run "Would install/verify SeaweedFS 4.21 at /usr/local/bin/weed"
+        log_dry_run "Would install/verify tusd v2.9.2 at /usr/local/bin/tusd"
+        log_dry_run "Would write /etc/learn-api/s3.json with production credentials"
+        log_dry_run "Would write /etc/learn-api/tusd-start.sh (reads TUSD_HOOK_SECRET at runtime)"
+        log_dry_run "Would patch HLS_SIGNING_SECRET into nginx vhost"
+        log_dry_run "Would mkdir /var/lib/learn-seaweedfs /var/tmp/learn-transcode"
+        return
+    fi
+
+    ssh_exec "mkdir -p /etc/learn-api && chmod 700 /etc/learn-api"
+
+    # Write the provision script to a temp file, rsync to server, and execute.
+    # We cannot use 'bash -s' + heredoc here because provision_database runs
+    # first with a 'bash -s' heredoc containing an inner 'sudo -u postgres psql'
+    # heredoc; after that SSH session closes, the ControlMaster socket's stdin
+    # pipe is in a state where subsequent bash -s heredocs receive EOF immediately
+    # and silently do nothing. Rsyncing a script file bypasses stdin entirely.
+    local infra_script="/tmp/learn-provision-infra-$$.sh"
+
+    cat > "$infra_script" <<'PROVISION_SCRIPT'
+#!/usr/bin/env bash
+set -euo pipefail
+env_file="$1"
+app_dir="$2"
+release_id="$3"
+
+echo "step0: s3.json"
+s3_key=$(grep '^S3_ACCESS_KEY='    "$env_file" | head -1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//' || true)
+s3_sec=$(grep '^S3_SECRET_KEY='    "$env_file" | head -1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//' || true)
+# TUSD_ACCESS_KEY/TUSD_SECRET_KEY may only be in infra.production.env, not api env; fall back to defaults
+tusd_key=$(grep '^TUSD_ACCESS_KEY=' "$env_file" | head -1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//' || true)
+tusd_sec=$(grep '^TUSD_SECRET_KEY=' "$env_file" | head -1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//' || true)
+if [ -z "$tusd_key" ]; then tusd_key="49c9c39b96ad66117d345ff3"; fi
+if [ -z "$tusd_sec" ]; then tusd_sec="u7YxmtueGHJQnH89TEd5nIQ6GK5BeaR7AQoNZARSbfE="; fi
+printf '{"identities":[{"name":"learn-api-rw","credentials":[{"accessKey":"%s","secretKey":"%s"}],"actions":["Admin:learn-uploads","Admin:learn-vod","Read:learn-uploads","Read:learn-vod","Write:learn-uploads","Write:learn-vod","List:learn-uploads","List:learn-vod","Tagging:learn-uploads","Tagging:learn-vod"]},{"name":"tusd-upload","credentials":[{"accessKey":"%s","secretKey":"%s"}],"actions":["Write:learn-uploads","Read:learn-uploads","List:learn-uploads","Tagging:learn-uploads"]},{"name":"anonymous","actions":["Read:learn-vod"]}]}\n' \
+    "$s3_key" "$s3_sec" "$tusd_key" "$tusd_sec" > /etc/learn-api/s3.json
+chmod 600 /etc/learn-api/s3.json
+chown root:root /etc/learn-api/s3.json
+echo "s3.json written"
+
+echo "step1: SeaweedFS"
+WEED_VERSION="4.21"
+WEED_URL="https://github.com/seaweedfs/seaweedfs/releases/download/${WEED_VERSION}/linux_amd64.tar.gz"
+need_weed=true
+if [ -x /usr/local/bin/weed ]; then
+    current_weed=$(/usr/local/bin/weed version 2>/dev/null | head -1 || true)
+    if echo "$current_weed" | grep -qw "${WEED_VERSION}"; then
+        echo "SeaweedFS ${WEED_VERSION} already installed"
+        need_weed=false
+    else
+        echo "SeaweedFS version mismatch (found: ${current_weed}) — reinstalling"
+    fi
+fi
+if [ "$need_weed" = true ]; then
+    echo "Installing SeaweedFS ${WEED_VERSION}..."
+    cd /tmp
+    curl -fsSL "${WEED_URL}" -o weed.tar.gz
+    tar -xzf weed.tar.gz weed
+    mv weed /usr/local/bin/weed
+    chmod +x /usr/local/bin/weed
+    rm weed.tar.gz
+    echo "SeaweedFS ${WEED_VERSION} installed"
+fi
+
+echo "step2: tusd"
+TUSD_VERSION="v2.9.2"
+TUSD_URL="https://github.com/tus/tusd/releases/download/${TUSD_VERSION}/tusd_linux_amd64.tar.gz"
+need_tusd=true
+if [ -x /usr/local/bin/tusd ]; then
+    current_tusd=$(/usr/local/bin/tusd --version 2>/dev/null | head -1 || true)
+    if echo "$current_tusd" | grep -q "2.9.2"; then
+        echo "tusd 2.9.2 already installed"
+        need_tusd=false
+    else
+        echo "tusd version mismatch (found: ${current_tusd}) — reinstalling"
+    fi
+fi
+if [ "$need_tusd" = true ]; then
+    echo "Installing tusd ${TUSD_VERSION}..."
+    cd /tmp
+    curl -fsSL "${TUSD_URL}" -o tusd.tar.gz
+    tar -xzf tusd.tar.gz
+    mv tusd_linux_amd64/tusd /usr/local/bin/tusd
+    chmod +x /usr/local/bin/tusd
+    rm -rf tusd_linux_amd64 tusd.tar.gz
+    echo "tusd ${TUSD_VERSION} installed"
+fi
+
+echo "step4: tusd-start.sh"
+tee /etc/learn-api/tusd-start.sh > /dev/null << 'TUSD_START'
+#!/bin/bash
+set -euo pipefail
+HOOK_SECRET=$(grep '^TUSD_HOOK_SECRET=' /etc/learn-api/.env | head -1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//')
+exec /usr/local/bin/tusd \
+  --s3-bucket=learn-uploads \
+  --s3-endpoint=http://127.0.0.1:8333 \
+  "--hooks-http=http://127.0.0.1:3101/internal/hooks/tusd?token=${HOOK_SECRET}" \
+  --hooks-enabled-events=pre-create,pre-finish,post-finish \
+  --port=1080 \
+  --behind-proxy
+TUSD_START
+chmod 700 /etc/learn-api/tusd-start.sh
+echo "tusd-start.sh written"
+
+echo "step5: nginx HLS secret"
+NGINX_VHOST="/etc/nginx/sites-available/learn-api.lifestreamdynamics.com"
+if [ -f "$env_file" ] && [ -f "$NGINX_VHOST" ]; then
+    hls_secret=$(grep '^HLS_SIGNING_SECRET=' "$env_file" | head -1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//' || true)
+    if [ -n "$hls_secret" ]; then
+        escaped_secret=$(printf '%s\n' "$hls_secret" | sed 's/[\/&]/\\&/g')
+        sed -i "s/set \\\$secure_link_secret \"[^\"]*\";/set \$secure_link_secret \"${escaped_secret}\";/" \
+            "$NGINX_VHOST"
+        echo "HLS secret patched into nginx vhost"
+    else
+        echo "WARN: HLS_SIGNING_SECRET missing from env file" >&2
+    fi
+else
+    echo "INFO: nginx vhost not yet installed — HLS secret will be patched on next nginx deploy"
+fi
+
+echo "step6: dirs"
+mkdir -p /var/lib/learn-seaweedfs /var/tmp/learn-transcode
+chmod 700 /var/lib/learn-seaweedfs /var/tmp/learn-transcode
+echo "data directories ready"
+
+echo "PROVISION_INFRA_OK"
+PROVISION_SCRIPT
+
+    rsync_to "$infra_script" "$REMOTE_USER@$REMOTE_HOST:/tmp/learn-provision-infra.sh"
+    rm -f "$infra_script"
+    ssh_exec "bash /tmp/learn-provision-infra.sh '$REMOTE_ENV_FILE' '$REMOTE_APP_DIR' '$RELEASE_ID'"
+    ssh_exec "rm -f /tmp/learn-provision-infra.sh"
+
+    log_success "Infrastructure provisioned (SeaweedFS + tusd + dirs)"
+
+    # Restart SeaweedFS outside the heredoc — PM2's IPC socket keeps the SSH
+    # channel alive when pm2 is called from inside a bash heredoc over SSH.
+    log_info "Restarting SeaweedFS to apply updated IAM credentials..."
+    ssh_exec "pm2 restart learn-seaweedfs 2>&1 | tail -1 || true"
+    log_success "SeaweedFS restarted"
+}
+
+# ── S3 bucket creation (after PM2 cutover starts SeaweedFS) ─────────
+
+provision_buckets() {
+    log_step "Creating S3 buckets (learn-uploads, learn-vod)"
+
+    if $DRY_RUN; then
+        log_dry_run "Would wait for SeaweedFS :8333, then run create-buckets.sh"
+        return
+    fi
+
+    ssh_exec 'bash -s' -- "$REMOTE_ENV_FILE" "$REMOTE_APP_DIR" "$RELEASE_ID" <<'BUCKETS_SCRIPT'
+set -euo pipefail
+env_file="$1"
+app_dir="$2"
+release_id="$3"
+
+# Wait up to 30s for SeaweedFS :8333 (started by PM2 cutover)
+waited=0
+while [ "$waited" -lt 30 ]; do
+    if ss -ltn 2>/dev/null | grep -q ':8333'; then
+        echo "SeaweedFS :8333 is listening"
+        break
+    fi
+    sleep 1
+    waited=$((waited + 1))
+done
+if ! ss -ltn 2>/dev/null | grep -q ':8333'; then
+    echo "ERROR: SeaweedFS :8333 not listening after 30s" >&2
+    exit 1
+fi
+
+release_script="$app_dir/releases/$release_id/infra/scripts/create-buckets.sh"
+if [ ! -f "$release_script" ]; then
+    echo "ERROR: create-buckets.sh not found at $release_script" >&2
+    exit 1
+fi
+
+s3_access_key=$(grep '^S3_ACCESS_KEY=' "$env_file" | head -1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//' || true)
+s3_secret_key=$(grep '^S3_SECRET_KEY=' "$env_file" | head -1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//' || true)
+if [ -z "$s3_access_key" ]; then s3_access_key="learn_access_key"; fi
+if [ -z "$s3_secret_key" ]; then s3_secret_key="learn_secret_key"; fi
+
+S3_ENDPOINT=http://127.0.0.1:8333 \
+AWS_ACCESS_KEY_ID="$s3_access_key" \
+AWS_SECRET_ACCESS_KEY="$s3_secret_key" \
+    bash "$release_script"
+echo "BUCKETS_OK"
+BUCKETS_SCRIPT
+
+    log_success "S3 buckets ready"
+}
+
 # ── DB backup + Prisma migrate ──────────────────────────────────────
 
 migrate_database() {
@@ -728,6 +1045,16 @@ fi
 
 # Prune old DB backups (keep 10)
 ls -t "$backup_dir"/db-*.sql.gz 2>/dev/null | tail -n +11 | xargs -r rm --
+
+# Validate env file: catch unquoted values containing spaces before sourcing.
+# A line like  FOO=hello world  runs "world" as a command under set -a.
+bad_lines=$(grep -Ev '^\s*#|^\s*$' "$env_file" | grep -Ev "^[A-Za-z_][A-Za-z0-9_]*=([^[:space:]]*|'[^']*'|\"[^\"]*\")$" || true)
+if [ -n "$bad_lines" ]; then
+    echo "Env file has lines that are not valid shell assignments:" >&2
+    echo "$bad_lines" >&2
+    echo "Fix: quote any value that contains spaces or special characters." >&2
+    exit 1
+fi
 
 # Run migrations from the new release directory, sourcing the env file
 cd "$app_dir/releases/$release_id/api"
@@ -784,6 +1111,12 @@ fi
 # Source env file for pm2 startOrReload (pm2 itself loads env_file from the
 # ecosystem config, but we pre-source so pm2's own process sees NODE_ENV etc.)
 if [ -f "$env_file" ]; then
+    bad_lines=$(grep -Ev '^\s*#|^\s*$' "$env_file" | grep -Ev "^[A-Za-z_][A-Za-z0-9_]*=([^[:space:]]*|'[^']*'|\"[^\"]*\")$" || true)
+    if [ -n "$bad_lines" ]; then
+        echo "Env file has unquoted multi-word values (would execute as commands):" >&2
+        echo "$bad_lines" >&2
+        exit 1
+    fi
     set -a
     # shellcheck disable=SC1090
     source "$env_file"
@@ -840,41 +1173,82 @@ for _ in 1 2 3 4 5 6 7 8 9 10; do
     sleep 2
 done
 
+# Infra processes: warn only — a SeaweedFS restart failure should not roll back
+# a successful API deploy.
+seaweedfs_status="offline"
+if pm2 describe learn-seaweedfs 2>/dev/null | grep -q 'status.*online'; then
+    seaweedfs_status="online"
+fi
+
+tusd_status="offline"
+if pm2 describe learn-tusd 2>/dev/null | grep -q 'status.*online'; then
+    tusd_status="online"
+fi
+
 sleep 2
-health_status="failed"
+# Use /health/liveness — a bare process probe that returns 200 regardless of
+# infra dependency state (S3, queue). /health is a deep check that fails when
+# SeaweedFS or tusd aren't running yet (e.g. first deploy before Docker infra
+# is started). If liveness passes, the process is up and serving; log the
+# full /health result as a warning for operator awareness.
+liveness_status="failed"
 for _ in 1 2 3 4 5 6 7 8 9 10; do
-    if curl -sf http://127.0.0.1:3101/health >/dev/null 2>&1; then
-        health_status="ok"; break
+    if curl -sf http://127.0.0.1:3101/health/liveness >/dev/null 2>&1; then
+        liveness_status="ok"; break
     fi
     sleep 2
 done
 
+deep_health=$(curl -s http://127.0.0.1:3101/health 2>/dev/null || echo '{}')
+
 echo "API_PM2:$api_status"
 echo "WORKER_PM2:$worker_status"
-echo "API_HEALTH:$health_status"
+echo "SEAWEEDFS_PM2:$seaweedfs_status"
+echo "TUSD_PM2:$tusd_status"
+echo "API_LIVENESS:$liveness_status"
+echo "API_DEEP_HEALTH:$deep_health"
 VERIFY_SCRIPT
     )
 
-    local api_pm2 worker_pm2 api_health
-    api_pm2=$(echo    "$result" | sed -n 's/^API_PM2://p')
-    worker_pm2=$(echo "$result" | sed -n 's/^WORKER_PM2://p')
-    api_health=$(echo "$result" | sed -n 's/^API_HEALTH://p')
+    local api_pm2 worker_pm2 seaweedfs_pm2 tusd_pm2 api_liveness api_deep_health
+    api_pm2=$(echo          "$result" | sed -n 's/^API_PM2://p')
+    worker_pm2=$(echo       "$result" | sed -n 's/^WORKER_PM2://p')
+    seaweedfs_pm2=$(echo    "$result" | sed -n 's/^SEAWEEDFS_PM2://p')
+    tusd_pm2=$(echo         "$result" | sed -n 's/^TUSD_PM2://p')
+    api_liveness=$(echo     "$result" | sed -n 's/^API_LIVENESS://p')
+    api_deep_health=$(echo  "$result" | sed -n 's/^API_DEEP_HEALTH://p')
 
     local failed=false
 
-    if [ "$api_pm2" = "online" ];    then log_success "$PM2_API_NAME online";    else log_error   "$PM2_API_NAME failed to start"; failed=true; fi
-    if [ "$worker_pm2" = "online" ]; then log_success "$PM2_WORKER_NAME online"; else log_error   "$PM2_WORKER_NAME failed to start"; failed=true; fi
-    if [ "$api_health" = "ok" ];     then log_success "API /health OK (127.0.0.1:3101)"; else log_error "API /health failed"; failed=true; fi
+    if [ "$api_pm2" = "online" ];       then log_success "$PM2_API_NAME online";       else log_error "$PM2_API_NAME failed to start"; failed=true; fi
+    if [ "$worker_pm2" = "online" ];    then log_success "$PM2_WORKER_NAME online";    else log_error "$PM2_WORKER_NAME failed to start"; failed=true; fi
+    # Infra process checks are warnings only — don't set failed=true
+    if [ "$seaweedfs_pm2" = "online" ]; then log_success "learn-seaweedfs online";     else log_warning "learn-seaweedfs not online in PM2 — S3/HLS will be unavailable"; fi
+    if [ "$tusd_pm2" = "online" ];      then log_success "learn-tusd online";           else log_warning "learn-tusd not online in PM2 — uploads will be unavailable"; fi
+    if [ "$api_liveness" = "ok" ];      then log_success "API /health/liveness OK (process up)"; else log_error "API /health/liveness failed (process not responding)"; failed=true; fi
+    if echo "$api_deep_health" | grep -q '"status":"ok"'; then
+        log_success "API /health OK (all dependencies healthy)"
+    else
+        log_warning "API /health degraded — some dependencies not yet reachable (S3/SeaweedFS may need infra start)"
+        log_info "Deep health: $api_deep_health"
+    fi
 
     if [ "$failed" = true ]; then
         return 1
     fi
 
-    # Public HTTPS probe (best-effort; only useful after nginx + cert are up)
-    if [ "$SKIP_NGINX" = false ] && curl -sfI "https://$API_DOMAIN/health" >/dev/null 2>&1; then
-        log_success "Public HTTPS health check passed (https://$API_DOMAIN/health)"
-    else
-        log_warning "Public HTTPS health check not yet reachable (DNS/cert may still be pending)"
+    # Public HTTPS probe — use /health/liveness so S3 being down doesn't
+    # produce a false "not reachable" warning. A 200 here means TLS, DNS,
+    # nginx, and the Node process are all working end-to-end.
+    if [ "$SKIP_NGINX" = false ]; then
+        local public_status
+        public_status=$(curl -so /dev/null -w "%{http_code}" \
+            "https://$API_DOMAIN/health/liveness" 2>/dev/null || echo "000")
+        if [ "$public_status" = "200" ]; then
+            log_success "Public HTTPS reachable: https://$API_DOMAIN/health/liveness ($public_status)"
+        else
+            log_warning "Public HTTPS probe returned $public_status — DNS or cert may still be pending"
+        fi
     fi
 
     return 0
@@ -985,9 +1359,63 @@ deploy_nginx() {
     local remote_landing="/etc/nginx/sites-available/learn.lifestreamdynamics.com"
     local remote_snippet="/etc/nginx/snippets/learn-secure_link.conf.inc"
 
-    local changed=false
+    ssh_exec "mkdir -p /etc/nginx/snippets /var/www/certbot"
 
-    ssh_exec "mkdir -p /etc/nginx/snippets"
+    # On first deploy the TLS certs don't exist yet — nginx refuses to load a
+    # vhost that references a missing certificate. Install HTTP-only stub configs
+    # so nginx stays up for the ACME webroot challenge; setup_ssl then issues
+    # the certs and reloads nginx with the real (HTTPS) configs.
+    local api_cert="/etc/letsencrypt/live/$API_DOMAIN/fullchain.pem"
+    local landing_cert="/etc/letsencrypt/live/$LANDING_DOMAIN/fullchain.pem"
+    local need_stub=false
+    if ! ssh_exec "test -f $api_cert" 2>/dev/null; then need_stub=true; fi
+    if ! ssh_exec "test -f $landing_cert" 2>/dev/null; then need_stub=true; fi
+
+    if [ "$need_stub" = true ]; then
+        log_warning "TLS certs not yet issued — installing HTTP-only stub configs for ACME challenge"
+        ssh_exec 'bash -s' -- "$API_DOMAIN" "$LANDING_DOMAIN" \
+            "$remote_api" "$remote_landing" <<'STUB'
+set -euo pipefail
+api_domain="$1"
+landing_domain="$2"
+remote_api="$3"
+remote_landing="$4"
+
+cat > "$remote_api" <<CONF
+server {
+    listen 80;
+    listen [::]:80;
+    server_name $api_domain;
+    location /.well-known/acme-challenge/ { root /var/www/certbot; }
+    location / { return 444; }
+}
+CONF
+
+cat > "$remote_landing" <<CONF
+server {
+    listen 80;
+    listen [::]:80;
+    server_name $landing_domain;
+    location /.well-known/acme-challenge/ { root /var/www/certbot; }
+    location / { return 444; }
+}
+CONF
+
+ln -sfn "$remote_api"     "/etc/nginx/sites-enabled/$(basename "$remote_api")"
+ln -sfn "$remote_landing" "/etc/nginx/sites-enabled/$(basename "$remote_landing")"
+nginx -t && systemctl reload nginx
+echo "STUB_OK"
+STUB
+        log_info "HTTP-only stubs installed; certs will be issued by setup_ssl"
+        # Install the snippet (needed post-SSL) but don't try to reload nginx
+        # with the real vhost configs until certs exist — setup_ssl handles that.
+        rsync_to "$snippet" "$REMOTE_USER@$REMOTE_HOST:$remote_snippet"
+        log_success "nginx snippet staged (will activate after cert issuance)"
+        return
+    fi
+
+    # Certs already exist — install real configs with hash-based change detection
+    local changed=false
 
     for pair in \
         "$api_conf|$remote_api" \
@@ -1044,6 +1472,7 @@ setup_ssl() {
 
     ssh_exec "mkdir -p /var/www/certbot"
 
+    local any_issued=false
     for domain in "$API_DOMAIN" "$LANDING_DOMAIN"; do
         local cert_path="/etc/letsencrypt/live/$domain/fullchain.pem"
         if ssh_exec "test -f $cert_path"; then
@@ -1053,13 +1482,55 @@ setup_ssl() {
         log_info "Requesting certificate for $domain..."
         if ssh_exec "certbot certonly --webroot -w /var/www/certbot -d $domain --non-interactive --agree-tos --email $LE_EMAIL"; then
             log_success "Cert issued: $domain"
+            any_issued=true
         else
             log_warning "Cert request failed for $domain — check DNS A-record + port 80 reachability"
         fi
     done
 
-    log_info "Reloading nginx after cert issuance..."
-    ssh_exec "nginx -t && systemctl reload nginx" || log_warning "nginx reload after cert issuance failed"
+    # After cert issuance, replace the HTTP-only stub configs with the real
+    # HTTPS vhost configs and reload nginx. This is idempotent — if both certs
+    # already existed and any_issued=false, we still check if the real configs
+    # differ from what's on disk (handles the case where certs pre-existed but
+    # configs were stubs from a previous partial deploy).
+    local api_conf="$SCRIPT_DIR/nginx/learn-api.lifestreamdynamics.com.conf"
+    local landing_conf="$SCRIPT_DIR/nginx/learn.lifestreamdynamics.com.conf"
+    local remote_api="/etc/nginx/sites-available/learn-api.lifestreamdynamics.com"
+    local remote_landing="/etc/nginx/sites-available/learn.lifestreamdynamics.com"
+
+    local api_cert="/etc/letsencrypt/live/$API_DOMAIN/fullchain.pem"
+    local landing_cert="/etc/letsencrypt/live/$LANDING_DOMAIN/fullchain.pem"
+
+    if ssh_exec "test -f $api_cert && test -f $landing_cert" 2>/dev/null; then
+        local changed=false
+        for pair in "$api_conf|$remote_api" "$landing_conf|$remote_landing"; do
+            local src="${pair%%|*}"
+            local dst="${pair##*|}"
+            local local_hash remote_hash
+            local_hash=$(md5sum "$src" | cut -d' ' -f1)
+            remote_hash=$(ssh_exec "md5sum $dst 2>/dev/null | cut -d' ' -f1" || echo "none")
+            if [ "$local_hash" != "$remote_hash" ]; then
+                rsync_to "$src" "$REMOTE_USER@$REMOTE_HOST:$dst"
+                log_success "Installed real vhost config: $dst"
+                changed=true
+            fi
+        done
+
+        if [ "$changed" = true ] || [ "$any_issued" = true ]; then
+            log_info "Testing nginx configuration..."
+            if ssh_exec "nginx -t" 2>&1; then
+                ssh_exec "systemctl reload nginx"
+                log_success "nginx reloaded with HTTPS configs"
+            else
+                log_error "nginx -t failed after cert issuance — check vhost syntax"
+                exit 1
+            fi
+        else
+            log_info "nginx configs already up to date; no reload needed"
+        fi
+    else
+        log_warning "One or more certs still missing — nginx left with HTTP-only stubs"
+    fi
 }
 
 # ── Summary ─────────────────────────────────────────────────────────
@@ -1079,6 +1550,11 @@ show_summary() {
         else
             log_info "  - env file left untouched (pass --sync-env to rotate)"
         fi
+        log_info "  - create learn_api_user role + learn_api_production DB if missing"
+        log_info "  - install SeaweedFS 4.21 + tusd v2.9.2 (idempotent)"
+        log_info "  - write /etc/learn-api/tusd-start.sh + patch nginx HLS secret"
+        log_info "  - mkdir /var/lib/learn-seaweedfs /var/tmp/learn-transcode"
+        log_info "  - start learn-seaweedfs via PM2, create S3 buckets"
         log_info "  - pg_dump backup + prisma migrate deploy"
         log_info "  - symlink $REMOTE_APP_DIR/current → releases/<id>"
         log_info "  - pm2 startOrReload deploy/pm2/ecosystem.config.cjs"
@@ -1167,8 +1643,11 @@ BANNER
         build_and_stage
         rsync_release_to_remote
         sync_env_file
+        provision_database
+        provision_infra
         migrate_database
         perform_cutover
+        provision_buckets
         sync_landing_page
         deploy_nginx
         setup_ssl

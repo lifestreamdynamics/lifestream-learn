@@ -76,23 +76,37 @@ Before the first run of `deploy-production.sh`:
    The deploy script checks for `ffmpeg` during `check_remote_prerequisites`
    and refuses to proceed unless you pass `--force`.
 
-3. **PostgreSQL database + role** —
-   ```bash
-   sudo -u postgres psql <<SQL
-   CREATE USER learn_api_user WITH PASSWORD '<long-random-value>';
-   CREATE DATABASE learn_api_production OWNER learn_api_user;
-   GRANT ALL PRIVILEGES ON DATABASE learn_api_production TO learn_api_user;
-   SQL
-   ```
-   (The learn-API owns this DB; it's isolated from accounting-api's DBs on the
-   same Postgres instance by role + DB name. See `CLAUDE.md` §Shared-resource
-   discipline.)
+3. **PostgreSQL database + role** — the deploy script provisions this
+   automatically via `provision_database()`. Nothing to do manually; the step
+   is idempotent so it safely re-runs on every deploy. Requires Postgres to be
+   running and `sudo -u postgres psql` to work from the root shell (standard on
+   Ubuntu). The role (`learn_api_user`) and DB (`learn_api_production`) are
+   isolated from accounting-api's resources per `CLAUDE.md §Shared-resource
+   discipline`.
 
-4. **SeaweedFS + tusd** — install the infra compose stack on the VPS and
-   bring it up. See `infra/README.md` for the compose bootstrap. Bind
-   tusd to `127.0.0.1:1080` and SeaweedFS S3 to `127.0.0.1:8333` (the
-   `docker-compose.prod.yml` override enforces this; never bind
-   `0.0.0.0`).
+4. **Docker + SeaweedFS + tusd** — the API and transcode worker depend on
+   object storage (SeaweedFS) and resumable uploads (tusd) provided by the
+   `infra/` docker-compose stack. Until this stack is running:
+   - Auth, course management, and all non-video features work normally.
+   - Video upload and HLS playback will fail.
+   - `/health` will return `s3: error` and HTTP 503; `/health/liveness` will
+     return 200 (the process itself is healthy).
+
+   Install Docker and start the stack:
+   ```bash
+   # On the VPS:
+   apt install -y docker.io docker-compose-plugin
+   systemctl enable --now docker
+
+   # On your laptop (rsyncs infra/docker-compose.prod.yml + env):
+   rsync -az infra/ root@mittonvillage.com:/opt/learn-infra/
+   rsync -az ops/env/infra.production.env root@mittonvillage.com:/opt/learn-infra/.env
+
+   ssh root@mittonvillage.com 'cd /opt/learn-infra && docker compose -f docker-compose.prod.yml up -d'
+   ```
+   Bind tusd to `127.0.0.1:1080` and SeaweedFS S3 to `127.0.0.1:8333`
+   (enforced by `docker-compose.prod.yml`; never bind `0.0.0.0`).
+   See `infra/README.md` for bucket provisioning after first start.
 
 5. **Create the runtime env file** —
    ```bash
@@ -213,18 +227,28 @@ repo root); that directory is `.gitignore`d.
 ## Health checks
 
 ```bash
-# Public
-curl -sfI https://learn-api.lifestreamdynamics.com/health
+# Process liveness (200 = Node process is up; no infra dependency)
+curl -sf https://learn-api.lifestreamdynamics.com/health/liveness
+
+# Deep dependency check (200 = DB + Redis + S3 + queue all healthy)
+# Returns 503 with JSON body when S3/SeaweedFS is not running — expected
+# until the infra docker-compose stack is started (see §First-time prep step 4).
+curl -s https://learn-api.lifestreamdynamics.com/health | python3 -m json.tool
+
+# Landing page
 curl -sfI https://learn.lifestreamdynamics.com/
 
 # On-host (requires SSH)
-ssh root@mittonvillage.com 'curl -sf http://127.0.0.1:3101/health'
-ssh root@mittonvillage.com 'pm2 status learn-api learn-transcode-worker'
+ssh root@mittonvillage.com 'pm2 status'
 ssh root@mittonvillage.com 'pm2 logs learn-api --lines 50 --nostream'
+ssh root@mittonvillage.com 'curl -sf http://127.0.0.1:3101/health/liveness'
 ```
 
-The top-level `Makefile` exposes a `make deploy-status` shortcut (added
-in the same slice as this runbook).
+**Expected deep-health state before Docker infra is running:**
+```json
+{"status":"degraded","dependencies":{"database":"ok","redis":"ok","s3":"error","queue":"ok"}}
+```
+This is normal. Auth, courses, and all non-video features are operational.
 
 ---
 

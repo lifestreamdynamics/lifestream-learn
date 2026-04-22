@@ -13,7 +13,7 @@
       "relation": ["delegate_permission/common.handle_all_urls",
                    "delegate_permission/common.get_login_creds"],
       "target":   { "namespace": "android_app",
-                    "package_name": "ca.digitalartifacts.lifestream_learn",
+                    "package_name": "com.lifestream.learn.lifestream_learn_app",
                     "sha256_cert_fingerprints": ["<SHA-256 in UPPERCASE COLON form>"] }
     }]
 
@@ -31,7 +31,7 @@
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application
-        android:label="lifestream_learn_app"
+        android:label="Lifestream Learn"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:enableOnBackInvokedCallback="true">
