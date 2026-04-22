@@ -65,22 +65,39 @@ make app         # launches AVD if needed, then flutter run --flavor dev
 
 ```bash
 cd app
-/home/eric/flutter/bin/flutter pub get
-/home/eric/flutter/bin/dart run build_runner build --delete-conflicting-outputs
-/home/eric/flutter/bin/flutter run --flavor dev --dart-define=API_BASE_URL=http://10.0.2.2:8090
+flutter pub get
+dart run build_runner build --delete-conflicting-outputs
+flutter run --flavor dev --dart-define=API_BASE_URL=http://10.0.2.2:8090
 # or on a physical device (adb over USB / Wi-Fi):
-# /home/eric/flutter/bin/flutter run --flavor dev --dart-define=API_BASE_URL=http://<dev-machine-ip>:8090
+# flutter run --flavor dev --dart-define=API_BASE_URL=http://<dev-machine-ip>:8090
 ```
+
+`flutter` / `dart` are expected on `PATH`. The SDK version is pinned in `.fvmrc` (3.41.5); use [fvm](https://fvm.app/) or asdf to keep a matching toolchain, or install Flutter directly and symlink it into `PATH` — never bake an operator-specific absolute path into scripts or docs.
 
 `10.0.2.2` is the Android emulator's alias for the host machine. On a physical device, point `API_BASE_URL` at the host's LAN IP. The `dev` flavor allows cleartext HTTP (required because local nginx is plain HTTP); the `prod` flavor blocks it.
 
 ## Test + analyze + build
 
 ```bash
-/home/eric/flutter/bin/flutter analyze
-/home/eric/flutter/bin/flutter test --coverage
-/home/eric/flutter/bin/flutter build apk --debug
+flutter analyze
+flutter test --coverage
+flutter build apk --debug --flavor dev
 ```
+
+## Production build
+
+The `prod` flavor points at the real API URL (`https://learn-api.REDACTED-BRAND-DOMAIN`) and blocks cleartext HTTP. Use either the Makefile target or the explicit invocation below; do not hard-code the URL into Dart sources — it's threaded in at build time via `--dart-define`.
+
+```bash
+# From the repo root (preferred):
+make app-prod
+
+# Or directly from app/:
+flutter build apk --flavor prod --release \
+  --dart-define=API_BASE_URL=https://learn-api.REDACTED-BRAND-DOMAIN
+```
+
+The resulting APK lands at `app/build/app/outputs/flutter-apk/app-prod-release.apk`. It signs with the debug keystore until a production signing config is wired — that's a separate Play Store slice, out of scope for the current deploy prep.
 
 `flutter test --coverage` writes `coverage/lcov.info`. Slice D line coverage sits at ~68% across hand-written Dart (excluding `*.g.dart` / `*.freezed.dart`); the player (`learn_video_player.dart`) drags this down because the `video_player` platform plugin can't be fully exercised from unit tests.
 

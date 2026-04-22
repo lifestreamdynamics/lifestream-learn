@@ -76,7 +76,16 @@ See [`.env.example`](./.env.example) for the canonical list. Required at minimum
 ## Ports
 
 - **Dev:** 3011
-- **Reserved for eventual prod:** 3101 — bookkeeping only, so the value's settled when we do tackle deploy.
+- **Prod:** 3101 (reserved per [`IMPLEMENTATION_PLAN.md`](../IMPLEMENTATION_PLAN.md) §3 to avoid colliding with accounting-api on `:3100` and galaxy-miner on `:3177` on the shared VPS).
+
+## Production
+
+Production environment templates and the deploy runbook live at:
+
+- [`api/.env.production.example`](./.env.production.example) — canonical list of env vars for the VPS-hosted API. Copy to `ops/env/api.production.env` (git-ignored, `chmod 600`) and fill in every `REPLACE_ME` slot.
+- [`infra/.env.production.example`](../infra/.env.production.example) — infra-side template covering the SeaweedFS + tusd compose overlay.
+- [`infra/docker-compose.prod.yml`](../infra/docker-compose.prod.yml) — production compose overlay (loopback-bound ports, block-storage bind mount, system-nginx-only edge).
+- `deploy/README.md` — full operational runbook (first-time VPS prep, TLS issuance, deploy / rollback / log locations). Delivered by the deploy-automation slice; see the top-level `Makefile`'s `deploy-prod`, `deploy-prod-dry-run`, and `deploy-status` targets for entrypoints.
 
 ## License
 
