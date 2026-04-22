@@ -102,12 +102,12 @@ class _AvailableGrid extends StatelessWidget {
                                   fit: BoxFit.cover,
                                   errorBuilder: (_, __, ___) => Container(
                                     color: Colors.grey.shade300,
-                                    child: const Icon(Icons.image),
+                                    child: const Icon(Icons.image_rounded),
                                   ),
                                 )
                               : Container(
                                   color: Colors.grey.shade300,
-                                  child: const Icon(Icons.school, size: 36),
+                                  child: const Icon(Icons.school_rounded, size: 36),
                                 ),
                         ),
                         Padding(

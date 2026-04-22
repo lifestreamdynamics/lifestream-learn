@@ -53,7 +53,7 @@ class PlaybackSection extends StatelessWidget {
                 title: const Text('Use video default'),
                 trailing: state.captionLanguage == null
                     ? const Icon(
-                        Icons.check,
+                        Icons.check_rounded,
                         key: Key('settings.captionLanguage.default.check'),
                       )
                     : null,
@@ -93,7 +93,7 @@ class PlaybackSection extends StatelessWidget {
       body: ListView(
         children: [
           ListTile(
-            leading: const Icon(Icons.speed),
+            leading: const Icon(Icons.speed_rounded),
             title: const Text('Default playback speed'),
             subtitle: Text('${state.playbackSpeed.toStringAsFixed(2)}x'),
             trailing: DropdownButton<double>(
@@ -130,7 +130,7 @@ class PlaybackSection extends StatelessWidget {
             key: const Key('settings.playback.captionLanguage'),
             enabled: state.captionsDefault,
             leading: Icon(
-              Icons.language,
+              Icons.language_rounded,
               color: state.captionsDefault ? null : Theme.of(context).disabledColor,
             ),
             title: Text(

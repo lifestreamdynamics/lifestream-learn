@@ -265,14 +265,14 @@ class _ApplicationTile extends StatelessWidget {
                 OutlinedButton.icon(
                   key: Key('admin.apps.reject.${application.id}'),
                   onPressed: onReject,
-                  icon: const Icon(Icons.close),
+                  icon: const Icon(Icons.close_rounded),
                   label: const Text('Reject'),
                 ),
                 const SizedBox(width: 8),
                 FilledButton.icon(
                   key: Key('admin.apps.approve.${application.id}'),
                   onPressed: onApprove,
-                  icon: const Icon(Icons.check),
+                  icon: const Icon(Icons.check_rounded),
                   label: const Text('Approve'),
                 ),
               ],

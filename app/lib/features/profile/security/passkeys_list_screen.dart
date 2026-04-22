@@ -150,7 +150,7 @@ class _PasskeysListScreenState extends State<PasskeysListScreen> {
                                 .push('/profile/security/mfa/passkey/enrol');
                             if (mounted) await _load();
                           },
-                          icon: const Icon(Icons.add),
+                          icon: const Icon(Icons.add_rounded),
                           label: const Text('Add another passkey'),
                         ),
                       ],
@@ -181,7 +181,7 @@ class _PasskeyTile extends StatelessWidget {
           children: [
             Row(
               children: [
-                const Icon(Icons.key),
+                const Icon(Icons.key_rounded),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
@@ -191,7 +191,7 @@ class _PasskeyTile extends StatelessWidget {
                 ),
                 IconButton(
                   key: Key('passkeys.delete.${cred.id}'),
-                  icon: const Icon(Icons.delete_outline),
+                  icon: const Icon(Icons.delete_outline_rounded),
                   tooltip: 'Delete passkey',
                   onPressed: onDelete,
                 ),
@@ -294,7 +294,7 @@ class _ErrorBody extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.error_outline,
+          Icon(Icons.error_outline_rounded,
               size: 48, color: Theme.of(context).colorScheme.error),
           const SizedBox(height: 16),
           Text(message, textAlign: TextAlign.center),

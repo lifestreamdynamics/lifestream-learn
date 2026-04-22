@@ -41,7 +41,16 @@ class ProfileScreen extends StatelessWidget {
       create: (_) => ProfileBloc(progressRepo: progressRepo)
         ..add(const ProfileLoadRequested()),
       child: Scaffold(
-        appBar: AppBar(title: const Text('Profile')),
+        appBar: AppBar(
+          leading: Padding(
+            padding: const EdgeInsets.all(8),
+            child: Hero(
+              tag: 'brand-mark',
+              child: Image.asset('assets/icon/splash_logo.png'),
+            ),
+          ),
+          title: const Text('Profile'),
+        ),
         body: BlocBuilder<AuthBloc, AuthState>(
           builder: (context, state) {
             if (state is! Authenticated) {
@@ -247,7 +256,7 @@ class _ProfileBodyState extends State<_ProfileBody> {
                   key: const Key('profile.account.password'),
                   leading: const Icon(Icons.lock_outline),
                   title: const Text('Change password'),
-                  trailing: const Icon(Icons.chevron_right),
+                  trailing: const Icon(Icons.chevron_right_rounded),
                   onTap: () =>
                       GoRouter.of(context).push('/profile/security/password'),
                 ),
@@ -262,7 +271,7 @@ class _ProfileBodyState extends State<_ProfileBody> {
                   key: const Key('profile.account.sessions'),
                   leading: const Icon(Icons.devices_other_outlined),
                   title: const Text('Active sessions'),
-                  trailing: const Icon(Icons.chevron_right),
+                  trailing: const Icon(Icons.chevron_right_rounded),
                   onTap: () =>
                       GoRouter.of(context).push('/profile/security/sessions'),
                 ),
@@ -279,7 +288,7 @@ class _ProfileBodyState extends State<_ProfileBody> {
                   subtitle: const Text(
                     'Appearance, playback, privacy, accessibility',
                   ),
-                  trailing: const Icon(Icons.chevron_right),
+                  trailing: const Icon(Icons.chevron_right_rounded),
                   onTap: () =>
                       GoRouter.of(context).push('/profile/settings'),
                 ),
@@ -317,7 +326,7 @@ class _ProfileBodyState extends State<_ProfileBody> {
                     subtitle: const Text(
                       'Edit your courses and video cues',
                     ),
-                    trailing: const Icon(Icons.chevron_right),
+                    trailing: const Icon(Icons.chevron_right_rounded),
                     onTap: () => GoRouter.of(context).go('/courses'),
                   ),
                 ],
@@ -334,7 +343,7 @@ class _ProfileBodyState extends State<_ProfileBody> {
                     subtitle: const Text(
                       'Designer applications, analytics',
                     ),
-                    trailing: const Icon(Icons.chevron_right),
+                    trailing: const Icon(Icons.chevron_right_rounded),
                     onTap: () => GoRouter.of(context).go('/admin'),
                   ),
                 ],
@@ -346,7 +355,7 @@ class _ProfileBodyState extends State<_ProfileBody> {
                 key: const Key('profile.logout'),
                 onPressed: () =>
                     context.read<AuthBloc>().add(const LoggedOut()),
-                icon: const Icon(Icons.logout),
+                icon: const Icon(Icons.logout_rounded),
                 label: const Text('Log out'),
               ),
             ),
@@ -362,7 +371,7 @@ class _ProfileBodyState extends State<_ProfileBody> {
                   final error = Theme.of(ctx).colorScheme.error;
                   return ListTile(
                     key: const Key('profile.account.delete'),
-                    leading: Icon(Icons.delete_outline, color: error),
+                    leading: Icon(Icons.delete_outline_rounded, color: error),
                     title: Text(
                       'Delete account',
                       style: TextStyle(color: error),
@@ -428,7 +437,7 @@ class _ProgressErrorStrip extends StatelessWidget {
         key: const Key('profile.progress.error'),
         margin: EdgeInsets.zero,
         child: ListTile(
-          leading: const Icon(Icons.error_outline),
+          leading: const Icon(Icons.error_outline_rounded),
           title: const Text('Progress unavailable'),
           subtitle: Text(message),
           trailing: TextButton(

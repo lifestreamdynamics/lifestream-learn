@@ -172,7 +172,7 @@ class _CaptionsSectionState extends State<CaptionsSection> {
               TextButton.icon(
                 key: const Key('captions.addLanguage'),
                 onPressed: _openAddSheet,
-                icon: const Icon(Icons.add, size: 18),
+                icon: const Icon(Icons.add_rounded, size: 18),
                 label: const Text('Add language'),
               ),
             ],
@@ -201,7 +201,7 @@ class _CaptionsSectionState extends State<CaptionsSection> {
                   subtitle: Text('${(caption.bytes / 1024).toStringAsFixed(1)} KB'),
                   trailing: IconButton(
                     key: Key('captions.delete.${caption.language}'),
-                    icon: const Icon(Icons.delete_outline),
+                    icon: const Icon(Icons.delete_outline_rounded),
                     onPressed: () => _confirmDelete(caption),
                   ),
                 ),
@@ -378,7 +378,7 @@ class _AddCaptionSheetState extends State<_AddCaptionSheet> {
           OutlinedButton.icon(
             key: const Key('captions.chooseFile'),
             onPressed: _uploading ? null : _pickFile,
-            icon: const Icon(Icons.attach_file),
+            icon: const Icon(Icons.attach_file_rounded),
             label: Text(
               _pickedFile != null ? _pickedFile!.name : 'Choose file (.srt or .vtt)',
             ),

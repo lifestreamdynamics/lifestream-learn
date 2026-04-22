@@ -3,6 +3,7 @@ import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:fvp/fvp.dart' as fvp;
@@ -26,7 +27,9 @@ import 'core/routing/root_back_handler.dart';
 import 'core/settings/settings_cubit.dart';
 import 'core/settings/settings_state.dart';
 import 'core/settings/settings_store.dart';
+import 'core/haptics.dart';
 import 'core/theme/app_theme.dart';
+import 'core/theme/brand_colors.dart';
 import 'core/utils/date_formatters.dart';
 import 'data/repositories/admin_analytics_repository.dart';
 import 'data/repositories/admin_designer_application_repository.dart';
@@ -353,6 +356,7 @@ class _AppState extends State<App> with WidgetsBindingObserver {
       ],
       child: BlocBuilder<SettingsCubit, SettingsState>(
         builder: (context, settings) {
+          Haptics.enabled = !settings.reduceMotion;
           return MaterialApp.router(
             title: 'Lifestream Learn',
             theme: AppTheme.light,
@@ -372,16 +376,31 @@ class _AppState extends State<App> with WidgetsBindingObserver {
               // per-widget opt-ins that read `settings.reduceMotion`
               // directly — the MediaQuery flag is the OS-parity path.
               final existing = MediaQuery.of(context);
-              return MediaQuery(
-                data: existing.copyWith(
-                  textScaler:
-                      TextScaler.linear(settings.textScaleMultiplier),
-                  disableAnimations:
-                      settings.reduceMotion || existing.disableAnimations,
-                ),
-                child: RootBackHandler(
-                  historyObserver: widget.navigationHistoryObserver,
-                  child: child ?? const SizedBox.shrink(),
+              final brightness = Theme.of(context).brightness;
+              final overlay = brightness == Brightness.dark
+                  ? SystemUiOverlayStyle.light.copyWith(
+                      statusBarColor: Colors.transparent,
+                      systemNavigationBarColor: BrandColors.darkBg,
+                      systemNavigationBarIconBrightness: Brightness.light,
+                    )
+                  : SystemUiOverlayStyle.dark.copyWith(
+                      statusBarColor: Colors.transparent,
+                      systemNavigationBarColor: BrandColors.lightBg,
+                      systemNavigationBarIconBrightness: Brightness.dark,
+                    );
+              return AnnotatedRegion<SystemUiOverlayStyle>(
+                value: overlay,
+                child: MediaQuery(
+                  data: existing.copyWith(
+                    textScaler:
+                        TextScaler.linear(settings.textScaleMultiplier),
+                    disableAnimations:
+                        settings.reduceMotion || existing.disableAnimations,
+                  ),
+                  child: RootBackHandler(
+                    historyObserver: widget.navigationHistoryObserver,
+                    child: child ?? const SizedBox.shrink(),
+                  ),
                 ),
               );
             },

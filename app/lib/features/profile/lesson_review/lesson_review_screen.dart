@@ -159,7 +159,7 @@ class _Header extends StatelessWidget {
                     onPressed: () => context.push(
                       '/videos/${review.video.id}/watch?t=0',
                     ),
-                    icon: const Icon(Icons.replay),
+                    icon: const Icon(Icons.replay_rounded),
                     label: const Text('Retry lesson'),
                   ),
                 ],

@@ -91,7 +91,7 @@ class _CaptionPickerSheet extends StatelessWidget {
             key: const Key('captionPicker.off'),
             title: const Text('Off'),
             trailing: offSelected
-                ? const Icon(Icons.check, key: Key('captionPicker.off.check'))
+                ? const Icon(Icons.check_rounded, key: Key('captionPicker.off.check'))
                 : null,
             onTap: () =>
                 Navigator.of(context).pop(const CaptionPickerResult.off()),
@@ -102,7 +102,7 @@ class _CaptionPickerSheet extends StatelessWidget {
               key: Key('captionPicker.lang.${track.language}'),
               title: Text(captionLanguageLabel(track.language)),
               trailing: currentLanguage == track.language
-                  ? Icon(Icons.check,
+                  ? Icon(Icons.check_rounded,
                       key: Key('captionPicker.lang.${track.language}.check'))
                   : null,
               onTap: () => Navigator.of(context).pop(

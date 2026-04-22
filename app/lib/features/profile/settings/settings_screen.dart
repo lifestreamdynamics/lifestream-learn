@@ -27,7 +27,7 @@ class SettingsScreen extends StatelessWidget {
           ),
           _SettingsTile(
             keyValue: Key('settings.entry.playback'),
-            icon: Icons.play_circle_outline,
+            icon: Icons.play_circle_outline_rounded,
             title: 'Playback',
             subtitle: 'Speed, captions, data saver',
             route: '/profile/settings/playback',
@@ -50,7 +50,7 @@ class SettingsScreen extends StatelessWidget {
           _SectionHeader('About'),
           _SettingsTile(
             keyValue: Key('settings.entry.about'),
-            icon: Icons.info_outline,
+            icon: Icons.info_outline_rounded,
             title: 'About',
             subtitle: 'Version, licences',
             route: '/profile/settings/about',
@@ -103,7 +103,7 @@ class _SettingsTile extends StatelessWidget {
       leading: Icon(icon),
       title: Text(title),
       subtitle: Text(subtitle),
-      trailing: const Icon(Icons.chevron_right),
+      trailing: const Icon(Icons.chevron_right_rounded),
       onTap: () => GoRouter.of(context).push(route),
     );
   }

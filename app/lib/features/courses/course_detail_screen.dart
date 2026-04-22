@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/auth/auth_bloc.dart';
 import '../../core/auth/auth_state.dart';
+import '../../core/haptics.dart';
 import '../../core/http/error_envelope.dart';
 import '../../core/utils/duration_formatters.dart';
 import '../../data/models/course.dart';
@@ -61,6 +62,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
   }
 
   Future<void> _enroll() async {
+    Haptics.medium();
     setState(() => _enrolling = true);
     try {
       await widget.courseRepo.enroll(widget.courseId);
@@ -149,7 +151,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
               key: const Key('detail.edit'),
               onPressed: () => GoRouter.of(ctx)
                   .push('/designer/courses/${course.id}'),
-              icon: const Icon(Icons.edit),
+              icon: const Icon(Icons.edit_rounded),
               label: const Text('Edit course'),
             ),
           );

@@ -77,7 +77,7 @@ class FriendlyErrorScreen extends StatelessWidget {
                       FilledButton.icon(
                         key: const Key('friendlyError.retry'),
                         onPressed: onRetry,
-                        icon: const Icon(Icons.refresh),
+                        icon: const Icon(Icons.refresh_rounded),
                         label: const Text('Retry'),
                       ),
                     OutlinedButton.icon(

@@ -81,7 +81,7 @@ mixin CueSubmissionMixin<T extends StatefulWidget> on State<T> {
         Row(
           children: [
             Icon(
-              result.correct ? Icons.check_circle : Icons.cancel,
+              result.correct ? Icons.check_circle_rounded : Icons.cancel_rounded,
               color: result.correct ? Colors.green : Colors.red,
             ),
             const SizedBox(width: 8),

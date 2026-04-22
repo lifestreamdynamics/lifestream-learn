@@ -763,7 +763,7 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
               duration: const Duration(milliseconds: 200),
               child: Center(
                 child: Icon(
-                  c.value.isPlaying ? Icons.pause_circle : Icons.play_circle,
+                  c.value.isPlaying ? Icons.pause_circle_rounded : Icons.play_circle_rounded,
                   size: 96,
                   color: Colors.white.withValues(alpha: 0.85),
                 ),
@@ -814,7 +814,7 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
                   key: const Key('player.cc'),
                   icon: Icon(
                     _currentCaptionLanguage != null
-                        ? Icons.closed_caption
+                        ? Icons.closed_caption_rounded
                         : Icons.closed_caption_outlined,
                     color: Colors.white,
                   ),
@@ -837,6 +837,31 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
                 onChanged: _onScrubberChanged,
               ),
             ),
+          // Gradient playback progress strip at the very bottom of the
+          // player surface. Non-interactive; indicates position only.
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: ShaderMask(
+              blendMode: BlendMode.srcIn,
+              shaderCallback: (rect) => const LinearGradient(
+                colors: [Color(0xFF22D3EE), Color(0xFF38BDF8)],
+              ).createShader(rect),
+              child: LinearProgressIndicator(
+                key: const Key('player.progressBar'),
+                value: duration > 0
+                    ? (c.value.position.inMilliseconds / duration).clamp(
+                        0.0,
+                        1.0,
+                      )
+                    : 0.0,
+                minHeight: 3,
+                backgroundColor: Colors.white24,
+                color: Colors.white, // replaced by ShaderMask gradient
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -855,7 +880,7 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.hourglass_empty,
+                  const Icon(Icons.hourglass_empty_rounded,
                       color: Colors.white, size: 48),
                   const SizedBox(height: 12),
                   const Text(
@@ -884,7 +909,7 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.lock, color: Colors.white, size: 48),
+                  const Icon(Icons.lock_rounded, color: Colors.white, size: 48),
                   const SizedBox(height: 12),
                   Text(
                     _errorMessage ?? 'You do not have access to this video',
@@ -914,7 +939,7 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.videocam_off,
+                  const Icon(Icons.videocam_off_rounded,
                       color: Colors.white, size: 48),
                   const SizedBox(height: 12),
                   const Text(
@@ -944,7 +969,7 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.error_outline,
+                  const Icon(Icons.error_outline_rounded,
                       color: Colors.white, size: 48),
                   const SizedBox(height: 12),
                   Text(

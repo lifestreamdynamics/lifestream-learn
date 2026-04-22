@@ -1,25 +1,58 @@
 import 'package:flutter/material.dart';
 
-/// Material 3 light + dark themes.
-///
-/// The seed color is Indigo-600 (`#4F46E5`) — placeholder that matches the
-/// adaptive-icon background. Designer can override later by editing this
-/// file and the splash/launcher-icon YAML side-by-side (both read the
-/// same hex so the app's chrome stays in sync with its icon).
+import 'brand_colors.dart';
+import 'component_themes.dart';
+
+/// App theme entry point. Composed from:
+///   - [BrandColors] (hex constants, single source of truth)
+///   - Material 3 ColorScheme derivation with brand-specific overrides
+///   - [buildComponentThemes] (stadium buttons, rounded cards, etc.)
 class AppTheme {
-  const AppTheme._();
+  AppTheme._();
 
-  static const Color seed = Color(0xFF4F46E5);
+  static ThemeData get light => _build(Brightness.light);
+  static ThemeData get dark => _build(Brightness.dark);
 
-  static ThemeData get light => ThemeData(
-        colorSchemeSeed: seed,
-        brightness: Brightness.light,
-        useMaterial3: true,
-      );
+  static ThemeData _build(Brightness brightness) {
+    final base = ColorScheme.fromSeed(
+      seedColor: BrandColors.seed,
+      brightness: brightness,
+    );
 
-  static ThemeData get dark => ThemeData(
-        colorSchemeSeed: seed,
-        brightness: Brightness.dark,
-        useMaterial3: true,
-      );
+    final scheme = brightness == Brightness.dark
+        ? base.copyWith(
+            primary: BrandColors.cyan400,
+            secondary: BrandColors.sky400,
+            surface: BrandColors.darkSurface,
+          )
+        : base.copyWith(
+            primary: BrandColors.cyan700,
+            secondary: BrandColors.sky600,
+            surface: BrandColors.lightSurface,
+          );
+
+    final components = buildComponentThemes(scheme);
+
+    return ThemeData(
+      useMaterial3: true,
+      colorScheme: scheme,
+      scaffoldBackgroundColor: brightness == Brightness.dark
+          ? BrandColors.darkBg
+          : BrandColors.lightBg,
+      filledButtonTheme: components.filledButtonTheme,
+      elevatedButtonTheme: components.elevatedButtonTheme,
+      outlinedButtonTheme: components.outlinedButtonTheme,
+      textButtonTheme: components.textButtonTheme,
+      cardTheme: components.cardTheme,
+      appBarTheme: components.appBarTheme,
+      inputDecorationTheme: components.inputDecorationTheme,
+      navigationBarTheme: components.navigationBarTheme,
+      chipTheme: components.chipTheme,
+      dialogTheme: components.dialogTheme,
+      bottomSheetTheme: components.bottomSheetTheme,
+      snackBarTheme: components.snackBarTheme,
+      progressIndicatorTheme: components.progressIndicatorTheme,
+      segmentedButtonTheme: components.segmentedButtonTheme,
+    );
+  }
 }

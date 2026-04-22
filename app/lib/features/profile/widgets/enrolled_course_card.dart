@@ -166,7 +166,7 @@ class _EnrolledCourseCardState extends State<EnrolledCourseCard> {
                   ElevatedButton.icon(
                     key: Key('profile.course.${s.course.id}.resume'),
                     onPressed: () => _onResume(context),
-                    icon: const Icon(Icons.play_arrow),
+                    icon: const Icon(Icons.play_arrow_rounded),
                     label: Text(resumeLabel),
                   ),
                 ],
@@ -280,15 +280,15 @@ class _LessonTile extends StatelessWidget {
       dense: true,
       leading: Icon(
         lesson.completed
-            ? Icons.check_circle_outline
-            : Icons.play_circle_outline,
+            ? Icons.check_circle_outline_rounded
+            : Icons.play_circle_outline_rounded,
         color: lesson.completed
             ? theme.colorScheme.primary
             : theme.colorScheme.onSurfaceVariant,
       ),
       title: Text(lesson.title, overflow: TextOverflow.ellipsis),
       subtitle: Text(subtitle),
-      trailing: const Icon(Icons.chevron_right),
+      trailing: const Icon(Icons.chevron_right_rounded),
       onTap: () => context.push(
         '/courses/$courseId/lessons/${lesson.videoId}/review',
       ),

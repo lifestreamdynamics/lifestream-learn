@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/haptics.dart';
 import '../../core/widgets/cue_submission_mixin.dart';
 import '../../data/models/cue.dart';
 import '../../data/repositories/attempt_repository.dart';
@@ -50,6 +51,7 @@ class _McqCueWidgetState extends State<McqCueWidget>
   Future<void> _submit() async {
     final sel = _selected;
     if (sel == null) return;
+    Haptics.light();
     await runSubmission(
       () => widget.attemptRepo.submit(
         cueId: widget.cue.id,

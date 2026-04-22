@@ -447,7 +447,7 @@ class _BackupStep extends StatelessWidget {
                       ),
                     );
                   },
-                  icon: const Icon(Icons.copy),
+                  icon: const Icon(Icons.copy_rounded),
                   label: const Text('Copy all'),
                 ),
               ),
@@ -537,7 +537,7 @@ class _ErrorBody extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
-            Icons.error_outline,
+            Icons.error_outline_rounded,
             size: 48,
             color: Theme.of(context).colorScheme.error,
           ),

@@ -118,13 +118,13 @@ class CueOverlay extends StatelessWidget {
   static IconData _iconFor(CueType t) {
     switch (t) {
       case CueType.mcq:
-        return Icons.quiz;
+        return Icons.quiz_rounded;
       case CueType.blanks:
-        return Icons.edit_note;
+        return Icons.edit_note_rounded;
       case CueType.matching:
-        return Icons.compare_arrows;
+        return Icons.compare_arrows_rounded;
       case CueType.voice:
-        return Icons.mic;
+        return Icons.mic_rounded;
     }
   }
 

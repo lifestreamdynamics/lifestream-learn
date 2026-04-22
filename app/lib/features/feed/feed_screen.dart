@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/analytics/analytics_sinks.dart';
+import '../../core/art/brand_empty_state.dart';
 import '../../data/models/feed_entry.dart';
 import '../../data/repositories/enrollment_repository.dart';
 import '../../data/repositories/feed_repository.dart';
@@ -154,22 +155,17 @@ class _FeedScreenState extends State<FeedScreen> {
           }
           if (state is FeedLoaded) {
             if (state.items.isEmpty) {
-              return Center(
-                child: Column(
-                  key: const Key('feed.empty'),
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text(
-                      "You're not enrolled in any courses yet.",
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 12),
-                    ElevatedButton(
-                      key: const Key('feed.empty.browse'),
-                      onPressed: () => GoRouter.of(context).go('/courses'),
-                      child: const Text('Browse courses'),
-                    ),
-                  ],
+              return BrandEmptyState(
+                key: const Key('feed.empty'),
+                painter: EmptyFeedPainter(
+                  scheme: Theme.of(context).colorScheme,
+                ),
+                title: 'Nothing in your feed yet',
+                subtitle: "Enroll in a course to start watching.",
+                action: ElevatedButton(
+                  key: const Key('feed.empty.browse'),
+                  onPressed: () => GoRouter.of(context).go('/courses'),
+                  child: const Text('Browse courses'),
                 ),
               );
             }
@@ -210,7 +206,7 @@ class _FeedScreenState extends State<FeedScreen> {
                           child: Row(
                             children: [
                               const Icon(
-                                Icons.error_outline,
+                                Icons.error_outline_rounded,
                                 color: Colors.white,
                               ),
                               const SizedBox(width: 8),
@@ -223,7 +219,7 @@ class _FeedScreenState extends State<FeedScreen> {
                               ),
                               IconButton(
                                 icon: const Icon(
-                                  Icons.close,
+                                  Icons.close_rounded,
                                   color: Colors.white,
                                 ),
                                 onPressed: () => context.read<FeedBloc>().add(

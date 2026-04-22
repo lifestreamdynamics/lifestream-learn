@@ -40,7 +40,7 @@ class StreakCard extends StatelessWidget {
           child: Row(
             children: [
               Icon(
-                Icons.local_fire_department,
+                Icons.local_fire_department_rounded,
                 color: iconColor,
                 size: 32,
                 key: const Key('profile.streak.icon'),
