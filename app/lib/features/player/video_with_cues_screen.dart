@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../core/analytics/analytics_sinks.dart';
@@ -13,6 +14,7 @@ import '../../data/repositories/video_repository.dart';
 import '../../features/cues/cue_overlay_host.dart';
 import '../feed/video_controller_cache.dart';
 import 'cue_scheduler.dart';
+import 'fullscreen_player_page.dart';
 import 'learn_video_player.dart';
 
 /// Full-screen "watch with cues" experience. Fetches the video metadata
@@ -69,6 +71,12 @@ class _VideoWithCuesScreenState extends State<VideoWithCuesScreen>
   List<Cue>? _cues;
   String? _error;
   CueScheduler? _scheduler;
+
+  /// Cached once the underlying player hands us the ready controller.
+  /// Used by [_onFullscreenRequested] to pass the same controller to
+  /// [FullscreenPlayerPage] without creating a new one.
+  VideoPlayerController? _controller;
+
   late final VideoControllerCache _cache;
 
   @override
@@ -120,6 +128,7 @@ class _VideoWithCuesScreenState extends State<VideoWithCuesScreen>
   }
 
   void _onControllerReady(VideoPlayerController controller) {
+    _controller = controller;
     final cues = _cues;
     if (cues == null) return;
     if (_scheduler != null) return;
@@ -146,23 +155,62 @@ class _VideoWithCuesScreenState extends State<VideoWithCuesScreen>
     setState(() => _scheduler = scheduler);
   }
 
+  /// Pushes [FullscreenPlayerPage] using the already-initialised controller.
+  void _onFullscreenRequested() {
+    final controller = _controller;
+    if (controller == null) return;
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        fullscreenDialog: true,
+        builder: (_) => FullscreenPlayerPage(
+          controller: controller,
+          scheduler: _scheduler,
+          attemptRepo: widget.attemptRepo,
+          title: _video?.title ?? '',
+        ),
+      ),
+    );
+  }
+
+  /// Wraps [child] in a [PopScope] that navigates back via GoRouter's feed
+  /// route when there is no route to pop — prevents exiting the app when
+  /// arriving cold via a deep-link.
+  Widget _wrapWithBackGuard(Widget child) {
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, Object? result) {
+        if (didPop) return;
+        if (context.canPop()) {
+          context.pop();
+        } else {
+          context.go('/feed');
+        }
+      },
+      child: child,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final video = _video;
     final cues = _cues;
     if (_error != null) {
-      return Scaffold(
-        appBar: AppBar(),
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Text(_error!),
+      return _wrapWithBackGuard(
+        Scaffold(
+          appBar: AppBar(),
+          body: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text(_error!),
+            ),
           ),
         ),
       );
     }
     if (video == null || cues == null) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return _wrapWithBackGuard(
+        const Scaffold(body: Center(child: CircularProgressIndicator())),
+      );
     }
     final scheduler = _scheduler;
     final player = _CueAwareLearnPlayer(
@@ -171,19 +219,22 @@ class _VideoWithCuesScreenState extends State<VideoWithCuesScreen>
       enrollmentRepo: widget.enrollmentRepo,
       cache: _cache,
       onControllerReady: _onControllerReady,
+      onFullscreenRequested: _onFullscreenRequested,
       videoAnalyticsSink: widget.videoAnalyticsSink,
     );
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(video.title),
+    return _wrapWithBackGuard(
+      Scaffold(
+        appBar: AppBar(
+          title: Text(video.title),
+        ),
+        body: scheduler == null
+            ? player
+            : CueOverlayHost(
+                scheduler: scheduler,
+                attemptRepo: widget.attemptRepo,
+                child: player,
+              ),
       ),
-      body: scheduler == null
-          ? player
-          : CueOverlayHost(
-              scheduler: scheduler,
-              attemptRepo: widget.attemptRepo,
-              child: player,
-            ),
     );
   }
 }
@@ -201,6 +252,7 @@ class _CueAwareLearnPlayer extends StatefulWidget {
     required this.cache,
     required this.onControllerReady,
     required this.videoAnalyticsSink,
+    this.onFullscreenRequested,
   });
 
   final VideoSummary video;
@@ -209,6 +261,7 @@ class _CueAwareLearnPlayer extends StatefulWidget {
   final VideoControllerCache cache;
   final ValueChanged<VideoPlayerController> onControllerReady;
   final VideoAnalyticsSink videoAnalyticsSink;
+  final VoidCallback? onFullscreenRequested;
 
   @override
   State<_CueAwareLearnPlayer> createState() => _CueAwareLearnPlayerState();
@@ -259,6 +312,7 @@ class _CueAwareLearnPlayerState extends State<_CueAwareLearnPlayer> {
       enrollmentRepo: widget.enrollmentRepo,
       controllerCache: widget.cache,
       analyticsSink: widget.videoAnalyticsSink,
+      onFullscreenRequested: widget.onFullscreenRequested,
     );
   }
 }

@@ -162,7 +162,9 @@ describe('buildFfmpegArgs', () => {
   });
 
   describe('rotation', () => {
-    it('prepends transpose=1 into each scale branch for 90° clockwise', () => {
+    it('prepends transpose=1 and SWAPS scale dimensions for 90° clockwise', () => {
+      // After transpose=1, a portrait frame is landscape. The scale target
+      // must be swapped so the 360p rung produces 360×640, not 640×360.
       const args = buildFfmpegArgs(
         DEFAULT_LADDER.slice(0, 2),
         INPUT,
@@ -170,11 +172,13 @@ describe('buildFfmpegArgs', () => {
         { rotationDegrees: 90 },
       );
       const fc = pairValueAfter(args, '-filter_complex') ?? '';
-      expect(fc).toContain('[v0]transpose=1,scale=w=640:h=360[v0out]');
-      expect(fc).toContain('[v1]transpose=1,scale=w=960:h=540[v1out]');
+      // rung 0: landscape width=640, height=360 → swapped → scale=w=360:h=640
+      expect(fc).toContain('[v0]transpose=1,scale=w=360:h=640[v0out]');
+      // rung 1: landscape width=960, height=540 → swapped → scale=w=540:h=960
+      expect(fc).toContain('[v1]transpose=1,scale=w=540:h=960[v1out]');
     });
 
-    it('uses transpose=2 for 270° (-90°) rotation', () => {
+    it('uses transpose=2 and SWAPS scale dimensions for 270° rotation', () => {
       const args = buildFfmpegArgs(
         [DEFAULT_LADDER[0]],
         INPUT,
@@ -182,10 +186,12 @@ describe('buildFfmpegArgs', () => {
         { rotationDegrees: 270 },
       );
       const fc = pairValueAfter(args, '-filter_complex') ?? '';
-      expect(fc).toContain('[v0]transpose=2,scale=w=640:h=360[v0out]');
+      expect(fc).toContain('[v0]transpose=2,scale=w=360:h=640[v0out]');
     });
 
-    it('uses hflip,vflip for 180° rotation', () => {
+    it('uses hflip,vflip for 180° rotation WITHOUT swapping scale dimensions', () => {
+      // 180° is a pure flip — no transpose, so landscape scale dimensions
+      // remain unchanged (640×360 for the 360p rung).
       const args = buildFfmpegArgs(
         [DEFAULT_LADDER[0]],
         INPUT,
@@ -207,6 +213,16 @@ describe('buildFfmpegArgs', () => {
       expect(fc).toContain('[v0]scale=w=640:h=360[v0out]');
       expect(fc).not.toContain('transpose');
       expect(fc).not.toContain('hflip');
+    });
+
+    it('portrait 90° full ladder produces correct swapped scale targets for all rungs', () => {
+      const args = buildFfmpegArgs(DEFAULT_LADDER, INPUT, OUT, { rotationDegrees: 90 });
+      const fc = pairValueAfter(args, '-filter_complex') ?? '';
+      // LadderRung landscape dims → portrait swap: w=height, h=width
+      expect(fc).toContain('[v0]transpose=1,scale=w=360:h=640[v0out]');   // 360p: 640×360 → 360×640
+      expect(fc).toContain('[v1]transpose=1,scale=w=540:h=960[v1out]');   // 540p: 960×540 → 540×960
+      expect(fc).toContain('[v2]transpose=1,scale=w=720:h=1280[v2out]'); // 720p: 1280×720 → 720×1280
+      expect(fc).toContain('[v3]transpose=1,scale=w=1080:h=1920[v3out]'); // 1080p: 1920×1080 → 1080×1920
     });
   });
 

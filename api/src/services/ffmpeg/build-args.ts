@@ -76,6 +76,12 @@ export function buildFfmpegArgs(
   const rotation = opts.rotationDegrees ?? 0;
   const hasAudio = opts.hasAudio ?? true;
   const rotate = rotationFilter(rotation);
+  // For 90°/270° the transpose filter swaps width and height before the
+  // scale step. The LadderRung always stores landscape dimensions, so we
+  // must flip the scale target to match the post-transpose frame orientation
+  // and produce the correct portrait output dimensions (e.g. 360×640 instead
+  // of 640×360 for the 360p rung of a portrait source).
+  const isTransposed = rotation === 90 || rotation === 270;
 
   // filter_complex: split the source video N ways and (optionally rotate
   // then) scale each branch. The rotation filter is inserted between the
@@ -86,9 +92,11 @@ export function buildFfmpegArgs(
   const splitClause = `[0:v]split=${ladder.length}${splitLabels}`;
   const scaleClauses = ladder
     .map((rung, i) => {
+      const sw = isTransposed ? rung.height : rung.width;
+      const sh = isTransposed ? rung.width : rung.height;
       const chain = rotate
-        ? `${rotate},scale=w=${rung.width}:h=${rung.height}`
-        : `scale=w=${rung.width}:h=${rung.height}`;
+        ? `${rotate},scale=w=${sw}:h=${sh}`
+        : `scale=w=${sw}:h=${sh}`;
       return `[v${i}]${chain}[v${i}out]`;
     })
     .join('; ');
