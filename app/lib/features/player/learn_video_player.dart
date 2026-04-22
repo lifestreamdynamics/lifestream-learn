@@ -13,7 +13,6 @@ import '../../core/analytics/analytics_sinks.dart';
 import '../../core/http/error_envelope.dart';
 import '../../core/settings/settings_cubit.dart';
 import '../../core/settings/settings_state.dart';
-import '../../core/theme/brand_gradients.dart';
 import '../../core/utils/bcp47_labels.dart';
 import '../../data/models/video.dart';
 import '../../data/repositories/enrollment_repository.dart';
@@ -135,14 +134,35 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
   bool _dataSaverCellularSuppressed = false;
   bool _dataSaverSnackbarShown = false;
 
-  /// Overlay play/pause fade.
+  /// Overlay play/pause fade + seek bar visibility.
   double _overlayOpacity = 0;
   Timer? _overlayHideTimer;
+  static const Duration _overlayHideDuration = Duration(seconds: 3);
 
-  /// Long-press scrubber overlay.
-  bool _scrubberVisible = false;
-  Timer? _scrubberTick;
-  double _scrubberPos = 0;
+  /// Seek bar position (ms). Updated on controller tick when overlay visible.
+  double _seekBarPos = 0;
+  // Last position (ms) at which we triggered a seek-bar setState. We only
+  // rebuild when the position advances by >=100ms so the listener doesn't
+  // schedule a rebuild on every decoded video frame.
+  double _seekBarLastRebuildPos = -1;
+
+  /// Double-tap accumulation — left/right zones track consecutive taps
+  /// within [_tapAccumulationWindow]; each tap doubles the seek amount.
+  int _leftTapCount = 0;
+  int _rightTapCount = 0;
+  Timer? _leftTapResetTimer;
+  Timer? _rightTapResetTimer;
+  static const Duration _tapAccumulationWindow = Duration(milliseconds: 1500);
+  static const int _tapBaseSeconds = 10;
+  static const int _tapMaxCount = 5; // caps at 160s
+
+  /// On-screen seek flash state (left / right zones).
+  bool _leftFlashVisible = false;
+  bool _rightFlashVisible = false;
+  int _leftFlashSeconds = 10;
+  int _rightFlashSeconds = 10;
+  Timer? _leftFlashTimer;
+  Timer? _rightFlashTimer;
 
   /// Debounced progress ping.
   DateTime _lastProgressSent = DateTime.fromMillisecondsSinceEpoch(0);
@@ -384,8 +404,12 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
     final c = _controller;
     if (c == null) return;
     final value = c.value;
-    if (_scrubberVisible) {
-      _scrubberPos = value.position.inMilliseconds.toDouble();
+    if (_overlayOpacity > 0) {
+      final posMs = value.position.inMilliseconds.toDouble();
+      if ((posMs - _seekBarLastRebuildPos).abs() >= 100) {
+        _seekBarLastRebuildPos = posMs;
+        setState(() => _seekBarPos = posMs);
+      }
     }
     if (value.isPlaying) {
       // One-shot view log on the first tick that reports playing.
@@ -431,7 +455,10 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
   void dispose() {
     _tearDownListener();
     _overlayHideTimer?.cancel();
-    _scrubberTick?.cancel();
+    _leftTapResetTimer?.cancel();
+    _rightTapResetTimer?.cancel();
+    _leftFlashTimer?.cancel();
+    _rightFlashTimer?.cancel();
     _focusNode.dispose();
     // Controllers live in the shared cache — do NOT dispose here.
     super.dispose();
@@ -474,9 +501,16 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
       _dataSaverCellularSuppressed = false;
       unawaited(c.play());
     }
-    setState(() => _overlayOpacity = 1);
+    setState(() {
+      _overlayOpacity = 1;
+      _seekBarPos = c.value.position.inMilliseconds.toDouble();
+    });
+    _scheduleOverlayHide();
+  }
+
+  void _scheduleOverlayHide() {
     _overlayHideTimer?.cancel();
-    _overlayHideTimer = Timer(const Duration(milliseconds: 400), () {
+    _overlayHideTimer = Timer(_overlayHideDuration, () {
       if (!mounted) return;
       setState(() => _overlayOpacity = 0);
     });
@@ -501,33 +535,64 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
     unawaited(c.setVolume(next));
   }
 
-  void _showScrubber() {
+  void _onSeekBarChanged(double valueMs) {
     final c = _controller;
     if (c == null) return;
-    setState(() {
-      _scrubberVisible = true;
-      _scrubberPos = c.value.position.inMilliseconds.toDouble();
-    });
-    _scrubberTick?.cancel();
-    _scrubberTick = Timer.periodic(const Duration(milliseconds: 100), (_) {
-      if (!mounted || !_scrubberVisible) return;
-      final ctrl = _controller;
-      if (ctrl == null) return;
-      setState(() {
-        _scrubberPos = ctrl.value.position.inMilliseconds.toDouble();
+    final clamped = valueMs.clamp(0.0, c.value.duration.inMilliseconds.toDouble());
+    setState(() => _seekBarPos = clamped);
+    unawaited(c.seekTo(Duration(milliseconds: clamped.toInt())));
+  }
+
+  void _onSeekBarDragStart(double _) {
+    _overlayHideTimer?.cancel();
+  }
+
+  void _onSeekBarDragEnd(double _) {
+    _scheduleOverlayHide();
+  }
+
+  void _onDoubleTap({required bool isLeft}) {
+    if (isLeft) {
+      _leftTapResetTimer?.cancel();
+      _leftTapCount = (_leftTapCount + 1).clamp(1, _tapMaxCount);
+      final seconds = _tapBaseSeconds * (1 << (_leftTapCount - 1));
+      _seekBy(Duration(seconds: -seconds));
+      _showSeekFlash(isLeft: true, seconds: seconds);
+      _leftTapResetTimer = Timer(_tapAccumulationWindow, () {
+        _leftTapCount = 0;
       });
-    });
+    } else {
+      _rightTapResetTimer?.cancel();
+      _rightTapCount = (_rightTapCount + 1).clamp(1, _tapMaxCount);
+      final seconds = _tapBaseSeconds * (1 << (_rightTapCount - 1));
+      _seekBy(Duration(seconds: seconds));
+      _showSeekFlash(isLeft: false, seconds: seconds);
+      _rightTapResetTimer = Timer(_tapAccumulationWindow, () {
+        _rightTapCount = 0;
+      });
+    }
   }
 
-  void _hideScrubber() {
-    _scrubberTick?.cancel();
-    if (!mounted) return;
-    setState(() => _scrubberVisible = false);
-  }
-
-  void _onScrubberChanged(double valueMs) {
-    _scrubberPos = valueMs;
-    unawaited(_controller?.seekTo(Duration(milliseconds: valueMs.toInt())));
+  void _showSeekFlash({required bool isLeft, required int seconds}) {
+    if (isLeft) {
+      _leftFlashTimer?.cancel();
+      setState(() {
+        _leftFlashVisible = true;
+        _leftFlashSeconds = seconds;
+      });
+      _leftFlashTimer = Timer(const Duration(milliseconds: 800), () {
+        if (mounted) setState(() => _leftFlashVisible = false);
+      });
+    } else {
+      _rightFlashTimer?.cancel();
+      setState(() {
+        _rightFlashVisible = true;
+        _rightFlashSeconds = seconds;
+      });
+      _rightFlashTimer = Timer(const Duration(milliseconds: 800), () {
+        if (mounted) setState(() => _rightFlashVisible = false);
+      });
+    }
   }
 
   /// Fetches [track] via [CaptionLoader] and attaches it to [controller].
@@ -694,8 +759,6 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
     final hasCaptions = playback != null && playback.captions.isNotEmpty;
     return GestureDetector(
       onTap: _toggleOverlay,
-      onLongPressStart: (_) => _showScrubber(),
-      onLongPressEnd: (_) => _hideScrubber(),
       child: Stack(
         fit: StackFit.expand,
         children: [
@@ -731,32 +794,65 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
               ),
             ),
           ),
-          // Double-tap seek — full-height left / right zones on top of
-          // the player but below the overlay.
+          // Double-tap seek zones — full-height left / right halves.
+          // Each consecutive double-tap within the accumulation window
+          // doubles the seek amount (10s → 20s → 40s…, capped at 160s).
           Row(children: [
             Expanded(
               child: Semantics(
                 button: true,
-                label: 'Rewind 10 seconds',
-                onTap: () => _seekBy(const Duration(seconds: -10)),
+                label: 'Rewind',
                 child: GestureDetector(
                   behavior: HitTestBehavior.translucent,
-                  onDoubleTap: () => _seekBy(const Duration(seconds: -10)),
+                  onDoubleTap: () => _onDoubleTap(isLeft: true),
                 ),
               ),
             ),
             Expanded(
               child: Semantics(
                 button: true,
-                label: 'Skip forward 10 seconds',
-                onTap: () => _seekBy(const Duration(seconds: 10)),
+                label: 'Skip forward',
                 child: GestureDetector(
                   behavior: HitTestBehavior.translucent,
-                  onDoubleTap: () => _seekBy(const Duration(seconds: 10)),
+                  onDoubleTap: () => _onDoubleTap(isLeft: false),
                 ),
               ),
             ),
           ]),
+          // Seek flash overlays — appear in the tapped zone after a
+          // double-tap and fade out after 800ms.
+          IgnorePointer(
+            child: AnimatedOpacity(
+              opacity: _leftFlashVisible ? 1.0 : 0.0,
+              duration: const Duration(milliseconds: 200),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 20),
+                  child: _SeekFlashLabel(
+                    seconds: _leftFlashSeconds,
+                    isRewind: true,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          IgnorePointer(
+            child: AnimatedOpacity(
+              opacity: _rightFlashVisible ? 1.0 : 0.0,
+              duration: const Duration(milliseconds: 200),
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 20),
+                  child: _SeekFlashLabel(
+                    seconds: _rightFlashSeconds,
+                    isRewind: false,
+                  ),
+                ),
+              ),
+            ),
+          ),
           // Play/pause overlay fade.
           IgnorePointer(
             child: AnimatedOpacity(
@@ -824,41 +920,27 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
                 ),
               ),
             ),
-          // Long-press scrubber.
-          if (_scrubberVisible && duration > 0)
-            Positioned(
-              left: 16,
-              right: 16,
-              bottom: 72,
-              child: Slider(
-                key: const Key('player.scrubber'),
-                min: 0,
-                max: duration,
-                value: _scrubberPos.clamp(0, duration).toDouble(),
-                onChanged: _onScrubberChanged,
-              ),
-            ),
-          // Gradient playback progress strip at the very bottom of the
-          // player surface. Non-interactive; indicates position only.
+          // Tap-to-reveal seek bar — appears and disappears with the
+          // play/pause overlay. Includes a draggable position slider,
+          // current/total timestamps, and a play/pause button.
           Positioned(
             left: 0,
             right: 0,
             bottom: 0,
-            child: ShaderMask(
-              blendMode: BlendMode.srcIn,
-              shaderCallback: (rect) =>
-                  BrandGradients.primary.createShader(rect),
-              child: LinearProgressIndicator(
-                key: const Key('player.progressBar'),
-                value: duration > 0
-                    ? (c.value.position.inMilliseconds / duration).clamp(
-                        0.0,
-                        1.0,
-                      )
-                    : 0.0,
-                minHeight: 3,
-                backgroundColor: Colors.white24,
-                color: Colors.white, // replaced by ShaderMask gradient
+            child: AnimatedOpacity(
+              opacity: _overlayOpacity,
+              duration: const Duration(milliseconds: 200),
+              child: IgnorePointer(
+                ignoring: _overlayOpacity == 0,
+                child: _SeekBar(
+                  position: _seekBarPos,
+                  duration: duration,
+                  isPlaying: c.value.isPlaying,
+                  onChanged: _onSeekBarChanged,
+                  onChangeStart: _onSeekBarDragStart,
+                  onChangeEnd: _onSeekBarDragEnd,
+                  onTogglePlay: _toggleOverlay,
+                ),
               ),
             ),
           ),
@@ -1013,5 +1095,129 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
     } else {
       GoRouter.of(context).go('/courses');
     }
+  }
+}
+
+/// Bottom seek bar shown when the player overlay is visible. Contains a
+/// play/pause button, a draggable [Slider] for seeking, and timestamps.
+class _SeekBar extends StatelessWidget {
+  const _SeekBar({
+    required this.position,
+    required this.duration,
+    required this.isPlaying,
+    required this.onChanged,
+    required this.onChangeStart,
+    required this.onChangeEnd,
+    required this.onTogglePlay,
+  });
+
+  final double position;
+  final double duration;
+  final bool isPlaying;
+  final ValueChanged<double> onChanged;
+  final ValueChanged<double> onChangeStart;
+  final ValueChanged<double> onChangeEnd;
+  final VoidCallback onTogglePlay;
+
+  String _fmt(double ms) {
+    final d = Duration(milliseconds: ms.toInt());
+    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return d.inHours > 0 ? '${d.inHours}:$m:$s' : '$m:$s';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final safePos = duration > 0 ? position.clamp(0.0, duration) : 0.0;
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.bottomCenter,
+          end: Alignment.topCenter,
+          colors: [Color(0xCC000000), Colors.transparent],
+        ),
+      ),
+      padding: const EdgeInsets.fromLTRB(4, 0, 12, 4),
+      child: Row(
+        children: [
+          IconButton(
+            key: const Key('player.seekBar.playPause'),
+            icon: Icon(
+              isPlaying
+                  ? Icons.pause_rounded
+                  : Icons.play_arrow_rounded,
+              color: Colors.white,
+              size: 28,
+            ),
+            onPressed: onTogglePlay,
+            tooltip: isPlaying ? 'Pause' : 'Play',
+          ),
+          Text(
+            _fmt(safePos),
+            key: const Key('player.seekBar.position'),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+              fontFeatures: [FontFeature.tabularFigures()],
+            ),
+          ),
+          Expanded(
+            child: Semantics(
+              label: 'Seek',
+              slider: true,
+              child: Slider(
+                key: const Key('player.seekBar.slider'),
+                min: 0,
+                max: duration > 0 ? duration : 1,
+                value: safePos,
+                onChangeStart: onChangeStart,
+                onChanged: duration > 0 ? onChanged : null,
+                onChangeEnd: onChangeEnd,
+              ),
+            ),
+          ),
+          Text(
+            _fmt(duration),
+            key: const Key('player.seekBar.duration'),
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 12,
+              fontFeatures: [FontFeature.tabularFigures()],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// On-screen label that flashes briefly after a double-tap seek.
+class _SeekFlashLabel extends StatelessWidget {
+  const _SeekFlashLabel({
+    required this.seconds,
+    required this.isRewind,
+  });
+
+  final int seconds;
+  final bool isRewind;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = isRewind ? '« ${seconds}s' : '${seconds}s »';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xAA000000),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 16,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
   }
 }
