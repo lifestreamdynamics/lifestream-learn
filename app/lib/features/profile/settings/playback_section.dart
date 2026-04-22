@@ -18,66 +18,86 @@ class PlaybackSection extends StatelessWidget {
   ) {
     showModalBottomSheet<void>(
       context: context,
+      // Language list can be longer than the default ~55% sheet; let it grow
+      // to the full usable height and scroll the overflow.
+      isScrollControlled: true,
       builder: (ctx) {
         return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Sheet handle.
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Container(
-                  width: 32,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: Theme.of(ctx).dividerColor,
-                    borderRadius: BorderRadius.circular(2),
+          child: DraggableScrollableSheet(
+            expand: false,
+            initialChildSize: 0.6,
+            minChildSize: 0.3,
+            maxChildSize: 0.95,
+            builder: (_, scrollController) {
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Sheet handle.
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Container(
+                      width: 32,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Theme.of(ctx).dividerColor,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
                   ),
-                ),
-              ),
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Caption language',
-                    style:
-                        TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Caption language',
+                        style: TextStyle(
+                            fontWeight: FontWeight.w600, fontSize: 14),
+                      ),
+                    ),
                   ),
-                ),
-              ),
-              const Divider(height: 0),
-              // "Use video default" row.
-              ListTile(
-                key: const Key('settings.captionLanguage.default'),
-                title: const Text('Use video default'),
-                trailing: state.captionLanguage == null
-                    ? const Icon(
-                        Icons.check_rounded,
-                        key: Key('settings.captionLanguage.default.check'),
-                      )
-                    : null,
-                onTap: () {
-                  cubit.setCaptionLanguage(null);
-                  Navigator.of(ctx).pop();
-                },
-              ),
-              // Supported languages.
-              for (final code in kSupportedCaptionLanguages)
-                ListTile(
-                  key: Key('settings.captionLanguage.$code'),
-                  title: Text(captionLanguageLabel(code)),
-                  trailing: state.captionLanguage == code
-                      ? Icon(Icons.check,
-                          key: Key('settings.captionLanguage.$code.check'))
-                      : null,
-                  onTap: () {
-                    cubit.setCaptionLanguage(code);
-                    Navigator.of(ctx).pop();
-                  },
-                ),
-              const SizedBox(height: 8),
-            ],
+                  const Divider(height: 0),
+                  Expanded(
+                    child: ListView(
+                      controller: scrollController,
+                      children: [
+                        // "Use video default" row.
+                        ListTile(
+                          key: const Key('settings.captionLanguage.default'),
+                          title: const Text('Use video default'),
+                          trailing: state.captionLanguage == null
+                              ? const Icon(
+                                  Icons.check_rounded,
+                                  key: Key(
+                                      'settings.captionLanguage.default.check'),
+                                )
+                              : null,
+                          onTap: () {
+                            cubit.setCaptionLanguage(null);
+                            Navigator.of(ctx).pop();
+                          },
+                        ),
+                        // Supported languages.
+                        for (final code in kSupportedCaptionLanguages)
+                          ListTile(
+                            key: Key('settings.captionLanguage.$code'),
+                            title: Text(captionLanguageLabel(code)),
+                            trailing: state.captionLanguage == code
+                                ? Icon(Icons.check_rounded,
+                                    key: Key(
+                                        'settings.captionLanguage.$code.check'))
+                                : null,
+                            onTap: () {
+                              cubit.setCaptionLanguage(code);
+                              Navigator.of(ctx).pop();
+                            },
+                          ),
+                        const SizedBox(height: 8),
+                      ],
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
         );
       },
