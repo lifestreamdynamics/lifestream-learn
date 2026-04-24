@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:skeletonizer/skeletonizer.dart';
 
 import '../../core/art/brand_empty_state.dart';
 import '../../core/http/error_envelope.dart';
@@ -72,7 +73,7 @@ class _EnrolledCoursesBodyState extends State<EnrolledCoursesBody> {
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) return const Center(child: CircularProgressIndicator());
+    if (_loading) return const _EnrolledCoursesLoadingPlaceholder();
     if (_error != null) {
       return Center(
         child: Column(
@@ -136,9 +137,9 @@ class _EnrolledCoursesBodyState extends State<EnrolledCoursesBody> {
                 if (lastVideoId != null) {
                   final t = row.lastPosMs ?? 0;
                   GoRouter.of(context)
-                      .go('/videos/$lastVideoId/watch?t=$t');
+                      .push('/videos/$lastVideoId/watch?t=$t');
                 } else {
-                  GoRouter.of(context).go('/courses/${row.courseId}');
+                  GoRouter.of(context).push('/courses/${row.courseId}');
                 }
               },
             ),
@@ -175,6 +176,47 @@ class _EmptyState extends StatelessWidget {
               child: const Text('Browse courses'),
             )
           : null,
+    );
+  }
+}
+
+/// Skeleton placeholder for the enrolled-courses list while the first fetch
+/// is in progress. Renders three ghost course-card rows shimmed by
+/// Skeletonizer (configured theme-wide in AppTheme).
+class _EnrolledCoursesLoadingPlaceholder extends StatelessWidget {
+  const _EnrolledCoursesLoadingPlaceholder();
+
+  @override
+  Widget build(BuildContext context) {
+    return Skeletonizer(
+      child: ListView.separated(
+        padding: const EdgeInsets.all(12),
+        itemCount: 3,
+        separatorBuilder: (_, __) => const SizedBox(height: 8),
+        itemBuilder: (_, __) => Card(
+          child: ListTile(
+            leading: Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            title: Container(
+              height: 14,
+              width: double.infinity,
+              color: Colors.white,
+            ),
+            subtitle: Container(
+              height: 12,
+              width: 120,
+              color: Colors.white,
+            ),
+            trailing: const Icon(Icons.play_arrow_rounded),
+          ),
+        ),
+      ),
     );
   }
 }

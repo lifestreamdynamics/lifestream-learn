@@ -145,19 +145,29 @@ class _StatusIcon extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     if (!outcome.attempted) {
-      return Icon(
-        Icons.radio_button_unchecked_rounded,
-        color: theme.colorScheme.onSurfaceVariant,
+      return Semantics(
+        liveRegion: true,
+        label: 'Not attempted',
+        child: Icon(
+          Icons.radio_button_unchecked_rounded,
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
       );
     }
     final isCorrect = outcome.correct == true;
     // Icon choice always pairs with per-tile text ("Your answer:
     // ..."/"Correct: ...") so colour is never the sole signal.
-    return Icon(
-      isCorrect ? Icons.check_circle_rounded : Icons.cancel_rounded,
-      color: isCorrect
-          ? theme.colorScheme.primary
-          : theme.colorScheme.error,
+    // liveRegion: true ensures TalkBack announces the result when this
+    // widget first appears after the learner submits a cue response.
+    return Semantics(
+      liveRegion: true,
+      label: isCorrect ? 'Correct' : 'Incorrect',
+      child: Icon(
+        isCorrect ? Icons.check_circle_rounded : Icons.cancel_rounded,
+        color: isCorrect
+            ? theme.colorScheme.primary
+            : theme.colorScheme.error,
+      ),
     );
   }
 }

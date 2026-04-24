@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:skeletonizer/skeletonizer.dart';
 
 import '../../core/analytics/analytics_sinks.dart';
 import '../../core/art/brand_empty_state.dart';
@@ -131,10 +132,7 @@ class _FeedScreenState extends State<FeedScreen> {
       body: BlocBuilder<FeedBloc, FeedState>(
         builder: (context, state) {
           if (state is FeedInitial || state is FeedLoading) {
-            return const ColoredBox(
-              color: Colors.black,
-              child: Center(child: CircularProgressIndicator()),
-            );
+            return const _FeedLoadingPlaceholder();
           }
           if (state is FeedError) {
             return Center(
@@ -250,6 +248,56 @@ class _FeedScreenState extends State<FeedScreen> {
           }
           return const SizedBox.shrink();
         },
+      ),
+    );
+  }
+}
+
+/// Full-screen skeleton shown while the feed is loading for the first time.
+/// Mirrors the rough shape of a feed video tile: thumbnail area + a title
+/// row at the bottom, on a black background to match the settled feed look.
+class _FeedLoadingPlaceholder extends StatelessWidget {
+  const _FeedLoadingPlaceholder();
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: Colors.black,
+      child: Skeletonizer(
+        // Skeletonizer reads SkeletonizerConfigData from the theme
+        // (configured in AppTheme) and also respects
+        // MediaQuery.disableAnimations for reduced-motion.
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Thumbnail placeholder — full-width, 16:9-ish height.
+            Expanded(
+              child: Container(
+                color: Colors.white.withValues(alpha: 0.12),
+              ),
+            ),
+            // Title / metadata row at the bottom.
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    height: 16,
+                    width: double.infinity,
+                    color: Colors.white,
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    height: 12,
+                    width: 160,
+                    color: Colors.white,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -221,6 +221,7 @@ class _VideoWithCuesScreenState extends State<VideoWithCuesScreen>
       onControllerReady: _onControllerReady,
       onFullscreenRequested: _onFullscreenRequested,
       videoAnalyticsSink: widget.videoAnalyticsSink,
+      cues: cues,
     );
     return _wrapWithBackGuard(
       Scaffold(
@@ -252,6 +253,7 @@ class _CueAwareLearnPlayer extends StatefulWidget {
     required this.cache,
     required this.onControllerReady,
     required this.videoAnalyticsSink,
+    required this.cues,
     this.onFullscreenRequested,
   });
 
@@ -261,6 +263,7 @@ class _CueAwareLearnPlayer extends StatefulWidget {
   final VideoControllerCache cache;
   final ValueChanged<VideoPlayerController> onControllerReady;
   final VideoAnalyticsSink videoAnalyticsSink;
+  final List<Cue> cues;
   final VoidCallback? onFullscreenRequested;
 
   @override
@@ -313,6 +316,7 @@ class _CueAwareLearnPlayerState extends State<_CueAwareLearnPlayer> {
       controllerCache: widget.cache,
       analyticsSink: widget.videoAnalyticsSink,
       onFullscreenRequested: widget.onFullscreenRequested,
+      cues: widget.cues,
     );
   }
 }

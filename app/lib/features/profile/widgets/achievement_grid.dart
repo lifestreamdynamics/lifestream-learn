@@ -181,36 +181,40 @@ class _AchievementTile extends StatelessWidget {
         ? theme.colorScheme.primaryContainer.withValues(alpha: 0.35)
         : theme.colorScheme.surfaceContainerHighest;
 
-    return InkWell(
-      key: Key('profile.achievement.${achievement.id}'),
-      onTap: () => _openDetailSheet(context),
-      borderRadius: BorderRadius.circular(12),
-      child: Ink(
-        decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        padding: const EdgeInsets.all(8),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              iconForKey(achievement.iconKey),
-              color: colour,
-              size: 32,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              achievement.title,
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodySmall?.copyWith(
+    return Semantics(
+      button: true,
+      label: '${achievement.title}, ${unlocked ? "unlocked" : "locked"}',
+      child: InkWell(
+        key: Key('profile.achievement.${achievement.id}'),
+        onTap: () => _openDetailSheet(context),
+        borderRadius: BorderRadius.circular(12),
+        child: Ink(
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          padding: const EdgeInsets.all(8),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                iconForKey(achievement.iconKey),
                 color: colour,
-                fontWeight: unlocked ? FontWeight.w600 : FontWeight.w400,
+                size: 32,
               ),
-            ),
-          ],
+              const SizedBox(height: 4),
+              Text(
+                achievement.title,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colour,
+                  fontWeight: unlocked ? FontWeight.w600 : FontWeight.w400,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
