@@ -14,6 +14,7 @@ import '../../core/http/error_envelope.dart';
 import '../../core/settings/settings_cubit.dart';
 import '../../core/settings/settings_state.dart';
 import '../../core/utils/bcp47_labels.dart';
+import '../../data/models/cue.dart';
 import '../../data/models/video.dart';
 import '../../data/repositories/enrollment_repository.dart';
 import '../../data/repositories/video_repository.dart';
@@ -48,6 +49,7 @@ class LearnVideoPlayer extends StatefulWidget {
     this.positionNotifier,
     this.seekNotifier,
     this.onFullscreenRequested,
+    this.cues,
     super.key,
   });
 
@@ -96,11 +98,30 @@ class LearnVideoPlayer extends StatefulWidget {
   /// this callback so the parent can push `FullscreenPlayerPage`.
   final VoidCallback? onFullscreenRequested;
 
+  /// Optional list of cues to render as tick marks on the seek bar.
+  /// Defaults to null (no ticks) so feed and designer preview callers
+  /// that don't pass this remain unchanged.
+  final List<Cue>? cues;
+
   @override
   State<LearnVideoPlayer> createState() => _LearnVideoPlayerState();
 }
 
 enum _PlayerErrorKind { processing, unavailable, forbidden, unknown }
+
+/// Two-state zoom mode for the video surface.
+/// [fit]  → letterboxed / pillar-boxed; source AR preserved (default).
+/// [fill] → crops to fill the available space (BoxFit.cover).
+enum ZoomMode { fit, fill }
+
+/// Pure threshold function — extracted so it can be unit-tested directly.
+/// Returns [ZoomMode.fill] when [scale] > 1.15, [ZoomMode.fit] when
+/// [scale] < 0.85, or [current] unchanged otherwise (dead-band in the middle).
+ZoomMode decideZoomFromScale(double scale, ZoomMode current) {
+  if (scale > 1.15) return ZoomMode.fill;
+  if (scale < 0.85) return ZoomMode.fit;
+  return current;
+}
 
 /// Intents for keyboard / DPAD shortcuts. Declared as private top-level
 /// classes so `Shortcuts`/`Actions` can dispatch them without needing
@@ -183,6 +204,23 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
   int _rightFlashSeconds = 10;
   Timer? _leftFlashTimer;
   Timer? _rightFlashTimer;
+
+  // ---------------------------------------------------------------------------
+  // Pinch-to-zoom state (fullscreen / watch mode only; gated by
+  // widget.onFullscreenRequested != null so the feed PageView is unaffected).
+  // ---------------------------------------------------------------------------
+
+  /// Current zoom mode. Ephemeral — resets to fit on dispose.
+  ZoomMode _zoomMode = ZoomMode.fit;
+
+  /// Scale accumulated during the current pinch gesture. Reset to 1.0 on
+  /// scaleStart so each gesture measures relative movement.
+  double _pendingScale = 1.0;
+
+  /// Zoom-mode flash label (center of screen, 800 ms).
+  bool _zoomFlashVisible = false;
+  String _zoomFlashLabel = '';
+  Timer? _zoomFlashTimer;
 
   /// Debounced progress ping.
   DateTime _lastProgressSent = DateTime.fromMillisecondsSinceEpoch(0);
@@ -495,6 +533,7 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
     _rightTapResetTimer?.cancel();
     _leftFlashTimer?.cancel();
     _rightFlashTimer?.cancel();
+    _zoomFlashTimer?.cancel();
     _focusNode.dispose();
     // Controllers live in the shared cache — do NOT dispose here.
     super.dispose();
@@ -719,6 +758,63 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
     await _load();
   }
 
+  // ---------------------------------------------------------------------------
+  // Pinch-to-zoom helpers
+  // ---------------------------------------------------------------------------
+
+  /// Builds the video rendering surface, switching between letterboxed fit
+  /// and crop-to-fill based on [_zoomMode].
+  Widget _buildVideoSurface(VideoPlayerController c) {
+    if (_zoomMode == ZoomMode.fill) {
+      // BoxFit.cover crops the video to fill the bounding box.
+      return ClipRect(
+        child: SizedBox.expand(
+          child: FittedBox(
+            fit: BoxFit.cover,
+            child: SizedBox(
+              width: c.value.size.width == 0 ? 1 : c.value.size.width,
+              height: c.value.size.height == 0 ? 1 : c.value.size.height,
+              child: VideoPlayer(c),
+            ),
+          ),
+        ),
+      );
+    }
+    // Default: letterboxed / pillar-boxed fit.
+    return AspectRatio(
+      aspectRatio: c.value.aspectRatio == 0 ? 9 / 16 : c.value.aspectRatio,
+      child: VideoPlayer(c),
+    );
+  }
+
+  void _onScaleStart(ScaleStartDetails details) {
+    _pendingScale = 1.0;
+  }
+
+  void _onScaleUpdate(ScaleUpdateDetails details) {
+    // Ignore single-pointer events to avoid clashing with tap/double-tap.
+    if (details.pointerCount < 2) return;
+    _pendingScale = details.scale;
+  }
+
+  void _onScaleEnd(ScaleEndDetails details) {
+    // Only apply when a two-finger gesture was actually tracked.
+    if (_pendingScale == 1.0) return;
+    final next = decideZoomFromScale(_pendingScale, _zoomMode);
+    _pendingScale = 1.0;
+    if (next == _zoomMode) return;
+    final label = next == ZoomMode.fill ? 'Zoom to fill' : 'Zoom to fit';
+    _zoomFlashTimer?.cancel();
+    setState(() {
+      _zoomMode = next;
+      _zoomFlashLabel = label;
+      _zoomFlashVisible = true;
+    });
+    _zoomFlashTimer = Timer(const Duration(milliseconds: 800), () {
+      if (mounted) setState(() => _zoomFlashVisible = false);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return FocusableActionDetector(
@@ -793,18 +889,20 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
     final duration = c.value.duration.inMilliseconds.toDouble();
     final playback = _playback;
     final hasCaptions = playback != null && playback.captions.isNotEmpty;
+    // Pinch-to-zoom is active only in watch/fullscreen contexts (signalled by
+    // the presence of onFullscreenRequested). In the feed PageView we skip
+    // scale gestures entirely so the vertical scroll isn't interrupted.
+    final pinchEnabled = widget.onFullscreenRequested != null;
     return GestureDetector(
       onTap: _toggleOverlay,
+      onScaleStart: pinchEnabled ? _onScaleStart : null,
+      onScaleUpdate: pinchEnabled ? _onScaleUpdate : null,
+      onScaleEnd: pinchEnabled ? _onScaleEnd : null,
       child: Stack(
         fit: StackFit.expand,
         children: [
           Container(color: Colors.black),
-          Center(
-            child: AspectRatio(
-              aspectRatio: c.value.aspectRatio == 0 ? 9 / 16 : c.value.aspectRatio,
-              child: VideoPlayer(c),
-            ),
-          ),
+          Center(child: _buildVideoSurface(c)),
           // Closed-caption overlay — renders the current VTT cue near the
           // bottom of the video, above the title chrome. For RTL caption
           // languages (ar/he/fa/ur) the text direction flips so cues render
@@ -889,6 +987,32 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
               ),
             ),
           ),
+          // Zoom-mode flash label — center of screen, 800 ms.
+          if (pinchEnabled)
+            IgnorePointer(
+              child: AnimatedOpacity(
+                opacity: _zoomFlashVisible ? 1.0 : 0.0,
+                duration: const Duration(milliseconds: 200),
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xAA000000),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      _zoomFlashLabel,
+                      key: const Key('player.zoomFlash'),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
           // Play/pause overlay fade.
           IgnorePointer(
             child: AnimatedOpacity(
@@ -976,14 +1100,15 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
                   onChangeStart: _onSeekBarDragStart,
                   onChangeEnd: _onSeekBarDragEnd,
                   onTogglePlay: _toggleOverlay,
+                  cues: widget.cues ?? const [],
                 ),
               ),
             ),
           ),
-          // Fullscreen button — bottom-right, only for landscape videos.
-          // Only rendered when the overlay is visible and a callback exists.
-          if (widget.onFullscreenRequested != null &&
-              c.value.aspectRatio > 1)
+          // Fullscreen button — bottom-right, rendered for all video aspect
+          // ratios. Only rendered when the overlay is visible and a callback
+          // exists.
+          if (widget.onFullscreenRequested != null)
             Positioned(
               right: 4,
               bottom: 48,
@@ -1164,6 +1289,8 @@ class _LearnVideoPlayerState extends State<LearnVideoPlayer> {
 
 /// Bottom seek bar shown when the player overlay is visible. Contains a
 /// play/pause button, a draggable [Slider] for seeking, and timestamps.
+/// When [cues] is non-empty, colored tick marks are painted behind the
+/// slider track at each cue's [Cue.atMs] position.
 class _SeekBar extends StatelessWidget {
   const _SeekBar({
     required this.position,
@@ -1173,6 +1300,7 @@ class _SeekBar extends StatelessWidget {
     required this.onChangeStart,
     required this.onChangeEnd,
     required this.onTogglePlay,
+    this.cues = const [],
   });
 
   final double position;
@@ -1182,6 +1310,9 @@ class _SeekBar extends StatelessWidget {
   final ValueChanged<double> onChangeStart;
   final ValueChanged<double> onChangeEnd;
   final VoidCallback onTogglePlay;
+
+  /// Cues to render as tick marks. Empty list → no ticks painted.
+  final List<Cue> cues;
 
   String _fmt(double ms) {
     final d = Duration(milliseconds: ms.toInt());
@@ -1193,6 +1324,9 @@ class _SeekBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final safePos = duration > 0 ? position.clamp(0.0, duration) : 0.0;
+    final semanticsLabel = cues.isNotEmpty
+        ? 'Seek, ${cues.length} question${cues.length == 1 ? '' : 's'} on this video'
+        : 'Seek';
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
@@ -1227,16 +1361,30 @@ class _SeekBar extends StatelessWidget {
           ),
           Expanded(
             child: Semantics(
-              label: 'Seek',
+              label: semanticsLabel,
               slider: true,
-              child: Slider(
-                key: const Key('player.seekBar.slider'),
-                min: 0,
-                max: duration > 0 ? duration : 1,
-                value: safePos,
-                onChangeStart: onChangeStart,
-                onChanged: duration > 0 ? onChanged : null,
-                onChangeEnd: onChangeEnd,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  if (cues.isNotEmpty && duration > 0)
+                    Positioned.fill(
+                      child: CustomPaint(
+                        painter: CueMarkerPainter(
+                          cues: cues,
+                          durationMs: duration,
+                        ),
+                      ),
+                    ),
+                  Slider(
+                    key: const Key('player.seekBar.slider'),
+                    min: 0,
+                    max: duration > 0 ? duration : 1,
+                    value: safePos,
+                    onChangeStart: onChangeStart,
+                    onChanged: duration > 0 ? onChanged : null,
+                    onChangeEnd: onChangeEnd,
+                  ),
+                ],
               ),
             ),
           ),
@@ -1253,6 +1401,74 @@ class _SeekBar extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Paints colored 2px vertical tick marks at each cue's position on the
+/// seek bar track. Ticks are purely decorative — they sit behind the
+/// [Slider] widget and do not intercept input.
+///
+/// Color mapping (matches design spec):
+///   MCQ      → red-500    (#EF4444)
+///   MATCHING → emerald-500 (#10B981)
+///   BLANKS   → amber-500   (#F59E0B)
+///   VOICE    → skipped (backend returns 501; never present in practice)
+@visibleForTesting
+class CueMarkerPainter extends CustomPainter {
+  const CueMarkerPainter({
+    required this.cues,
+    required this.durationMs,
+  });
+
+  final List<Cue> cues;
+  final double durationMs;
+
+  // Material Slider has ~24px horizontal padding on each side before the
+  // active track begins. Hardcoded to match the default SliderTheme track
+  // inset so ticks align visually with the thumb's range of motion.
+  static const double _sliderHorizontalInset = 24.0;
+
+  static Color? _colorForType(CueType type) {
+    switch (type) {
+      case CueType.mcq:
+        return const Color(0xFFEF4444); // red-500
+      case CueType.matching:
+        return const Color(0xFF10B981); // emerald-500
+      case CueType.blanks:
+        return const Color(0xFFF59E0B); // amber-500
+      case CueType.voice:
+        return null; // skipped — backend 501s on VOICE (ADR 0004)
+    }
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (durationMs <= 0) return;
+    final trackWidth = size.width - _sliderHorizontalInset * 2;
+    if (trackWidth <= 0) return;
+    final centerY = size.height / 2;
+    const tickHalfHeight = 6.0;
+
+    for (final cue in cues) {
+      if (cue.atMs < 0 || cue.atMs > durationMs) continue;
+      final color = _colorForType(cue.type);
+      if (color == null) continue; // VOICE — skip
+      final x =
+          _sliderHorizontalInset + (cue.atMs / durationMs) * trackWidth;
+      canvas.drawLine(
+        Offset(x, centerY - tickHalfHeight),
+        Offset(x, centerY + tickHalfHeight),
+        Paint()
+          ..color = color
+          ..strokeWidth = 2.0
+          ..strokeCap = StrokeCap.round,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(CueMarkerPainter old) =>
+      !identical(old.cues, cues) ||
+      old.durationMs != durationMs;
 }
 
 /// On-screen label that flashes briefly after a double-tap seek.

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:skeletonizer/skeletonizer.dart';
 
 import '../../data/repositories/course_repository.dart';
 import 'courses_bloc.dart';
@@ -35,7 +36,7 @@ class _AvailableGrid extends StatelessWidget {
     return BlocBuilder<CoursesBloc, CoursesState>(
       builder: (context, state) {
         if (state is CoursesInitial || state is CoursesLoading) {
-          return const Center(child: CircularProgressIndicator());
+          return const _AvailableCoursesLoadingPlaceholder();
         }
         if (state is CoursesError) {
           return Center(
@@ -85,46 +86,52 @@ class _AvailableGrid extends StatelessWidget {
               itemCount: state.items.length,
               itemBuilder: (context, i) {
                 final course = state.items[i];
-                return InkWell(
-                  key: Key('courses.tile.${course.id}'),
-                  onTap: () =>
-                      GoRouter.of(context).go('/courses/${course.id}'),
-                  child: Card(
-                    clipBehavior: Clip.antiAlias,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        AspectRatio(
-                          aspectRatio: 16 / 9,
-                          child: course.coverImageUrl != null
-                              ? Image.network(
-                                  course.coverImageUrl!,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => Container(
+                return Semantics(
+                  button: true,
+                  label: 'Course: ${course.title}. Tap to view.',
+                  child: InkWell(
+                    key: Key('courses.tile.${course.id}'),
+                    onTap: () =>
+                        GoRouter.of(context).go('/courses/${course.id}'),
+                    child: Card(
+                      clipBehavior: Clip.antiAlias,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          AspectRatio(
+                            aspectRatio: 16 / 9,
+                            child: course.coverImageUrl != null
+                                ? Image.network(
+                                    course.coverImageUrl!,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => Container(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .surfaceContainerHighest,
+                                      child: const Icon(Icons.image_rounded),
+                                    ),
+                                  )
+                                : Container(
                                     color: Theme.of(context)
                                         .colorScheme
                                         .surfaceContainerHighest,
-                                    child: const Icon(Icons.image_rounded),
+                                    child: const Icon(
+                                      Icons.school_rounded,
+                                      size: 36,
+                                    ),
                                   ),
-                                )
-                              : Container(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .surfaceContainerHighest,
-                                  child: const Icon(Icons.school_rounded,
-                                      size: 36),
-                                ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: Text(
-                            course.title,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.titleSmall,
                           ),
-                        ),
-                      ],
+                          Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Text(
+                              course.title,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.titleSmall,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 );
@@ -134,6 +141,52 @@ class _AvailableGrid extends StatelessWidget {
         }
         return const SizedBox.shrink();
       },
+    );
+  }
+}
+
+/// Skeleton placeholder for the available-courses grid while the first fetch
+/// is in progress. Renders six ghost cards shimmed by Skeletonizer
+/// (configured theme-wide in AppTheme).
+class _AvailableCoursesLoadingPlaceholder extends StatelessWidget {
+  const _AvailableCoursesLoadingPlaceholder();
+
+  @override
+  Widget build(BuildContext context) {
+    return Skeletonizer(
+      child: GridView.builder(
+        padding: const EdgeInsets.all(12),
+        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+          maxCrossAxisExtent: 260,
+          mainAxisSpacing: 12,
+          crossAxisSpacing: 12,
+          childAspectRatio: 0.75,
+        ),
+        itemCount: 6,
+        itemBuilder: (_, __) => Card(
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const AspectRatio(
+                aspectRatio: 16 / 9,
+                child: ColoredBox(color: Colors.white),
+              ),
+              const Padding(
+                padding: EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Course title placeholder'),
+                    SizedBox(height: 4),
+                    Text('subtitle'),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
