@@ -67,7 +67,7 @@ The verbose per-subproject command sequences are still documented in [`api/READM
 
 ## Status
 
-Pre-alpha. Phase 0 (decisions + scaffolding) in progress. See [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md) §5 for current phase and exit criteria.
+Pre-alpha. Phase 3 (upload → transcode → playback pipeline) is complete. Flutter Phases 4–6 are code-complete — slices compiled and analyzed; on-device verification pending. Deployment infrastructure lives in `deploy/`. See [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md) §5 for phase details and exit criteria.
 
 ---
 

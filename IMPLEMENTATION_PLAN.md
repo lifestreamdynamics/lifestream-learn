@@ -351,6 +351,8 @@ Each phase has **exit criteria** that must all be met before the next phase begi
 - ◐ `curl` to a segment URL with tampered HMAC → covered at the nginx layer; not yet asserted via the API in an integration test.
 - ✓ Transcode worker survives a simulated kill mid-job and resumes cleanly (`tests/integration/transcode-resilience.test.ts`).
 - ✗ BullMQ dashboard (Bull Board) — deferred; not blocking pipeline correctness.
+7. ✓ FFmpeg input policy enforced (`src/services/ffmpeg/input-policy.ts`): rejects unsupported containers, codec combinations, oversized/overlong inputs, and rotated-portrait edge cases.
+8. ✓ Poster extraction on transcode completion (`src/services/ffmpeg/poster.ts`); `posterKey` stored on `Video` row.
 
 ---
 
@@ -457,6 +459,18 @@ Each phase has **exit criteria** that must all be met before the next phase begi
 
 ---
 
+### Phase 8 — Deployment Hardening  (in flight)
+**Goal:** Ship to production VPS (`mittonvillage.com`) with the same quality bar as local. Infrastructure automation exists in `deploy/`; this phase closes the gap between "locally production-ready" (Phase 7) and "publicly accessible."
+
+Exit criteria:
+1. `deploy/deploy-production.sh` green on a clean VPS (documented in `deploy/README.md`)
+2. Learn-api and transcode worker running under PM2 (`deploy/pm2/ecosystem.config.cjs`)
+3. Nginx vhosts for learn-api and landing page (`deploy/nginx/`) with TLS (Let's Encrypt)
+4. Health check passes at production URL
+5. CPR-007 (bootstrap HLS port bug) resolved before public launch
+
+---
+
 ### After Phase 7 — Deployment (separate work track)
 
 Deployment is deliberately kept out of this plan. Once Phase 7 is green we pick a deploy strategy (self-hosted on the shared VPS, cloud, hybrid), write the relevant runbooks and automation, and schedule a closed beta. That track will include: TLS/domain/CDN decisions, process supervision, backup + restore drill, incident-response runbook, Google Play console setup, release-candidate sign-off.
@@ -541,9 +555,15 @@ Tracked issues that warrant future attention. Reported, not fixed, by the /actua
 |----|----------|----------|-------------|------------|--------|
 | CPR-001 | CI_CONFIG | CRITICAL | `.github/workflows/app-ci.yml` pinned `flutter-version: '3.35.x'` (lines 32 and 73) while `app/.fvmrc` pins `3.41.5`. Fixed in the grooming pass on 2026-04-20 — both lines now pin `3.41.5`. | 2026-04-20 | RESOLVED (2026-04-20) |
 | CPR-002 | TEST_GAP | MINOR | Compose-dependent integration tests (`transcode-e2e`, `transcode-resilience`, `secure-link`, `health`) are excluded from `api-ci.yml` and only run locally. Accepted trade-off until the project moves to a CI runner that can host docker-compose; documented in CLAUDE.md §Phase awareness. | 2026-04-20 | DEFERRED |
-| CPR-003 | DOC_GAP | MINOR | Video input-hardening work in flight (WIP commit `3e2a615` + follow-ups: `api/src/services/ffmpeg/input-policy.ts`, `poster.ts`, VP9 rejection, rotated-portrait handling, poster-key + failure-reason schema migration) is not yet reflected in the Phase 3 exit criteria below. Update Phase 3 once WIP lands. | 2026-04-20 | OPEN |
-| CPR-004 | FEATURE_DEFERRED | COSMETIC | Bull Board dashboard deferred as Phase 3 polish per CLAUDE.md §Phase awareness; non-blocking for Phase 3 completion. | 2026-04-20 | DEFERRED |
-| CPR-005 | CONFIG_DRIFT | MAJOR | `NGINX_HOST_PORT` drift: `infra/.env.example` has `NGINX_HOST_PORT=80` (commented default) but the checked-in `infra/.env` sets `8090` to avoid colliding with `accounting-nginx`. Meanwhile `scripts/bootstrap-dev.sh:93` hard-codes `HLS_BASE_URL=http://10.0.2.2:80/hls` into `api/.env.local`, and `app/README.md` historically mixed `:80` and `:8090` in different code blocks. `app/README.md` normalised to `:8090` + parameterization note in the 2026-04-20 grooming pass, but `bootstrap-dev.sh` still writes a `:80` HLS_BASE_URL that won't match the running nginx on `:8090`. Fix: have `bootstrap-dev.sh` read `NGINX_HOST_PORT` from `infra/.env` after it writes it, and interpolate into `HLS_BASE_URL`. | 2026-04-20 | OPEN |
-| CPR-006 | OPEN_SOURCE_HYGIENE | MAJOR | `app/README.md` "Manual run" and "Test + analyze + build" blocks reference the private absolute path `/home/eric/flutter/bin/flutter` (and `dart`). This violates the project's open-source hygiene rule in CLAUDE.md ("Never commit internal paths (e.g. `/home/eric/...`)") and will leak once the monorepo splits. Replace with `fvm flutter` (roadmap calls for fvm) or a plain `flutter` assuming the operator has the pinned SDK on `PATH`. Left unchanged in the grooming pass — this needs a small call from the owner about which invocation style to standardise. | 2026-04-20 | OPEN |
+| CPR-003 | DOC_GAP | MINOR | Video input-hardening work in flight (WIP commit `3e2a615` + follow-ups: `api/src/services/ffmpeg/input-policy.ts`, `poster.ts`, VP9 rejection, rotated-portrait handling, poster-key + failure-reason schema migration) is not yet reflected in the Phase 3 exit criteria below. Update Phase 3 once WIP lands. V1 slice landed; exit criteria updated above. | 2026-04-20 | RESOLVED 2026-04-23 |
+| CPR-004 | FEATURE_DEFERRED | COSMETIC | Bull Board dashboard deferred as Phase 3 polish per CLAUDE.md §Phase awareness; non-blocking for Phase 3 completion. Prometheus `/metrics` endpoint (Slice G1) covers observability needs for MVP; Bull Board adds no blocking value. | 2026-04-20 | WONTFIX 2026-04-23 |
+| CPR-005 | CONFIG_DRIFT | CRITICAL | CONFIG_DRIFT — `scripts/bootstrap-dev.sh:105` hard-codes `HLS_BASE_URL=http://10.0.2.2:80/hls` but `infra/.env` sets `NGINX_HOST_PORT=8090`. A fresh `make bootstrap` writes a broken HLS URL that breaks video playback on a clean checkout. Fix: interpolate `NGINX_HOST_PORT` from `infra/.env` into the sed replacement. | 2026-04-20 | OPEN |
+| CPR-006 | OPEN_SOURCE_HYGIENE | MAJOR | `app/README.md` "Manual run" and "Test + analyze + build" blocks reference the private absolute path `/home/eric/flutter/bin/flutter` (and `dart`). This violates the project's open-source hygiene rule in CLAUDE.md ("Never commit internal paths (e.g. `/home/eric/...`)") and will leak once the monorepo splits. Replace with `fvm flutter` (roadmap calls for fvm) or a plain `flutter` assuming the operator has the pinned SDK on `PATH`. Left unchanged in the grooming pass — this needs a small call from the owner about which invocation style to standardise. Private paths removed from app/README.md. | 2026-04-20 | RESOLVED 2026-04-23 |
+
+| CPR-007 | CONFIG_DRIFT | CRITICAL | `scripts/bootstrap-dev.sh:105` hard-codes `HLS_BASE_URL=http://10.0.2.2:80/hls` but `infra/.env` sets `NGINX_HOST_PORT=8090`. Breaks video playback on fresh checkout. Fix: read `NGINX_HOST_PORT` from written `infra/.env` and interpolate. | 2026-04-23 | OPEN |
+| CPR-008 | DOC_GAP | MINOR | IMPLEMENTATION_PLAN.md §5 Phase 3 exit criteria did not mention input-policy or poster hardening from Slice V1. Fixed in this grooming pass. | 2026-04-23 | RESOLVED 2026-04-23 |
+| CPR-009 | ROADMAP_DRIFT | MINOR | Slices G1–G3, H, V1, U1, P5–P9, D1–D2.1 shipped after the original Phase 7 scope. These represent deployment hardening and feature polish beyond the plan. IMPLEMENTATION_PLAN.md should add a Phase 8 (Deployment Hardening) section or reference a separate DEPLOYMENT_PLAN.md. | 2026-04-23 | OPEN |
+| CPR-010 | FEATURE_DEFERRED | COSMETIC | Bull Board dashboard (CPR-004) — marked WONTFIX. See CPR-004. | 2026-04-23 | WONTFIX 2026-04-23 |
+| CPR-011 | TEST_GAP | MEDIUM | Compose-dependent integration tests (`transcode-e2e`, `transcode-resilience`, `secure-link`, `health`) remain excluded from CI. Slice G3 added new HMAC integration tests also excluded. CI cannot validate the full pipeline. Options: add docker-in-docker CI runner, or document these as a required pre-merge local gate. | 2026-04-23 | OPEN |
 
 Update this table on each grooming pass. Mark entries RESOLVED (with date) rather than removing them, so the history stays visible.
