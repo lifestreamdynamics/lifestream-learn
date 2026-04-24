@@ -1,3 +1,5 @@
+> **Superseded** — active roadmap is [flutter-app-roadmap.md](./flutter-app-roadmap.md). This file is retained for the API contract snapshot and risk register.
+
 # Flutter App — Implementation Plan
 
 **Owner:** Eric

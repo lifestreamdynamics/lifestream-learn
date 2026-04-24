@@ -22,7 +22,7 @@ This is a **single working directory that will split into multiple public repos*
 
 - **`IMPLEMENTATION_PLAN.md`** is the source of truth for phases, exit criteria, parallel-work splits, and migration seams. Read it before planning non-trivial work.
 - **ADRs in `docs/decisions/`** record *why* decisions were made (AGPL license, SeaweedFS over MinIO, BullMQ over Bull, VOICE cue deferred, monorepo layout). They're living documents — update them when the rationale or reality shifts.
-- **Architecture docs** in `docs/architecture/` will describe *what is*, not what was — rewrite rather than append when reality changes. (Currently empty — populated starting Phase 3.)
+- **Architecture docs** in `docs/architecture/` will describe *what is*, not what was — rewrite rather than append when reality changes. (Phase 3 architecture doc: `docs/architecture/phase-3-upload-transcode-playback.md`.)
 
 ## Commands (top-level Makefile)
 
@@ -34,6 +34,7 @@ make up          # compose up + create-databases + create-buckets + prisma migra
 make api         # terminal 1: API hot-reload on :3011
 make worker      # terminal 2: BullMQ transcode worker
 make app         # terminal 3: launches AVD (if needed) + flutter run --flavor dev
+make app-deps    # one-time (or after pubspec changes): pub get + build_runner codegen
 make status      # one-line health check (API / nginx / adb devices)
 make reset       # DESTRUCTIVE: drops SeaweedFS volumes then re-ups (prompts for yes)
 ```
@@ -90,7 +91,7 @@ set -a; source .env; set +a
 
 Postgres (`accounting-postgres`) and Redis (`accounting-redis`) come from accounting-api's compose stack — start that first if it isn't already running. Learn-api uses `learn_api_user` + `learn_api_*` DBs + the `learn:` Redis prefix for isolation on those shared instances. Point the API at `S3_ENDPOINT=http://localhost:8333`.
 
-**Deployment is out of scope right now.** Goal is a locally tested, production-ready app; deploy strategy gets picked once we're there. Design still respects shared-resource hygiene (ports, key prefixes, DB naming) so a later deploy onto the shared VPS stays conflict-free.
+**Deployment infrastructure exists in `deploy/`** (runbook: `deploy/README.md`). This is a parallel work-track, not a Phase 0–7 milestone. Focus remains on Phase 7 local hardening first; `deploy/` is ready when needed. Design respects shared-resource hygiene (ports, key prefixes, DB naming) for conflict-free VPS deployment.
 
 ## Architecture big picture
 
@@ -108,6 +109,8 @@ Postgres (`accounting-postgres`) and Redis (`accounting-redis`) come from accoun
 - **`getPlaybackUrl(videoId, userId)`** is the single seam for signed URLs — replace the body to swap to CloudFront / Cloudflare Stream. The Nginx `secure_link` HMAC implementation lives in `src/utils/hls-signer.ts`; swap that file when moving to a different CDN's signing scheme.
 - **`VideoTranscoder` interface** (`transcode(sourceKey) → hlsPrefix`) lets the FFmpeg worker be replaced by AWS MediaConvert or Cloudflare Stream. Current FFmpeg implementation is under `src/services/ffmpeg/`.
 - **CMAF fMP4** output is portable across CDNs — don't regress to TS segments.
+- **Grading service** (`src/services/grading/`) is the canonical implementation for MCQ, BLANKS, MATCHING, and VOICE scoring. Never move grading logic to the client or to request middleware — see the "client never grades" rule above.
+- **FFmpeg input policy** (`src/services/ffmpeg/input-policy.ts`) enforces container, codec, duration, and file-size limits before transcoding begins. Add new rejection reasons to `VideoFailureReason` there; do not add ad-hoc checks in the worker.
 
 ### Roles and auth
 
@@ -157,9 +160,26 @@ Per `CONTRIBUTING.md`:
 - Grading logic for cue types: ≥95% unit coverage (it's security-sensitive — a wrong correct/incorrect leaks the answer or miscredits a learner).
 - Integration tests need a real Postgres + Redis. We share `accounting-postgres` and `accounting-redis` (see `infra/README.md`); our fixtures target `learn_api_test` on that Postgres and use the `learn:` Redis prefix. Tests run serially (`maxWorkers: 1`).
 
+## Project subagents
+
+Specialist agents live in `.claude/agents/`. Invoke via the Agent tool when the task matches:
+
+| Agent | When to invoke |
+|---|---|
+| `transcode-pipeline-engineer` | Upload → transcode → playback pipeline: tusd hooks, BullMQ transcode queue, FFmpeg worker, HLS ladder, ObjectStore/HLS-signer swap seams, nginx `secure_link` |
+| `cue-engine-architect` | Cue scheduler, video player integration, MCQ/BLANKS/MATCHING grading, FLAG_SECURE surfaces, analytics buffer, designer authoring timeline |
+| `shared-resource-guardian` | Any addition touching Redis keys, Postgres DBs/roles, BullMQ queue names, object-storage buckets, port bindings, or Prometheus metric names |
+| `flutter-expert` | General Flutter work NOT touching the cue engine, player, designer authoring, or learner assessment paths (those → `cue-engine-architect`) |
+| `typescript-pro` | TypeScript type-level challenges: discriminated unions, Zod patterns, generic utilities |
+| `security-auditor` | Architectural security review: grading integrity, secret handling, API authorization, threat modelling |
+| `code-reviewer` | Code quality review on TypeScript backend, Flutter app, or infra |
+| `accessibility-tester` | WCAG compliance, assistive technology, screen reader support |
+
 ## Flutter app development (overrides default "test UI before done" rule)
 
 Claude Code's built-in system prompt says: *"For UI or frontend changes, start the dev server and use the feature in a browser before reporting the task as complete."* **That rule does not apply to `app/`** — Claude cannot launch an Android emulator or install an APK on a physical device from its sandbox, and attempting to gate Flutter work on that would make all UI work unshippable.
+
+**Flutter codegen:** models use `freezed` + `json_serializable`. After adding or changing any annotated model, run `dart run build_runner build --delete-conflicting-outputs` (or `make app-deps`). The `app-ci` workflow checks codegen freshness — stale generated files fail CI.
 
 **For `app/` (Flutter) work, a task is considered complete when all of the following pass:**
 1. `flutter analyze` → 0 issues.
@@ -173,7 +193,7 @@ Everything else in the repo (`api/`, `infra/`, `docs/`) still follows the defaul
 
 ## Phase awareness
 
-The project is pre-alpha. Current phase: **Phase 3 (upload → transcode → playback pipeline)** — Phases 0, 1, and 2 are complete. The pipeline is wired end-to-end: `POST /api/videos` issues tusd upload coordinates, the tusd `pre-finish` hook enqueues a `learn:transcode` BullMQ job, the worker produces a CMAF fMP4 HLS ladder, and `GET /api/videos/:id/playback` returns a short-lived MD5 secure_link URL. The `transcode-e2e` and `transcode-resilience` integration tests cover the happy path and a kill-and-resume scenario; `transcode-e2e` asserts the ffprobe-level ladder variants, and tampered-HMAC / expired-URL behaviour is now covered at the API boundary. Bull Board dashboard is the only remaining Phase 3 polish item and is non-blocking.
+The project is pre-alpha. Phases 0–3 are complete. Phase 3 (upload → transcode → playback pipeline) is wired end-to-end and hardened: `POST /api/videos` issues tusd upload coordinates, the tusd `pre-finish` hook enqueues a `learn:transcode` BullMQ job, the FFmpeg worker validates input policy then produces a CMAF fMP4 HLS ladder, and `GET /api/videos/:id/playback` returns a short-lived MD5 secure_link URL. Integration tests cover the happy path, kill-and-resume, ffprobe-level ladder variants, and tampered-HMAC / expired-URL edge cases.
 
 Flutter work (Phases 4–6) has advanced in parallel: auth, feed, player + cue engine (MCQ/BLANKS/MATCHING), designer authoring, admin, and an offline-survivable analytics buffer are all present under `app/lib/features/`. `IMPLEMENTATION_PLAN.md` §5 remains the source of truth for per-slice exit criteria — check it before implementing anything to confirm:
 - Which phase you're in and its exit criteria
