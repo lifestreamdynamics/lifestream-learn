@@ -4,6 +4,7 @@ import {
   generate as otpGenerate,
   generateSecret as otpGenerateSecret,
 } from 'otplib';
+import type { PrismaClient } from '@prisma/client';
 import {
   createMfaTotpService,
   MFA_ENROL_JWT_KIND,
@@ -44,10 +45,47 @@ type FakeMfaCredential = {
   lastUsedAt: Date | null;
 };
 
-function buildFakePrisma(initial: { user: FakeUser }): unknown {
-  const state = {
+// Minimal query-arg shapes — only the fields the fake's callbacks
+// actually read. Typed explicitly so jest.fn callbacks stay free of `any`.
+type WhereId = { id?: string; email?: string };
+type WhereData<D> = { where: WhereId; data: D };
+type WhereCred = {
+  id?: string;
+  kind?: string | { in: string[] };
+  userId?: string;
+};
+type CredCreateData = {
+  userId: string;
+  kind: FakeMfaCredential['kind'];
+  label?: string | null;
+  totpSecretEncrypted?: string | null;
+};
+type SelectArg = {
+  mfaCredentials?: { where: { kind: string } };
+};
+
+type FakePrismaState = { user: FakeUser; creds: FakeMfaCredential[] };
+
+type FakePrisma = {
+  user: {
+    findUnique: jest.Mock;
+    update: jest.Mock;
+  };
+  mfaCredential: {
+    findFirst: jest.Mock;
+    create: jest.Mock;
+    update: jest.Mock;
+    delete: jest.Mock;
+    count: jest.Mock;
+  };
+  $transaction: jest.Mock;
+  _state: FakePrismaState;
+};
+
+function buildFakePrisma(initial: { user: FakeUser }): FakePrisma {
+  const state: FakePrismaState = {
     user: { ...initial.user },
-    creds: [...initial.user.mfaCredentials] as FakeMfaCredential[],
+    creds: [...initial.user.mfaCredentials],
   };
 
   function findCred(where: Partial<FakeMfaCredential>): FakeMfaCredential | undefined {
@@ -63,25 +101,25 @@ function buildFakePrisma(initial: { user: FakeUser }): unknown {
 
   return {
     user: {
-      findUnique: jest.fn(async ({ where, select }: any) => {
+      findUnique: jest.fn(async ({ where, select }: { where: WhereId; select?: SelectArg }) => {
         if (state.user.id !== where.id && state.user.email !== where.email) return null;
         const row: Record<string, unknown> = { ...state.user };
         if (select?.mfaCredentials) {
           row.mfaCredentials = state.creds.filter(
-            (c) => c.kind === select.mfaCredentials.where.kind,
+            (c) => c.kind === select.mfaCredentials?.where.kind,
           );
         }
         return row;
       }),
-      update: jest.fn(async ({ where, data }: any) => {
+      update: jest.fn(async ({ where, data }: WhereData<Partial<FakeUser>>) => {
         if (state.user.id !== where.id) throw new Error('user not found');
         state.user = { ...state.user, ...data };
         return state.user;
       }),
     },
     mfaCredential: {
-      findFirst: jest.fn(async ({ where }: any) => findCred(where) ?? null),
-      create: jest.fn(async ({ data }: any) => {
+      findFirst: jest.fn(async ({ where }: { where: WhereCred }) => findCred(where as Partial<FakeMfaCredential>) ?? null),
+      create: jest.fn(async ({ data }: { data: CredCreateData }) => {
         const row: FakeMfaCredential = {
           id: `cred-${state.creds.length + 1}`,
           userId: data.userId,
@@ -93,22 +131,22 @@ function buildFakePrisma(initial: { user: FakeUser }): unknown {
         state.creds.push(row);
         return row;
       }),
-      update: jest.fn(async ({ where, data }: any) => {
+      update: jest.fn(async ({ where, data }: WhereData<Partial<FakeMfaCredential>>) => {
         const idx = state.creds.findIndex((c) => c.id === where.id);
         if (idx < 0) throw new Error('cred not found');
         state.creds[idx] = { ...state.creds[idx]!, ...data };
         return state.creds[idx];
       }),
-      delete: jest.fn(async ({ where }: any) => {
+      delete: jest.fn(async ({ where }: { where: WhereId }) => {
         const idx = state.creds.findIndex((c) => c.id === where.id);
         if (idx < 0) throw new Error('cred not found');
         const [removed] = state.creds.splice(idx, 1);
         return removed;
       }),
-      count: jest.fn(async ({ where }: any) => {
+      count: jest.fn(async ({ where }: { where: WhereCred }) => {
         if (where.kind && typeof where.kind === 'object' && 'in' in where.kind) {
           return state.creds.filter((c) =>
-            (where.kind.in as string[]).includes(c.kind),
+            (where.kind as { in: string[] }).in.includes(c.kind),
           ).length;
         }
         return state.creds.filter((c) => c.kind === where.kind).length;
@@ -143,7 +181,7 @@ describe('mfa-totp.service', () => {
     it('returns secret + otpauth URL + QR data URL + pending token', async () => {
       const user = await baseUser();
       const prisma = buildFakePrisma({ user });
-      const svc = createMfaTotpService(prisma as any);
+      const svc = createMfaTotpService(prisma as unknown as PrismaClient);
       const result = await svc.startEnrol(USER_ID);
 
       expect(result.secret).toMatch(/^[A-Z2-7]+$/); // base32
@@ -176,14 +214,14 @@ describe('mfa-totp.service', () => {
       ];
       user.mfaEnabled = true;
       const prisma = buildFakePrisma({ user });
-      const svc = createMfaTotpService(prisma as any);
+      const svc = createMfaTotpService(prisma as unknown as PrismaClient);
       await expect(svc.startEnrol(USER_ID)).rejects.toBeInstanceOf(ConflictError);
     });
 
     it('throws NotFoundError for an unknown user', async () => {
       const user = await baseUser();
       const prisma = buildFakePrisma({ user });
-      const svc = createMfaTotpService(prisma as any);
+      const svc = createMfaTotpService(prisma as unknown as PrismaClient);
       await expect(
         svc.startEnrol('00000000-0000-0000-0000-00000000dead'),
       ).rejects.toBeInstanceOf(NotFoundError);
@@ -194,7 +232,7 @@ describe('mfa-totp.service', () => {
     it('writes an MfaCredential, flips mfaEnabled, returns 10 backup codes', async () => {
       const user = await baseUser();
       const prisma = buildFakePrisma({ user });
-      const svc = createMfaTotpService(prisma as any);
+      const svc = createMfaTotpService(prisma as unknown as PrismaClient);
 
       const start = await svc.startEnrol(USER_ID);
       const code = await freshToken(start.secret);
@@ -205,7 +243,7 @@ describe('mfa-totp.service', () => {
       });
 
       expect(result.backupCodes).toHaveLength(10);
-      const s = (prisma as any)._state as { user: FakeUser; creds: FakeMfaCredential[] };
+      const s = prisma._state;
       expect(s.user.mfaEnabled).toBe(true);
       expect(s.user.mfaBackupCodes).toHaveLength(10);
       expect(s.creds).toHaveLength(1);
@@ -218,7 +256,7 @@ describe('mfa-totp.service', () => {
     it('rejects a wrong code with 401', async () => {
       const user = await baseUser();
       const prisma = buildFakePrisma({ user });
-      const svc = createMfaTotpService(prisma as any);
+      const svc = createMfaTotpService(prisma as unknown as PrismaClient);
       const start = await svc.startEnrol(USER_ID);
       await expect(
         svc.confirmEnrol(USER_ID, {
@@ -231,7 +269,7 @@ describe('mfa-totp.service', () => {
     it('rejects an expired pending token', async () => {
       const user = await baseUser();
       const prisma = buildFakePrisma({ user });
-      const svc = createMfaTotpService(prisma as any);
+      const svc = createMfaTotpService(prisma as unknown as PrismaClient);
       // Mint a pending token that has already expired.
       const expired = jwt.sign(
         {
@@ -253,7 +291,7 @@ describe('mfa-totp.service', () => {
     it('rejects when the pending token was minted for a different user', async () => {
       const user = await baseUser();
       const prisma = buildFakePrisma({ user });
-      const svc = createMfaTotpService(prisma as any);
+      const svc = createMfaTotpService(prisma as unknown as PrismaClient);
       const foreign = jwt.sign(
         {
           sub: 'somebody-else',
@@ -273,7 +311,7 @@ describe('mfa-totp.service', () => {
     it('returns true for a current code and false for a stale one', async () => {
       const user = await baseUser();
       const prisma = buildFakePrisma({ user });
-      const svc = createMfaTotpService(prisma as any);
+      const svc = createMfaTotpService(prisma as unknown as PrismaClient);
       const start = await svc.startEnrol(USER_ID);
       const code = await freshToken(start.secret);
       await svc.confirmEnrol(USER_ID, {
@@ -288,7 +326,7 @@ describe('mfa-totp.service', () => {
     it('returns false when the user has no TOTP credential', async () => {
       const user = await baseUser();
       const prisma = buildFakePrisma({ user });
-      const svc = createMfaTotpService(prisma as any);
+      const svc = createMfaTotpService(prisma as unknown as PrismaClient);
       expect(await svc.verify(USER_ID, '123456')).toBe(false);
     });
   });
@@ -297,7 +335,7 @@ describe('mfa-totp.service', () => {
     it('removes the TOTP credential, clears backup codes, flips mfaEnabled off', async () => {
       const user = await baseUser();
       const prisma = buildFakePrisma({ user });
-      const svc = createMfaTotpService(prisma as any);
+      const svc = createMfaTotpService(prisma as unknown as PrismaClient);
       const start = await svc.startEnrol(USER_ID);
       const enrolCode = await freshToken(start.secret);
       await svc.confirmEnrol(USER_ID, {
@@ -309,7 +347,7 @@ describe('mfa-totp.service', () => {
         currentPassword: 'currentPassword123!',
         code: disableCode,
       });
-      const s = (prisma as any)._state as { user: FakeUser; creds: FakeMfaCredential[] };
+      const s = prisma._state;
       expect(s.creds).toHaveLength(0);
       expect(s.user.mfaEnabled).toBe(false);
       expect(s.user.mfaBackupCodes).toEqual([]);
@@ -318,7 +356,7 @@ describe('mfa-totp.service', () => {
     it('rejects a wrong password', async () => {
       const user = await baseUser();
       const prisma = buildFakePrisma({ user });
-      const svc = createMfaTotpService(prisma as any);
+      const svc = createMfaTotpService(prisma as unknown as PrismaClient);
       const start = await svc.startEnrol(USER_ID);
       const code = await freshToken(start.secret);
       await svc.confirmEnrol(USER_ID, {
@@ -336,7 +374,7 @@ describe('mfa-totp.service', () => {
     it('rejects a wrong code', async () => {
       const user = await baseUser();
       const prisma = buildFakePrisma({ user });
-      const svc = createMfaTotpService(prisma as any);
+      const svc = createMfaTotpService(prisma as unknown as PrismaClient);
       const start = await svc.startEnrol(USER_ID);
       const code = await freshToken(start.secret);
       await svc.confirmEnrol(USER_ID, {
@@ -356,7 +394,7 @@ describe('mfa-totp.service', () => {
     it('burns the code on first use; second use fails', async () => {
       const user = await baseUser();
       const prisma = buildFakePrisma({ user });
-      const svc = createMfaTotpService(prisma as any);
+      const svc = createMfaTotpService(prisma as unknown as PrismaClient);
       const start = await svc.startEnrol(USER_ID);
       const code = await freshToken(start.secret);
       const { backupCodes } = await svc.confirmEnrol(USER_ID, {
@@ -373,7 +411,7 @@ describe('mfa-totp.service', () => {
     it('reports false/0/false before enrolment', async () => {
       const user = await baseUser();
       const prisma = buildFakePrisma({ user });
-      const svc = createMfaTotpService(prisma as any);
+      const svc = createMfaTotpService(prisma as unknown as PrismaClient);
       const methods = await svc.listMethods(USER_ID);
       expect(methods).toEqual({
         totp: false,
@@ -386,7 +424,7 @@ describe('mfa-totp.service', () => {
     it('reports totp=true + backup codes count after enrolment', async () => {
       const user = await baseUser();
       const prisma = buildFakePrisma({ user });
-      const svc = createMfaTotpService(prisma as any);
+      const svc = createMfaTotpService(prisma as unknown as PrismaClient);
       const start = await svc.startEnrol(USER_ID);
       const code = await freshToken(start.secret);
       await svc.confirmEnrol(USER_ID, {
@@ -404,7 +442,7 @@ describe('mfa-totp.service', () => {
     it('round-trips the userId through a signed JWT', async () => {
       const user = await baseUser();
       const prisma = buildFakePrisma({ user });
-      const svc = createMfaTotpService(prisma as any);
+      const svc = createMfaTotpService(prisma as unknown as PrismaClient);
       const token = svc.mintLoginPendingToken(USER_ID);
       expect(svc.verifyLoginPendingToken(token)).toEqual({ userId: USER_ID });
     });
@@ -412,7 +450,7 @@ describe('mfa-totp.service', () => {
     it('rejects tokens signed with a different secret', async () => {
       const user = await baseUser();
       const prisma = buildFakePrisma({ user });
-      const svc = createMfaTotpService(prisma as any);
+      const svc = createMfaTotpService(prisma as unknown as PrismaClient);
       const evil = jwt.sign(
         { sub: USER_ID, kind: MFA_LOGIN_JWT_KIND },
         'not-the-real-secret-at-all-0123456789',
@@ -424,7 +462,7 @@ describe('mfa-totp.service', () => {
     it('rejects a cross-kind swap (access token instead of mfa-pending)', async () => {
       const user = await baseUser();
       const prisma = buildFakePrisma({ user });
-      const svc = createMfaTotpService(prisma as any);
+      const svc = createMfaTotpService(prisma as unknown as PrismaClient);
       // A valid-looking JWT with the wrong kind claim — the service
       // must reject it so we don't trade an access token for fresh
       // tokens via the MFA path.

@@ -115,8 +115,10 @@ export async function verifyBackupCode(
     stripped.length === 10 ? `${stripped.slice(0, 5)}-${stripped.slice(5, 10)}` : stripped;
   let matchedIndex = -1;
   for (let i = 0; i < storedHashes.length; i++) {
-    // eslint-disable-next-line no-await-in-loop -- bcrypt is CPU-bound; parallel map would race
-    const ok = await verifyPassword(normalized, storedHashes[i]!);
+    // bcrypt is CPU-bound; parallel map would race on the same cost factor
+    const hash = storedHashes[i];
+    if (!hash) continue;
+    const ok = await verifyPassword(normalized, hash);
     if (ok && matchedIndex < 0) matchedIndex = i;
   }
   if (matchedIndex < 0) {

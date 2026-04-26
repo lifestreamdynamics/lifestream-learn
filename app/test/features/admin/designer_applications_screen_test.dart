@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lifestream_learn_app/core/art/brand_empty_state.dart';
 import 'package:lifestream_learn_app/core/platform/flag_secure.dart';
 import 'package:lifestream_learn_app/data/models/designer_application.dart';
 import 'package:lifestream_learn_app/data/repositories/admin_designer_application_repository.dart';
@@ -77,6 +78,7 @@ void main() {
     await tester.pumpWidget(_wrap(repo));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('admin.apps.empty')), findsOneWidget);
+    expect(find.byType(BrandEmptyState), findsOneWidget);
   });
 
   testWidgets('approve flow: confirm → repo.review called → row removed',

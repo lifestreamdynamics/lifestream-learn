@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lifestream_learn_app/core/art/brand_empty_state.dart';
 import 'package:lifestream_learn_app/core/platform/flag_secure.dart';
 import 'package:lifestream_learn_app/data/models/course.dart';
 import 'package:lifestream_learn_app/data/models/course_analytics.dart';
@@ -119,5 +120,13 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('admin.analytics.noCourses')), findsOneWidget);
+    expect(find.byType(BrandEmptyState), findsOneWidget);
+    // Ensure no leaked placeholder copy reaches the user.
+    expect(find.text('Placeholder analytics numbers that will be '
+        'replaced by the real aggregates shortly.'), findsNothing);
+    expect(
+      find.text('Loading course picker placeholder'),
+      findsNothing,
+    );
   });
 }

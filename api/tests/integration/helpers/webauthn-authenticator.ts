@@ -1,7 +1,6 @@
 import {
   createSign,
   createPrivateKey,
-  createPublicKey,
   randomBytes,
   generateKeyPairSync,
   createHash,

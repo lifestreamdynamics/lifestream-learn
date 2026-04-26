@@ -469,4 +469,172 @@ describe('auth.service', () => {
       await expect(svc.findById('missing')).rejects.toBeInstanceOf(UnauthorizedError);
     });
   });
+
+  /**
+   * Phase 8 / ADR 0007 — JWT dual-secret rotation, end-to-end through
+   * the auth service. The verify-side rotation logic itself is exhaustively
+   * tested in `tests/unit/utils/jwt.test.ts`; this block confirms that
+   * tokens minted by the service via the standard `signAccessToken` /
+   * `signRefreshToken` helpers verify correctly when the operator has
+   * configured `JWT_*_SECRET_PREVIOUS`, and that signup/login still
+   * always sign with the CURRENT secret (the rotation is verify-side
+   * only — sign behaviour is unchanged).
+   */
+  describe('JWT dual-secret rotation', () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const jwt = require('jsonwebtoken') as typeof import('jsonwebtoken');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { env } = require('@/config/env') as typeof import('@/config/env');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const jwtUtils = require('@/utils/jwt') as typeof import('@/utils/jwt');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const metricsModule = require('@/observability/metrics') as typeof import('@/observability/metrics');
+
+    type MutableEnv = {
+      JWT_ACCESS_SECRET_PREVIOUS?: string;
+      JWT_REFRESH_SECRET_PREVIOUS?: string;
+    };
+
+    beforeEach(() => {
+      metricsModule.resetMetricsForTests();
+      (env as MutableEnv).JWT_ACCESS_SECRET_PREVIOUS = undefined;
+      (env as MutableEnv).JWT_REFRESH_SECRET_PREVIOUS = undefined;
+    });
+
+    afterAll(() => {
+      (env as MutableEnv).JWT_ACCESS_SECRET_PREVIOUS = undefined;
+      (env as MutableEnv).JWT_REFRESH_SECRET_PREVIOUS = undefined;
+      metricsModule.resetMetricsForTests();
+    });
+
+    it('signup-issued tokens verify under the current secret regardless of rotation state', async () => {
+      // Even with a previous secret configured, the signing path uses
+      // CURRENT — so a freshly-signed token must still verify without
+      // touching the rotation metric.
+      (env as MutableEnv).JWT_ACCESS_SECRET_PREVIOUS = 'p'.repeat(48);
+      (env as MutableEnv).JWT_REFRESH_SECRET_PREVIOUS = 'q'.repeat(48);
+
+      const prisma = buildMockPrisma();
+      prisma.user.create.mockResolvedValue(fakeUser);
+      const svc = createAuthService(
+        prisma as unknown as import('@prisma/client').PrismaClient,
+        buildSessionsMock(),
+      );
+      const result = await svc.signup({
+        email: 'u@example.local',
+        password: 'CorrectHorseBattery1',
+        displayName: 'U',
+      });
+
+      // Token shape verifies through the rotation-aware helper.
+      const access = jwtUtils.verifyAccessToken(result.accessToken);
+      const refresh = jwtUtils.verifyRefreshToken(result.refreshToken);
+      expect(access.sub).toBe(fakeUser.id);
+      expect(refresh.sub).toBe(fakeUser.id);
+
+      // Counter stayed at zero — current secret accepted both tokens.
+      const counter = metricsModule.getMetrics().jwtVerifyWithPreviousTotal;
+      // Reading via the public registry text is the most stable surface
+      // across prom-client versions.
+      const text = await metricsModule.getMetrics().registry.metrics();
+      expect(text).toContain('learn_jwt_verify_with_previous_total');
+      // No `tokenType="access"` increment because the current path won.
+      expect(text).not.toMatch(/learn_jwt_verify_with_previous_total\{[^}]*tokenType="access"[^}]*\}\s+1/);
+      // Sanity: the metric series exists with a default zero value.
+      expect(counter).toBeDefined();
+    });
+
+    it('a token signed with PREVIOUS secret verifies through the auth helper, with the metric incremented', () => {
+      const PREV = 'p'.repeat(48);
+      (env as MutableEnv).JWT_ACCESS_SECRET_PREVIOUS = PREV;
+
+      // Mint with the previous secret directly — simulates a token that
+      // was issued before the rotation step that bumped the current
+      // secret to a fresh value.
+      const token = jwt.sign(
+        {
+          sub: fakeUser.id,
+          role: fakeUser.role,
+          email: fakeUser.email,
+          type: 'access',
+        },
+        PREV,
+        { audience: 'learn-api', expiresIn: '15m' },
+      );
+
+      const decoded = jwtUtils.verifyAccessToken(token);
+      expect(decoded.sub).toBe(fakeUser.id);
+
+      // Confirm the rotation counter ticked. Use the registry text to
+      // avoid touching prom-client's private hashMap layout.
+      return metricsModule
+        .getMetrics()
+        .registry.metrics()
+        .then((text: string) => {
+          expect(text).toMatch(
+            /learn_jwt_verify_with_previous_total\{[^}]*tokenType="access"[^}]*\}\s+1/,
+          );
+        });
+    });
+
+    it('a previous-signed token rejects when the previous secret is unset', () => {
+      const PREV = 'p'.repeat(48);
+      // Default beforeEach state: previous unset.
+      const token = jwt.sign(
+        {
+          sub: fakeUser.id,
+          role: fakeUser.role,
+          email: fakeUser.email,
+          type: 'access',
+        },
+        PREV,
+        { audience: 'learn-api', expiresIn: '15m' },
+      );
+      expect(() => jwtUtils.verifyAccessToken(token)).toThrow(UnauthorizedError);
+    });
+
+    it('refresh-token rotation still works through `refresh()` when the previous secret is configured', async () => {
+      const PREV_REFRESH = 'q'.repeat(48);
+      (env as MutableEnv).JWT_REFRESH_SECRET_PREVIOUS = PREV_REFRESH;
+
+      // Mint a refresh token signed with the previous secret. Verify
+      // first to extract the claims, then exercise the service's
+      // refresh() — the new pair must come back signed under the
+      // CURRENT secrets (verifiable without any fallback).
+      const oldRefresh = jwt.sign(
+        { sub: fakeUser.id, type: 'refresh', jti: 'rotation-jti' },
+        PREV_REFRESH,
+        { audience: 'learn-api', expiresIn: '30d' },
+      );
+      const claims = jwtUtils.verifyRefreshToken(oldRefresh);
+
+      const prisma = buildMockPrisma();
+      prisma.user.findUnique.mockResolvedValue(fakeUser);
+      const svc = createAuthService(
+        prisma as unknown as import('@prisma/client').PrismaClient,
+        buildSessionsMock(),
+      );
+      // Atomic-claim mock returns true — tryRevokeRefreshJti is mocked
+      // at the top of this file, so we don't need any Redis state.
+      (tryRevokeRefreshJti as jest.Mock).mockResolvedValueOnce(true);
+
+      const newPair = await svc.refresh({
+        userId: claims.sub,
+        oldJti: claims.jti,
+        oldIat: claims.iat,
+      });
+
+      // The fresh tokens must verify under CURRENT — no fallback used —
+      // because signing always uses the current secret. Clear the
+      // previous secret to assert this strictly.
+      (env as MutableEnv).JWT_REFRESH_SECRET_PREVIOUS = undefined;
+      const decodedAccess = jwtUtils.verifyAccessToken(newPair.accessToken);
+      const decodedRefresh = jwtUtils.verifyRefreshToken(newPair.refreshToken);
+      expect(decodedAccess.sub).toBe(fakeUser.id);
+      expect(decodedRefresh.sub).toBe(fakeUser.id);
+      // Rotation invariant: a brand-new jti, distinct from the one we
+      // came in with.
+      expect(decodedRefresh.jti).not.toBe('rotation-jti');
+    });
+  });
 });
