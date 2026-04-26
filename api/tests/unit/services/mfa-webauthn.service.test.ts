@@ -1,6 +1,7 @@
 import '@tests/unit/setup';
 
 import { Prisma } from '@prisma/client';
+import type { PrismaClient } from '@prisma/client';
 
 // We mock `@simplewebauthn/server` at the module boundary so the unit
 // tests stay focused on OUR service's branching (challenge binding,
@@ -18,6 +19,15 @@ import {
   verifyRegistrationResponse,
   generateAuthenticationOptions,
   verifyAuthenticationResponse,
+  type VerifiedRegistrationResponse,
+  type VerifiedAuthenticationResponse,
+} from '@simplewebauthn/server';
+import type {
+  RegistrationResponseJSON,
+  AuthenticationResponseJSON,
+  PublicKeyCredentialCreationOptionsJSON,
+  PublicKeyCredentialRequestOptionsJSON,
+  GenerateAuthenticationOptionsOpts,
 } from '@simplewebauthn/server';
 import {
   createMfaWebauthnService,
@@ -58,6 +68,44 @@ type FakeUser = {
   mfaBackupCodes: string[];
 };
 
+// Minimal query-arg shapes for the jest.fn callbacks. Only fields
+// that the fake implementation actually reads are declared here.
+type WaWhereUser = { id?: string };
+type WaSelectArg = { mfaCredentials?: { where: { kind: string } } };
+type WaWhereCred = {
+  id?: string;
+  userId?: string;
+  kind?: string | { in: string[] };
+  credentialId?: Uint8Array;
+};
+type WaCredCreateData = {
+  userId: string;
+  kind: FakeCred['kind'];
+  label?: string | null;
+  credentialId?: Uint8Array | null;
+  publicKey?: Uint8Array | null;
+  signCount?: number | null;
+  transports?: string[];
+  aaguid?: string | null;
+};
+
+type FakePrismaState = { user: FakeUser; creds: FakeCred[] };
+
+type FakePrisma = {
+  user: { findUnique: jest.Mock; update: jest.Mock };
+  mfaCredential: {
+    findFirst: jest.Mock;
+    findUnique: jest.Mock;
+    findMany: jest.Mock;
+    create: jest.Mock;
+    update: jest.Mock;
+    delete: jest.Mock;
+    count: jest.Mock;
+  };
+  $transaction: jest.Mock;
+  _state: FakePrismaState;
+};
+
 function matchesBytes(a: Uint8Array, b: Uint8Array): boolean {
   if (a.byteLength !== b.byteLength) return false;
   for (let i = 0; i < a.byteLength; i++) if (a[i] !== b[i]) return false;
@@ -67,20 +115,20 @@ function matchesBytes(a: Uint8Array, b: Uint8Array): boolean {
 function buildFakePrisma(initial: {
   user: FakeUser;
   creds?: FakeCred[];
-}): unknown {
-  const state = {
+}): FakePrisma {
+  const state: FakePrismaState = {
     user: { ...initial.user },
-    creds: [...(initial.creds ?? [])] as FakeCred[],
+    creds: [...(initial.creds ?? [])],
   };
 
-  const api: any = {
+  const api: FakePrisma = {
     user: {
-      findUnique: jest.fn(async ({ where, select }: any) => {
+      findUnique: jest.fn(async ({ where, select }: { where: WaWhereUser; select?: WaSelectArg }) => {
         if (state.user.id !== where.id) return null;
         const row: Record<string, unknown> = { ...state.user };
         if (select?.mfaCredentials) {
           row.mfaCredentials = state.creds
-            .filter((c) => c.kind === select.mfaCredentials.where.kind)
+            .filter((c) => c.kind === select.mfaCredentials?.where.kind)
             .map((c) => ({
               credentialId: c.credentialId,
               transports: c.transports,
@@ -88,42 +136,42 @@ function buildFakePrisma(initial: {
         }
         return row;
       }),
-      update: jest.fn(async ({ where, data }: any) => {
+      update: jest.fn(async ({ where, data }: { where: WaWhereUser; data: Partial<FakeUser> }) => {
         if (state.user.id !== where.id) throw new Error('user not found');
         state.user = { ...state.user, ...data };
         return state.user;
       }),
     },
     mfaCredential: {
-      findFirst: jest.fn(async ({ where }: any) => {
+      findFirst: jest.fn(async ({ where }: { where: WaWhereCred }) => {
         const match = state.creds.find((c) => {
           if (where.userId && c.userId !== where.userId) return false;
-          if (where.kind && c.kind !== where.kind) return false;
+          if (where.kind && typeof where.kind === 'string' && c.kind !== where.kind) return false;
           if (where.id && c.id !== where.id) return false;
           return true;
         });
         return match ?? null;
       }),
-      findUnique: jest.fn(async ({ where }: any) => {
+      findUnique: jest.fn(async ({ where }: { where: WaWhereCred }) => {
         if (where.credentialId) {
           return (
             state.creds.find(
               (c) =>
                 c.credentialId != null &&
-                matchesBytes(c.credentialId, where.credentialId),
+                matchesBytes(c.credentialId, where.credentialId!),
             ) ?? null
           );
         }
         return state.creds.find((c) => c.id === where.id) ?? null;
       }),
-      findMany: jest.fn(async ({ where }: any) => {
+      findMany: jest.fn(async ({ where }: { where: WaWhereCred }) => {
         return state.creds.filter((c) => {
           if (where.userId && c.userId !== where.userId) return false;
-          if (where.kind && c.kind !== where.kind) return false;
+          if (where.kind && typeof where.kind === 'string' && c.kind !== where.kind) return false;
           return true;
         });
       }),
-      create: jest.fn(async ({ data }: any) => {
+      create: jest.fn(async ({ data }: { data: WaCredCreateData }) => {
         // Reject duplicate credentialId — the real DB has a unique
         // index; mirror that here so the service's P2002 handler fires.
         if (
@@ -131,7 +179,7 @@ function buildFakePrisma(initial: {
           state.creds.some(
             (c) =>
               c.credentialId != null &&
-              matchesBytes(c.credentialId, data.credentialId),
+              matchesBytes(c.credentialId, data.credentialId!),
           )
         ) {
           throw new Prisma.PrismaClientKnownRequestError(
@@ -155,19 +203,19 @@ function buildFakePrisma(initial: {
         state.creds.push(row);
         return row;
       }),
-      update: jest.fn(async ({ where, data }: any) => {
+      update: jest.fn(async ({ where, data }: { where: WaWhereCred; data: Partial<FakeCred> }) => {
         const idx = state.creds.findIndex((c) => c.id === where.id);
         if (idx < 0) throw new Error('cred not found');
         state.creds[idx] = { ...state.creds[idx]!, ...data };
         return state.creds[idx];
       }),
-      delete: jest.fn(async ({ where }: any) => {
+      delete: jest.fn(async ({ where }: { where: WaWhereCred }) => {
         const idx = state.creds.findIndex((c) => c.id === where.id);
         if (idx < 0) throw new Error('cred not found');
         const [removed] = state.creds.splice(idx, 1);
         return removed;
       }),
-      count: jest.fn(async ({ where }: any) => {
+      count: jest.fn(async ({ where }: { where: WaWhereCred }) => {
         return state.creds.filter((c) => {
           if (where.userId && c.userId !== where.userId) return false;
           if (
@@ -177,12 +225,12 @@ function buildFakePrisma(initial: {
           ) {
             return (where.kind.in as string[]).includes(c.kind);
           }
-          if (where.kind && c.kind !== where.kind) return false;
+          if (where.kind && typeof where.kind === 'string' && c.kind !== where.kind) return false;
           return true;
         }).length;
       }),
     },
-    $transaction: jest.fn(async (fn: any): Promise<any> => {
+    $transaction: jest.fn(async (fn: ((tx: FakePrisma) => Promise<unknown>) | Promise<unknown>[]): Promise<unknown> => {
       // Accept both function form and array form. Production uses the
       // function form so callbacks can interleave with non-tx queries.
       if (typeof fn === 'function') return fn(api);
@@ -230,7 +278,7 @@ function stubRegOptions(challenge = 'REG-CHALLENGE-ABC'): void {
     attestation: 'none',
     excludeCredentials: [],
     authenticatorSelection: {},
-  } as any);
+  } as unknown as PublicKeyCredentialCreationOptionsJSON);
 }
 
 function stubAuthOptions(challenge = 'AUTH-CHALLENGE-XYZ'): void {
@@ -240,7 +288,7 @@ function stubAuthOptions(challenge = 'AUTH-CHALLENGE-XYZ'): void {
     rpId: 'localhost',
     userVerification: 'preferred',
     allowCredentials: [],
-  } as any);
+  } as unknown as PublicKeyCredentialRequestOptionsJSON);
 }
 
 function stubRegVerifySuccess(credId: Uint8Array, publicKey: Uint8Array): void {
@@ -262,7 +310,7 @@ function stubRegVerifySuccess(credId: Uint8Array, publicKey: Uint8Array): void {
       origin: 'http://localhost:3011',
       rpID: 'localhost',
     },
-  } as any);
+  } as unknown as VerifiedRegistrationResponse);
 }
 
 function stubAuthVerify(verified: boolean, newCounter: number, credId: Uint8Array): void {
@@ -277,7 +325,7 @@ function stubAuthVerify(verified: boolean, newCounter: number, credId: Uint8Arra
       origin: 'http://localhost:3011',
       rpID: 'localhost',
     },
-  } as any);
+  } as unknown as VerifiedAuthenticationResponse);
 }
 
 beforeEach(() => {
@@ -289,7 +337,7 @@ describe('mfa-webauthn.service', () => {
     it('throws NotFoundError for an unknown user', async () => {
       const user = await baseUser();
       const prisma = buildFakePrisma({ user });
-      const svc = createMfaWebauthnService(prisma as any);
+      const svc = createMfaWebauthnService(prisma as unknown as PrismaClient);
       await expect(
         svc.startRegistration('00000000-0000-0000-0000-00000000dead'),
       ).rejects.toBeInstanceOf(NotFoundError);
@@ -298,7 +346,7 @@ describe('mfa-webauthn.service', () => {
     it('returns options + a pending token whose `kind` and `sub` bind this user', async () => {
       const user = await baseUser();
       const prisma = buildFakePrisma({ user });
-      const svc = createMfaWebauthnService(prisma as any);
+      const svc = createMfaWebauthnService(prisma as unknown as PrismaClient);
       stubRegOptions('REG-CHALLENGE-ABC');
 
       const result = await svc.startRegistration(USER_ID);
@@ -317,7 +365,7 @@ describe('mfa-webauthn.service', () => {
     it('rejects a pending token whose `sub` does not match the caller', async () => {
       const user = await baseUser();
       const prisma = buildFakePrisma({ user });
-      const svc = createMfaWebauthnService(prisma as any);
+      const svc = createMfaWebauthnService(prisma as unknown as PrismaClient);
       const foreignToken = jwt.sign(
         {
           sub: '00000000-0000-0000-0000-00000000aaaa',
@@ -330,7 +378,7 @@ describe('mfa-webauthn.service', () => {
       await expect(
         svc.verifyRegistration(USER_ID, {
           pendingToken: foreignToken,
-          attestationResponse: { id: '', rawId: '', type: 'public-key', response: {} } as any,
+          attestationResponse: { id: '', rawId: '', type: 'public-key', response: {} } as unknown as RegistrationResponseJSON,
         }),
       ).rejects.toBeInstanceOf(UnauthorizedError);
     });
@@ -338,7 +386,7 @@ describe('mfa-webauthn.service', () => {
     it('happy path: persists credential, flips mfaEnabled, returns backup codes on first factor', async () => {
       const user = await baseUser();
       const prisma = buildFakePrisma({ user });
-      const svc = createMfaWebauthnService(prisma as any);
+      const svc = createMfaWebauthnService(prisma as unknown as PrismaClient);
       stubRegOptions('R1');
       const credId = new Uint8Array(32).fill(7);
       const pubKey = new Uint8Array([1, 2, 3, 4]);
@@ -357,14 +405,14 @@ describe('mfa-webauthn.service', () => {
           rawId: Buffer.from(credId).toString('base64url'),
           type: 'public-key',
           response: { transports: ['internal'] },
-        } as any,
+        } as unknown as RegistrationResponseJSON,
         label: 'Phone',
       });
 
       expect(result.credentialId).toBe(Buffer.from(credId).toString('base64url'));
       expect(result.backupCodes).toHaveLength(10);
       // State side-effects:
-      const state = (prisma as any)._state;
+      const state = prisma._state;
       expect(state.creds).toHaveLength(1);
       expect(state.creds[0].kind).toBe('WEBAUTHN');
       expect(state.creds[0].label).toBe('Phone');
@@ -378,7 +426,7 @@ describe('mfa-webauthn.service', () => {
       // Simulate pre-existing backup codes from the TOTP path.
       user.mfaBackupCodes = Array.from({ length: 10 }, () => '$2b$12$existing-hash');
       const prisma = buildFakePrisma({ user });
-      const svc = createMfaWebauthnService(prisma as any);
+      const svc = createMfaWebauthnService(prisma as unknown as PrismaClient);
       stubRegOptions('R2');
       const credId = new Uint8Array(32).fill(11);
       stubRegVerifySuccess(credId, new Uint8Array([9, 9]));
@@ -396,11 +444,11 @@ describe('mfa-webauthn.service', () => {
           rawId: Buffer.from(credId).toString('base64url'),
           type: 'public-key',
           response: {},
-        } as any,
+        } as unknown as RegistrationResponseJSON,
       });
       expect(result.backupCodes).toBeUndefined();
       // Existing codes preserved.
-      const state = (prisma as any)._state;
+      const state = prisma._state;
       expect(state.user.mfaBackupCodes).toHaveLength(10);
     });
 
@@ -425,7 +473,7 @@ describe('mfa-webauthn.service', () => {
           },
         ],
       });
-      const svc = createMfaWebauthnService(prisma as any);
+      const svc = createMfaWebauthnService(prisma as unknown as PrismaClient);
       stubRegOptions('R3');
       stubRegVerifySuccess(existingCredId, new Uint8Array([2]));
 
@@ -443,7 +491,7 @@ describe('mfa-webauthn.service', () => {
             rawId: Buffer.from(existingCredId).toString('base64url'),
             type: 'public-key',
             response: {},
-          } as any,
+          } as unknown as RegistrationResponseJSON,
         }),
       ).rejects.toBeInstanceOf(ConflictError);
     });
@@ -472,7 +520,7 @@ describe('mfa-webauthn.service', () => {
           },
         ],
       });
-      const svc = createMfaWebauthnService(prisma as any);
+      const svc = createMfaWebauthnService(prisma as unknown as PrismaClient);
       return { svc, prisma, credId };
     }
 
@@ -497,12 +545,12 @@ describe('mfa-webauthn.service', () => {
             rawId: Buffer.from(credId).toString('base64url'),
             type: 'public-key',
             response: {},
-          } as any,
+          } as unknown as AuthenticationResponseJSON,
         }),
       ).rejects.toBeInstanceOf(UnauthorizedError);
 
       // Stored counter NOT updated on regression.
-      const state = (prisma as any)._state;
+      const state = prisma._state;
       expect(state.creds[0].signCount).toBe(5);
     });
 
@@ -518,7 +566,7 @@ describe('mfa-webauthn.service', () => {
           rawId: Buffer.from(credId).toString('base64url'),
           type: 'public-key',
           response: {},
-        } as any,
+        } as unknown as AuthenticationResponseJSON,
       });
       expect(ok).toBe(true);
     });
@@ -535,10 +583,10 @@ describe('mfa-webauthn.service', () => {
           rawId: Buffer.from(credId).toString('base64url'),
           type: 'public-key',
           response: {},
-        } as any,
+        } as unknown as AuthenticationResponseJSON,
       });
       expect(ok).toBe(true);
-      const state = (prisma as any)._state;
+      const state = prisma._state;
       expect(state.creds[0].signCount).toBe(7);
       expect(state.creds[0].lastUsedAt).toBeInstanceOf(Date);
     });
@@ -561,7 +609,7 @@ describe('mfa-webauthn.service', () => {
           rawId: Buffer.from(credId).toString('base64url'),
           type: 'public-key',
           response: {},
-        } as any,
+        } as unknown as AuthenticationResponseJSON,
       });
       // credential belongs to USER_ID, not `otherUser` — service returns false.
       expect(ok).toBe(false);
@@ -586,7 +634,7 @@ describe('mfa-webauthn.service', () => {
             rawId: Buffer.from(credId).toString('base64url'),
             type: 'public-key',
             response: {},
-          } as any,
+          } as unknown as AuthenticationResponseJSON,
         }),
       ).rejects.toBeInstanceOf(UnauthorizedError);
     });
@@ -614,7 +662,7 @@ describe('mfa-webauthn.service', () => {
           },
         ],
       });
-      const svc = createMfaWebauthnService(prisma as any);
+      const svc = createMfaWebauthnService(prisma as unknown as PrismaClient);
       await expect(
         svc.deleteCredential(USER_ID, 'cred-1', { currentPassword: 'wrong' }),
       ).rejects.toBeInstanceOf(UnauthorizedError);
@@ -643,11 +691,11 @@ describe('mfa-webauthn.service', () => {
           },
         ],
       });
-      const svc = createMfaWebauthnService(prisma as any);
+      const svc = createMfaWebauthnService(prisma as unknown as PrismaClient);
       await svc.deleteCredential(USER_ID, 'cred-1', {
         currentPassword: 'currentPassword123!',
       });
-      const state = (prisma as any)._state;
+      const state = prisma._state;
       expect(state.creds).toHaveLength(0);
       expect(state.user.mfaEnabled).toBe(false);
       expect(state.user.mfaBackupCodes).toEqual([]);
@@ -689,11 +737,11 @@ describe('mfa-webauthn.service', () => {
           },
         ],
       });
-      const svc = createMfaWebauthnService(prisma as any);
+      const svc = createMfaWebauthnService(prisma as unknown as PrismaClient);
       await svc.deleteCredential(USER_ID, 'cred-1', {
         currentPassword: 'currentPassword123!',
       });
-      const state = (prisma as any)._state;
+      const state = prisma._state;
       expect(state.user.mfaEnabled).toBe(true);
       expect(state.user.mfaBackupCodes).toHaveLength(10);
     });
@@ -719,7 +767,7 @@ describe('mfa-webauthn.service', () => {
           },
         ],
       });
-      const svc = createMfaWebauthnService(prisma as any);
+      const svc = createMfaWebauthnService(prisma as unknown as PrismaClient);
       await expect(
         svc.deleteCredential(USER_ID, 'cred-1', {
           currentPassword: 'currentPassword123!',
@@ -750,15 +798,15 @@ describe('mfa-webauthn.service', () => {
           },
         ],
       });
-      const svc = createMfaWebauthnService(prisma as any);
+      const svc = createMfaWebauthnService(prisma as unknown as PrismaClient);
       stubAuthOptions('AUTH1');
       const result = await svc.startAuthentication(USER_ID);
       expect(result.options.challenge).toBe('AUTH1');
       // The library call should have been handed `allowCredentials` that
       // includes the user's credential id.
-      const argObj = mockedGenAuth.mock.calls[0]![0] as any;
+      const argObj = mockedGenAuth.mock.calls[0]![0] as GenerateAuthenticationOptionsOpts;
       expect(argObj.allowCredentials).toHaveLength(1);
-      expect(argObj.allowCredentials[0].id).toBe(
+      expect(argObj.allowCredentials![0]!.id).toBe(
         Buffer.from(credId).toString('base64url'),
       );
       // Challenge token's sub must bind to this user.

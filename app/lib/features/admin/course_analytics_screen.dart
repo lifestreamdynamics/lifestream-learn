@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:skeletonizer/skeletonizer.dart';
 
 import '../../config/app_constants.dart';
+import '../../core/art/brand_empty_state.dart';
 import '../../core/platform/flag_secure.dart';
 import '../../data/models/course.dart';
 import '../../data/models/course_analytics.dart';
@@ -134,9 +135,14 @@ class _CourseAnalyticsScreenState extends State<CourseAnalyticsScreen> {
               Card(
                 child: Padding(
                   padding: EdgeInsets.all(24),
-                  child: Text(
-                    'Placeholder analytics numbers that will be '
-                    'replaced by the real aggregates shortly.',
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Bone.text(words: 4),
+                      SizedBox(height: 12),
+                      Bone.multiText(lines: 2),
+                    ],
                   ),
                 ),
               ),
@@ -168,12 +174,14 @@ class _CourseAnalyticsScreenState extends State<CourseAnalyticsScreen> {
 
   Widget _buildPicker() {
     if (_courses.isEmpty) {
-      return const Card(
-        key: Key('admin.analytics.noCourses'),
-        child: Padding(
-          padding: EdgeInsets.all(16),
-          child: Text('No courses exist yet.'),
+      return BrandEmptyState(
+        key: const Key('admin.analytics.noCourses'),
+        painter: EmptySearchPainter(
+          scheme: Theme.of(context).colorScheme,
         ),
+        title: 'No courses exist yet',
+        subtitle:
+            'Course analytics will appear here once a designer publishes a course.',
       );
     }
     return DropdownButtonFormField<String>(
@@ -329,7 +337,7 @@ class _PickerSkeleton extends StatelessWidget {
       child: Card(
         child: Padding(
           padding: EdgeInsets.all(16),
-          child: Text('Loading course picker placeholder'),
+          child: Bone.text(words: 4),
         ),
       ),
     );

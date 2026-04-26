@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:skeletonizer/skeletonizer.dart';
 
+import '../../core/art/brand_empty_state.dart';
 import '../../core/platform/flag_secure.dart';
 import '../../data/models/designer_application.dart';
 import '../../data/repositories/admin_designer_application_repository.dart';
@@ -173,15 +174,14 @@ class _DesignerApplicationsScreenState
       );
     }
     if (_items.isEmpty) {
-      return const Center(
-        key: Key('admin.apps.empty'),
-        child: Padding(
-          padding: EdgeInsets.all(24),
-          child: Text(
-            'No pending applications right now.',
-            textAlign: TextAlign.center,
-          ),
+      return BrandEmptyState(
+        key: const Key('admin.apps.empty'),
+        painter: EmptyEnrollmentsPainter(
+          scheme: Theme.of(context).colorScheme,
         ),
+        title: 'No pending applications',
+        subtitle:
+            'New designer applications will land here for review.',
       );
     }
     return RefreshIndicator(

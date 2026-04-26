@@ -339,12 +339,9 @@ class _SkeletonCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,
           children: const [
-            Text('Loading title placeholder for skeleton layout'),
+            Bone.text(words: 3),
             SizedBox(height: 8),
-            Text(
-              'Loading longer body text placeholder that the skeletonizer '
-              'will shimmer in place of the real message.',
-            ),
+            Bone.multiText(lines: 2),
           ],
         ),
       ),

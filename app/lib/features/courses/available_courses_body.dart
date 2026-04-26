@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:skeletonizer/skeletonizer.dart';
 
+import '../../core/art/brand_empty_state.dart';
 import '../../data/repositories/course_repository.dart';
 import 'courses_bloc.dart';
 
@@ -57,11 +58,14 @@ class _AvailableGrid extends StatelessWidget {
         }
         if (state is CoursesLoaded) {
           if (state.items.isEmpty) {
-            return const Center(
-              child: Text(
-                'No published courses yet.',
-                key: Key('courses.empty'),
+            return BrandEmptyState(
+              key: const Key('courses.empty'),
+              painter: EmptySearchPainter(
+                scheme: Theme.of(context).colorScheme,
               ),
+              title: 'No published courses yet',
+              subtitle:
+                  'New courses will appear here as designers publish them.',
             );
           }
           return RefreshIndicator(
@@ -177,9 +181,9 @@ class _AvailableCoursesLoadingPlaceholder extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Course title placeholder'),
+                    Bone.text(words: 3),
                     SizedBox(height: 4),
-                    Text('subtitle'),
+                    Bone.text(words: 2),
                   ],
                 ),
               ),
