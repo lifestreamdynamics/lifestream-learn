@@ -116,6 +116,7 @@ else
     -e "s|^S3_SECRET_KEY=.*$|S3_SECRET_KEY=learn_secret_key|" \
     -e "s|^HLS_SIGNING_SECRET=.*$|HLS_SIGNING_SECRET=local_dev_secret_do_not_use_in_prod|" \
     -e "s|^HLS_BASE_URL=.*$|HLS_BASE_URL=http://10.0.2.2:${NGINX_HOST_PORT_VALUE}/hls|" \
+    -e "s|^TUSD_PUBLIC_URL=.*$|TUSD_PUBLIC_URL=http://localhost:${NGINX_HOST_PORT_VALUE}/uploads/files|" \
     -e "s|^TUSD_HOOK_SECRET=.*$|TUSD_HOOK_SECRET=${TUSD_HOOK_SECRET_VALUE}|" \
     -e "s|^SEED_ADMIN_PASSWORD=.*$|SEED_ADMIN_PASSWORD=Dev12345!Pass|" \
     -e "s|^SEED_DEV_USER_PASSWORD=.*$|SEED_DEV_USER_PASSWORD=Dev12345!Pass|" \
