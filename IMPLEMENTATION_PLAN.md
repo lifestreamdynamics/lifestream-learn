@@ -1,7 +1,7 @@
 # Lifestream Learn — Implementation Plan
 
 **Document owner:** Eric
-**Last updated:** 2026-04-19 (Phase 2 closed; Phase 3 in flight)
+**Last updated:** 2026-04-26 (Phase 8 deployment hardening in flight; Phase 7 hardening complete in code; ADR-0007 JWT rotation + tusd fix resolved)
 **Status:** Draft — pending approval
 
 > **Scope note (2026-04-19):** deployment is deliberately out of scope for this plan. The goal is a fully functional, locally tested application end-to-end before we pick a hosting strategy. Shared-resource hygiene (ports, key prefixes, DB naming) is honoured from day one so that decision stays low-friction later.
@@ -478,17 +478,33 @@ Each phase has **exit criteria** that must all be met before the next phase begi
 5. `~~CPR-007~~` (bootstrap HLS port bug) resolved (2026-04-26).
 6. Signed playback round-trips in production: tusd upload → transcode → master playlist returns 200, segment fetch with valid HMAC returns 200, tampered HMAC returns 403.
 
+**Phase 8 Slices ledger (post-Phase-7 work shipped through 2026-04-26):**
+
+These slices landed after the original Phase 7 close and span observability, hardening, UX, deploy prep, and designer authoring. On-device verification for Flutter slices remains the operator's call (per the Flutter rule in `CLAUDE.md`); Claude marks them `✎ compiled-and-analyzed-only` and Eric promotes to `✓ verified` after a real-device pass.
+
+| Slice | Scope (one-line) |
+|---|---|
+| G1 | Observability env vars (`METRICS_ENABLED`, IP-allowlist note); CLAUDE.md shared-resource note for `/metrics` on `:3011`. |
+| G2 | k6 learner-session scenario, HTTP keepalive on signed-playback path, perf baseline captured. |
+| G3 | `npm audit` clean-up, ffprobe assertion in transcode tests, tampered-HMAC + expired-URL coverage, threat model v1, pre-push hook regex fallback fix. |
+| H | Account/profile feature bundle: gamification, progress, data export, MFA UI (TOTP + WebAuthn + backup codes), session management. |
+| V1 | Video-input hardening (container/codec/duration/size policy) + FLAG_SECURE-ready player polish. |
+| U1 | UI overhaul: brand rollout, cyan theme, dark/light mode, splash + launcher icon. |
+| P5–P9 | Playback polish: seek bar refinement, double-tap accumulation, back-button guard, fullscreen orientation, layout fix. |
+| D1, D1.1 | Production deploy prep for `learn-api` + landing page on `mittonvillage.com`; Android release signing wiring. |
+| D2, D2.1 | Designer editor timeline seek + live playhead; deploy polish, privacy/terms content, Android manifest fixes. |
+
 **Phase 8 backlog (deferred items, ordered by priority):**
 
 | Item | Source | Notes |
 |---|---|---|
 | Linode block-storage volume attach (≥100 GB) | `ops/vps-prereq-check-2026-04-18.md` (VPS-002) | Operator decision; software guardrails (180s duration cap, raw-upload deletion per ADR 0006) keep MVP launch viable on the existing 38 GB until volume is attached. |
 | VPS RAM/CPU upgrade (8 GB / 4 cores) | `ops/vps-prereq-check-2026-04-18.md` (VPS-003/004) | Linode plan upgrade. Software mitigations already in place: `TRANSCODE_CONCURRENCY=1` (`api/src/config/env.ts:93`), `nice -n 10` wrapper (`deploy/pm2/ecosystem.config.cjs:60-66`). |
-| JWT dual-secret rotation (`*_PREVIOUS`) | threat-model.md §6 row 2 | Dev workflow today: env-swap + redeploy invalidates in-flight tokens. Backlog: accept current+previous for a grace window. |
+| JWT dual-secret rotation (`*_PREVIOUS`) | threat-model.md §6 row 2 | RESOLVED 2026-04-26 — see ADR 0007. `JWT_ACCESS_SECRET_PREVIOUS` / `JWT_REFRESH_SECRET_PREVIOUS` are accepted on verify (sign always uses current); `learn_jwt_verify_with_previous_total{tokenType=...}` reports rotation-window usage. Operator runbook in `api/.env.example`. |
 | MD5 → SHA256 secure_link upgrade | threat-model.md §6 row 1 | Nginx supports `secure_link_sha256`; `hls-signer.ts` swap is a one-line change. Run both algorithms in parallel for ~1 week, then cut over. |
 | `disk-alert.sh` scheduling | ADR 0006; `ops/phase-1-completion-2026-04-19.md` | Script + BATS tests exist (`infra/scripts/disk-alert.sh`); systemd timer/cron not yet wired. |
 | `gitleaks` install + CI enforcement | threat-model.md §6 row 5 | Document install in CONTRIBUTING.md; add CI check in `.github/workflows/secret-scan.yml` to fail when binary missing. |
-| tusd `Location` header `-base-path` fix | `ops/phase-1-completion-2026-04-19.md` (V8) | Today tusd emits internal URLs in `Location`. Add `-base-path /uploads/files/` flag and update Flutter client; not blocking until Flutter upload client targets prod. |
+| ~~tusd `Location` header `-base-path` fix~~ | `ops/phase-1-completion-2026-04-19.md` (V8) | RESOLVED 2026-04-26 — tusd started with `-base-path=/uploads/files/ -behind-proxy`; nginx rewrite removed; `TUSD_PUBLIC_URL` now nginx-proxied; BATS + Flutter regression tests added. |
 | `tus_client_dart` major upgrade (5.0+) | `app/pubspec.yaml:26` | Roadmap target was `^5.0.0`; pinned at `^2.5.0` because the upstream 5.x line was a fork that never hit pub.dev. Reassess in H2 2026 dep upgrade slice. |
 | Flutter dep upgrade pass (24 outdated, 3 discontinued transitives) | threat-model.md §6 row 4 | Single dedicated slice; full test suite must stay green under fresh lint rules. |
 | Crash reporter wiring (`@lifestream/doctor-node`) | `api/src/observability/doctor-reporter.ts` | Seam exists; awaits upstream package publication. Until then `CRASH_REPORTING_ENABLED=true` logs captures only. |

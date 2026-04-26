@@ -208,7 +208,7 @@ Extra smoke tests added by this slice:
 
 ### Status
 
-Per project CLAUDE.md, this slice is **✎ compiled-and-analyzed-only (device test needed)** until the operator drives on-device verification. `flutter analyze` clean (0 issues), `flutter test` green (175 tests), `flutter build apk --debug` succeeds (~204 MB).
+Per project CLAUDE.md, this slice is **✎ compiled-and-analyzed-only (device test needed)** until the operator drives on-device verification. `flutter analyze` clean (0 issues), `flutter test` green, `flutter build apk --debug` succeeds.
 
 ## Slice F
 
@@ -311,9 +311,9 @@ Extra smoke tests added by this slice:
 Per project CLAUDE.md, this slice is **✎ compiled-and-analyzed-only (device test needed)** until the operator drives on-device verification.
 
 - `flutter analyze` → 0 issues.
-- `flutter test` → **222 passed** (175 from previous slices + 47 new).
+- `flutter test` → green (previous-slice suites plus new Slice F coverage all passing).
 - `flutter build apk --debug --flavor dev` → succeeds.
-- `flutter build apk --flavor prod --release` → succeeds (universal APK 90.8 MB; `--split-per-abi` drops each ABI slice under the 50 MB target — arm64-v8a: 31.7 MB, armeabi-v7a: 26.1 MB, x86_64: 34.3 MB).
+- `flutter build apk --flavor prod --release` → succeeds; `--split-per-abi` keeps each ABI slice under the 50 MB target.
 - Backend added `GET /api/designer-applications/me` with 4 new integration tests (all green).
 
 ## License

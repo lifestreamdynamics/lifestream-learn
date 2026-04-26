@@ -116,6 +116,10 @@ Postgres (`accounting-postgres`) and Redis (`accounting-redis`) come from accoun
 
 Three roles on `User`: `ADMIN`, `COURSE_DESIGNER`, `LEARNER` (default). JWT access (15m) + refresh (30d) with role claim. Middleware pattern: `authenticate` + `requireRole(...)`. Cue writes, video uploads, and course mutations require `COURSE_DESIGNER` (owner or collaborator) or `ADMIN`. Applying to become a designer goes through `DesignerApplication` (admin-approved).
 
+JWT verification supports dual-secret rotation: `JWT_ACCESS_SECRET` paired with optional `JWT_ACCESS_SECRET_PREVIOUS` (and refresh equivalents). `verifyWithRotation` in `api/src/utils/jwt.ts` tries current then previous; rotation procedure in `api/.env.example`. See ADR-0007.
+
+MFA: TOTP (30s windows, ±1 drift, constant-time compare) + WebAuthn (strict ceremony ordering, attestation validated). Backup codes are single-use and hashed at rest. Implementation lives in `api/src/services/mfa/`. Refresh tokens rotate on each use; jti revocation in Redis under `learn:` prefix. Owned by the `mfa-engineer` agent.
+
 ### Data model conventions
 
 - Cue `payload` is `Json` in Postgres, but **discriminated union by `type`** (`MCQ` | `MATCHING` | `BLANKS` | `VOICE`) — validate with Zod on write. `VOICE` is reserved in the enum but rejected with 501 at the API layer (ADR 0004); don't expose it in UI.
@@ -174,6 +178,8 @@ Specialist agents live in `.claude/agents/`. Invoke via the Agent tool when the 
 | `security-auditor` | Architectural security review: grading integrity, secret handling, API authorization, threat modelling |
 | `code-reviewer` | Code quality review on TypeScript backend, Flutter app, or infra |
 | `accessibility-tester` | WCAG compliance, assistive technology, screen reader support |
+| `mfa-engineer` | Authentication/MFA work — TOTP (timing-safe, drift, backup codes), WebAuthn (ceremony order, attestation), JWT access/refresh lifecycle, password hashing, session management. Implementation in `api/src/services/auth.service.ts`, `api/src/services/mfa/`, `api/src/services/session.service.ts`, `api/src/services/refresh-token-store.ts`. Also covers ADR-0007 dual-secret rotation discipline. |
+| `deploy-engineer` | Production VPS deployment to mittonvillage.com — `deploy/deploy-production.sh`, PM2 (`learn-api` + `learn-transcode-worker`), nginx vhosts in `deploy/nginx/`, TLS via Let's Encrypt, atomic-symlink rollback, SSH ControlMaster troubleshooting. Coordinates with `shared-resource-guardian` before adding ports/Redis keys/Postgres roles. |
 
 ## Flutter app development (overrides default "test UI before done" rule)
 
@@ -193,8 +199,14 @@ Everything else in the repo (`api/`, `infra/`, `docs/`) still follows the defaul
 
 ## Phase awareness
 
-The project is pre-alpha. Phases 0–3 are complete. Phase 3 (upload → transcode → playback pipeline) is wired end-to-end and hardened: `POST /api/videos` issues tusd upload coordinates, the tusd `pre-finish` hook enqueues a `learn:transcode` BullMQ job, the FFmpeg worker validates input policy then produces a CMAF fMP4 HLS ladder, and `GET /api/videos/:id/playback` returns a short-lived MD5 secure_link URL. Integration tests cover the happy path, kill-and-resume, ffprobe-level ladder variants, and tampered-HMAC / expired-URL edge cases.
+The project is pre-alpha. Phases 0–3 are complete and hardened: `POST /api/videos` issues tusd upload coordinates, the tusd `pre-finish` hook enqueues a `learn:transcode` BullMQ job, the FFmpeg worker validates input policy then produces a CMAF fMP4 HLS ladder, and `GET /api/videos/:id/playback` returns a short-lived MD5 secure_link URL. Integration tests cover the happy path, kill-and-resume, ffprobe-level ladder variants, and tampered-HMAC / expired-URL edge cases.
 
-Flutter work (Phases 4–6) has advanced in parallel: auth, feed, player + cue engine (MCQ/BLANKS/MATCHING), designer authoring, admin, and an offline-survivable analytics buffer are all present under `app/lib/features/`. `IMPLEMENTATION_PLAN.md` §5 remains the source of truth for per-slice exit criteria — check it before implementing anything to confirm:
+Phases 4–6 (Flutter): code-complete — auth, feed, player + cue engine (MCQ/BLANKS/MATCHING), designer authoring, admin, and an offline-survivable analytics buffer are all present under `app/lib/features/`. Awaiting on-device verification by the operator before slices flip from `✎ compiled-and-analyzed-only` to `✓ verified`.
+
+Phase 7 (local hardening): complete in code; operator-driven manual verification (full load-test run, multi-day smoke) is the remaining gate.
+
+Phase 8 (Deployment Hardening): in flight. Slices D1, D1.1, D2, D2.1 deployed; backlog tracked in `IMPLEMENTATION_PLAN.md` §5 Phase 8 (JWT dual-secret rotation now resolved per ADR-0007 — 2026-04-26; tusd `-base-path` fix resolved 2026-04-26).
+
+`IMPLEMENTATION_PLAN.md` §5 remains the source of truth for per-slice exit criteria — check it before implementing anything to confirm:
 - Which phase you're in and its exit criteria
 - Whether the task is listed as a **parallel-subagent split point** (§6) — if so, spawn subagents per the prescribed split rather than doing the work sequentially.
