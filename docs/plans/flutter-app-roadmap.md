@@ -4,7 +4,7 @@
 **Created:** 2026-04-19
 **Status:** Active — replaces the aspirational plan in `flutter-app.md`
 **Supersedes:** `flutter-app.md` (kept for reference on the API contract + risks sections)
-**Validated:** 2026-04-19 | **Result:** Pass with Caveats | **Phases:** 7/7
+**Validated:** 2026-04-19 → 2026-04-26 (post-Slice-F polish cycle) | **Result:** Pass with Caveats | **Phases:** 7/7
 
 ---
 
@@ -529,6 +529,46 @@ Remediated in a single follow-up commit:
 - Fixed 6 pre-plan lint warnings (unused eslint-disable in `mkcourse.ts` + `no-non-null-assertion` in test files via an override in `eslint.config.js`). Backend `npm run lint` now 0 errors, 0 warnings.
 
 Post-remediation: Backend 460 unit + 118 integration green (1 integration failure unchanged: pre-existing `transcode-e2e` EADDRINUSE quirk acknowledged in CLAUDE.md). Flutter 225 tests green. Both analyze clean. Release APK builds under 50 MB per ABI.
+
+### Post-Slice-F polish cycle (2026-04-26)
+
+Roadmap-driven UX/lint/Phase-8 cleanup pass. Scope (user-confirmed): Flutter
+UX papercuts + API lint hygiene + JWT dual-secret rotation (Phase 8 backlog
+catch-up) + tusd `-base-path` fix.
+
+Delivered:
+- **Flutter UX:** four skeleton-text leaks replaced with `Bone.text` /
+  `Bone.multiText` shapes; three list empty-state fallbacks standardised on
+  `BrandEmptyState` with `EmptySearchPainter` / `EmptyEnrollmentsPainter`
+  (touched: `available_courses_body.dart`, `course_analytics_screen.dart`,
+  `designer_applications_screen.dart`, `designer_application_screen.dart`).
+  New widget test `available_courses_body_test.dart` + `BrandEmptyState`
+  assertions added to existing tests.
+- **API lint:** zeroed out 74 ESLint warnings — 3 in production code
+  (`backup-codes.ts` dead disable + non-null assertion;
+  `webauthn-authenticator.ts` unused import) and 71 `as any` patterns in
+  four MFA test files replaced with proper Prisma-mock types.
+- **JWT dual-secret rotation:** `JWT_*_SECRET_PREVIOUS` env vars added;
+  `verifyWithRotation` in `utils/jwt.ts` tries current then falls back to
+  previous on signature mismatch only; `learn_jwt_verify_with_previous_total`
+  Counter exposes operator-visible rotation usage. Unit + integration tests;
+  ADR 0007.
+- **tusd Location header:** tusd compose now uses `-base-path=/uploads/files/`
+  + `-behind-proxy`; nginx `/uploads/` rewrite removed in favour of
+  pass-through with `X-Forwarded-Host`/`X-Forwarded-Port`. API `TUSD_PUBLIC_URL`
+  swapped from direct `:1080/files` to nginx-proxied `/uploads/files`. BATS
+  + Flutter regression tests added.
+
+Final state: API `npm run lint` = 0/0; `npm run typecheck` clean; 71 unit
+suites / 898 unit tests green (was 879 — +19 for new JWT rotation tests).
+Integration: 27 tests across 3 auth suites pass (includes new rotation
+suite). Flutter: 671 tests green (was 668; +3 for new + extended tests),
+`flutter analyze` 0 issues, `flutter build apk --debug --flavor dev`
+succeeds. `jwt.ts` coverage 100/100/100/100. BATS 9/9 (bootstrap-dev) and
+infra 35/35 still green.
+
+Phase 8 backlog rows resolved: JWT dual-secret rotation; tusd `-base-path` /
+Location header.
 
 ---
 
