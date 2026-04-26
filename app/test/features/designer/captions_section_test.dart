@@ -71,6 +71,41 @@ void main() {
     expect(find.text(captionLanguageLabel('fr')), findsOneWidget);
   });
 
+  testWidgets(
+      'renders Default chip on the row matching defaultCaptionLanguage',
+      (tester) async {
+    when(() => repo.list('v1')).thenAnswer(
+      (_) async => [_summary(language: 'en'), _summary(language: 'fr')],
+    );
+
+    await tester.pumpWidget(_wrap(CaptionsSection(
+      videoId: 'v1',
+      captionRepo: repo,
+      defaultCaptionLanguage: 'fr',
+    )));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('captions.default.fr')), findsOneWidget);
+    expect(find.byKey(const Key('captions.default.en')), findsNothing);
+    expect(find.text('Default'), findsOneWidget);
+  });
+
+  testWidgets(
+      'no Default chip when defaultCaptionLanguage is null',
+      (tester) async {
+    when(() => repo.list('v1')).thenAnswer(
+      (_) async => [_summary(language: 'en'), _summary(language: 'fr')],
+    );
+
+    await tester.pumpWidget(_wrap(CaptionsSection(
+      videoId: 'v1',
+      captionRepo: repo,
+    )));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Default'), findsNothing);
+  });
+
   testWidgets('tapping Add language opens bottom sheet', (tester) async {
     when(() => repo.list('v1')).thenAnswer((_) async => const []);
 

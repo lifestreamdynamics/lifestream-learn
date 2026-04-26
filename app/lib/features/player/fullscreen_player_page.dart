@@ -162,7 +162,15 @@ class _FullscreenPlayerPageState extends State<FullscreenPlayerPage> {
     super.dispose();
   }
 
-  void _exit() => Navigator.of(context).maybePop();
+  void _exit() {
+    // Use pop() directly, not maybePop(): the parent `PopScope` has
+    // `canPop: false`, so `maybePop` would re-invoke `onPopInvokedWithResult`
+    // → `_exit()` and infinite-loop. The PopScope's only job is to
+    // intercept the OS back-press and route it through here; the explicit
+    // pop is what the user-driven exit button (and the OrientationBuilder
+    // auto-exit, gated by `_exiting`) want.
+    Navigator.of(context).pop();
+  }
 
   @override
   Widget build(BuildContext context) {

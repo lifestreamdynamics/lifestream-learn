@@ -66,10 +66,8 @@ export async function patchMe(req: Request, res: Response): Promise<void> {
  *       `image/png`, or `image/webp`). Max 2 MB. The server writes the
  *       object to the `avatars/<userId>/<uuid>.<ext>` prefix on the
  *       upload bucket and stores the key on the user row. Any previous
- *       avatar is deleted best-effort.
- *
- *       EXIF is **not** stripped server-side in this slice —
- *       TODO(Slice P1 follow-up).
+ *       avatar is deleted best-effort. EXIF metadata (including GPS
+ *       coordinates) is stripped server-side via sharp before persistence.
  *     security: [{ bearerAuth: [] }]
  *     requestBody:
  *       required: true

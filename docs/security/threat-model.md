@@ -2,7 +2,11 @@
 
 **Owner:** Eric
 **Created:** 2026-04-19 (Slice G3, Phase 7)
-**Status:** Draft — pending security-review skill pass
+**Status:** Accepted — manual review pass 2026-04-26.
+The repo has no git remote yet (per ADR 0005 the public split happens
+later); the `security-review` skill expects a remote, so a re-run via
+the skill is required at split time. Until then this document tracks
+the security posture; manual updates supersede the skill output.
 
 This is a one-page, living threat model. Update it when the architecture
 shifts or when an ADR lands a new trust decision.
@@ -32,7 +36,7 @@ shifts or when an ADR lands a new trust decision.
 | Single-tenant local dev today; shared-VPS multi-tenant later. | Certain | IMPLEMENTATION_PLAN.md scope note. |
 | Postgres + Redis are shared with accounting-api via compose, but scoped via `learn_api_user` role, `learn_api_*` databases, and a `learn:` Redis key prefix. | Certain | `CLAUDE.md` shared-resource discipline section. |
 | Object storage stays on SeaweedFS (self-hosted). No AWS, R2, or other cloud S3. | Certain | ADR 0002. `@aws-sdk/client-s3` in `package.json` is the S3-protocol client we use to talk to SeaweedFS — it's not a cloud dependency. |
-| The reverse proxy (nginx) IP-allowlists `/metrics` and `/internal/*` before any deployment. | **Pending** | Slice G1 CLAUDE.md note flags this as a pre-deploy TODO. |
+| The reverse proxy (nginx) IP-allowlists `/metrics` and `/internal/*` before any deployment. | Implemented | `deploy/nginx/learn-api.lifestreamdynamics.com.conf` (2026-04-26) — both locations have `allow 127.0.0.1; allow 172.16.0.0/12; deny all;`. Loopback covers a same-VPS Prometheus / tusd; the `172.16.0.0/12` range covers the docker bridge. |
 
 ## 3. Trust boundaries
 
@@ -93,7 +97,7 @@ fields (`answerIndex`, `pairs`).
 | **Flutter deps with 24 out-of-date lines + 3 discontinued transitives.** | Latent maintenance burden. | Dedicated "Flutter dep upgrade 2026 H2" backlog slice; none carry known CVEs today. |
 | **No `gitleaks` installed locally.** | Pre-push hook falls back to a regex scanner; weaker coverage. | Install `gitleaks` via `apt install gitleaks` or `brew install gitleaks`. Slice G3 surfaced and fixed a subtle bug in the regex fallback (grep was receiving a `-`-prefixed pattern as a flag). |
 | **VOICE cue type reserved but unimplemented.** | None today (API returns 501). | ADR 0004. |
-| **`/metrics` and `/internal/*` paths are not IP-allowlisted.** | Metrics or the tusd-hook endpoint reachable publicly on a future deploy would leak request counts / accept arbitrary tusd notifications. | Pre-deploy TODO (Slice G1 note in CLAUDE.md). |
+| ~~**`/metrics` and `/internal/*` paths are not IP-allowlisted.**~~ | ~~Metrics or the tusd-hook endpoint reachable publicly on a future deploy would leak request counts / accept arbitrary tusd notifications.~~ | **Resolved 2026-04-26** in `deploy/nginx/learn-api.lifestreamdynamics.com.conf` — explicit `allow 127.0.0.1; allow 172.16.0.0/12; deny all;` on both locations. |
 
 ## 7. Non-goals
 

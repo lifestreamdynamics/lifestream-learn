@@ -28,6 +28,7 @@ _$VideoSummaryImpl _$$VideoSummaryImplFromJson(Map<String, dynamic> json) =>
       orderIndex: (json['orderIndex'] as num).toInt(),
       status: $enumDecode(_$VideoStatusEnumMap, json['status']),
       durationMs: (json['durationMs'] as num?)?.toInt(),
+      defaultCaptionLanguage: json['defaultCaptionLanguage'] as String?,
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: json['updatedAt'] == null
           ? null
@@ -42,6 +43,7 @@ Map<String, dynamic> _$$VideoSummaryImplToJson(_$VideoSummaryImpl instance) =>
       'orderIndex': instance.orderIndex,
       'status': _$VideoStatusEnumMap[instance.status]!,
       'durationMs': instance.durationMs,
+      'defaultCaptionLanguage': instance.defaultCaptionLanguage,
       'createdAt': instance.createdAt.toIso8601String(),
       'updatedAt': instance.updatedAt?.toIso8601String(),
     };

@@ -90,6 +90,19 @@ else
   # decodes to exactly 32 bytes, matching the env schema.
   MFA_ENCRYPTION_KEY_VALUE="$(openssl rand -base64 32)"
 
+  # Resolve NGINX_HOST_PORT from infra/.env so HLS_BASE_URL points at the
+  # same host port docker-compose actually publishes nginx on. Mirrors the
+  # canonical pattern in Makefile (`NGINX_HOST_PORT := $(shell ...)` near
+  # the top of the file). Falls back to 80 — the docker-compose default
+  # — when infra/.env is absent or doesn't override the port.
+  NGINX_HOST_PORT_VALUE="80"
+  if [[ -f "$INFRA_ENV" ]]; then
+    port_line="$(grep -E '^NGINX_HOST_PORT=' "$INFRA_ENV" | tail -1 | cut -d= -f2- || true)"
+    if [[ -n "${port_line:-}" ]]; then
+      NGINX_HOST_PORT_VALUE="$port_line"
+    fi
+  fi
+
   # Use '|' delimiter for any value that may contain '/', '+', '=', or ':'.
   # openssl base64 output contains '/' and '+'; URLs contain '/' and ':'.
   sed -i.bak \
@@ -102,7 +115,7 @@ else
     -e "s|^S3_ACCESS_KEY=.*$|S3_ACCESS_KEY=learn_access_key|" \
     -e "s|^S3_SECRET_KEY=.*$|S3_SECRET_KEY=learn_secret_key|" \
     -e "s|^HLS_SIGNING_SECRET=.*$|HLS_SIGNING_SECRET=local_dev_secret_do_not_use_in_prod|" \
-    -e "s|^HLS_BASE_URL=.*$|HLS_BASE_URL=http://10.0.2.2:80/hls|" \
+    -e "s|^HLS_BASE_URL=.*$|HLS_BASE_URL=http://10.0.2.2:${NGINX_HOST_PORT_VALUE}/hls|" \
     -e "s|^TUSD_HOOK_SECRET=.*$|TUSD_HOOK_SECRET=${TUSD_HOOK_SECRET_VALUE}|" \
     -e "s|^SEED_ADMIN_PASSWORD=.*$|SEED_ADMIN_PASSWORD=Dev12345!Pass|" \
     -e "s|^SEED_DEV_USER_PASSWORD=.*$|SEED_DEV_USER_PASSWORD=Dev12345!Pass|" \

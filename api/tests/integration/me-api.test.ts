@@ -146,18 +146,21 @@ describe('Me API (integration)', () => {
     it('happy path: accepts PNG, persists key, returns avatarKey', async () => {
       const app = await getTestApp();
       const user = await createUser({ role: 'LEARNER' });
-      // Minimal PNG header so our content-type gate is the only thing
-      // this test exercises — the object-store is mocked.
-      const pngHeader = Buffer.from([
-        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
-        0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
-      ]);
+      // Use a real (tiny) PNG fixture — Slice P1 follow-up routes the
+      // upload through `sharp` to strip EXIF, and sharp rejects raw
+      // header bytes that aren't a complete decodable image.
+      const pngBytes = (await import('node:fs')).readFileSync(
+        (await import('node:path')).resolve(
+          __dirname,
+          '../fixtures/avatars/plain.png',
+        ),
+      );
 
       const res = await request(app)
         .post('/api/me/avatar')
         .set('authorization', `Bearer ${user.accessToken}`)
         .set('content-type', 'image/png')
-        .send(pngHeader);
+        .send(pngBytes);
 
       expect(res.status).toBe(200);
       expect(res.body.avatarKey).toMatch(

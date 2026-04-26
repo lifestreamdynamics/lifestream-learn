@@ -1,4 +1,7 @@
 import '@tests/unit/setup';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import sharp from 'sharp';
 import type { PrismaClient } from '@prisma/client';
 import {
   createUserService,
@@ -9,6 +12,23 @@ import { NotFoundError, UnauthorizedError, ValidationError } from '@/utils/error
 import { hashPassword } from '@/utils/password';
 import type { ObjectStore } from '@/services/object-store';
 import type { SessionService } from '@/services/session.service';
+
+// ---------------------------------------------------------------------------
+// Real image fixtures — tiny but decodable by sharp. These are pre-generated
+// in tests/fixtures/avatars/ so test runs don't invoke sharp during setup.
+// ---------------------------------------------------------------------------
+const FIXTURES_DIR = path.resolve(__dirname, '../../fixtures/avatars');
+
+function loadFixture(name: string): Buffer {
+  return fs.readFileSync(path.join(FIXTURES_DIR, name));
+}
+
+// Loaded once at module level — synchronous reads of tiny files are fine in
+// a test module initialiser and avoids a beforeAll async gate.
+const JPEG_BYTES = loadFixture('plain.jpg');
+const PNG_BYTES = loadFixture('plain.png');
+const WEBP_BYTES = loadFixture('plain.webp');
+const EXIF_JPEG_BYTES = loadFixture('with-exif.jpg');
 
 // Slice P6 — user.service calls `sessions.revokeAllForUser(userId)`
 // on password change + soft delete. Tests here mock the service and
@@ -196,7 +216,7 @@ describe('user.service', () => {
 
       const res = await svc.uploadAvatar({
         userId: USER_ID,
-        bytes: Buffer.from('not-really-a-jpeg'),
+        bytes: JPEG_BYTES,
         contentType: 'image/jpeg',
       });
       expect(res.avatarKey).toMatch(/^avatars\/[^/]+\/[^/]+\.jpg$/);
@@ -223,7 +243,7 @@ describe('user.service', () => {
 
       await svc.uploadAvatar({
         userId: USER_ID,
-        bytes: Buffer.from('png-bytes'),
+        bytes: PNG_BYTES,
         contentType: 'image/png',
       });
       // Deletion is fire-and-forget; wait a tick for the promise chain.
@@ -252,7 +272,7 @@ describe('user.service', () => {
       await expect(
         svc.uploadAvatar({
           userId: USER_ID,
-          bytes: Buffer.from('webp'),
+          bytes: WEBP_BYTES,
           contentType: 'image/webp',
         }),
       ).resolves.toBeDefined();
@@ -288,6 +308,55 @@ describe('user.service', () => {
           contentType: 'image/jpeg',
         }),
       ).rejects.toBeInstanceOf(ValidationError);
+    });
+
+    it('strips EXIF from a JPEG that contains metadata', async () => {
+      // Verify the fixture actually has EXIF before the test runs.
+      const fixtureMeta = await sharp(EXIF_JPEG_BYTES).metadata();
+      expect(fixtureMeta.exif).toBeDefined();
+
+      const prisma = buildMockPrisma();
+      prisma.user.findUnique.mockResolvedValueOnce({ avatarKey: null });
+      prisma.user.update.mockResolvedValueOnce(
+        baseRow({ avatarKey: 'avatars/xyz/abc.jpg' }),
+      );
+      const store = buildMockObjectStore();
+      const svc = createUserService(
+        prisma as unknown as PrismaClient,
+        store as unknown as ObjectStore,
+      );
+
+      await svc.uploadAvatar({
+        userId: USER_ID,
+        bytes: EXIF_JPEG_BYTES,
+        contentType: 'image/jpeg',
+      });
+
+      // The object store should have been called with the sanitized bytes —
+      // inspect the buffer captured by the mock's putObject call.
+      expect(store.putObject).toHaveBeenCalledTimes(1);
+      const capturedBytes: Buffer = store.putObject.mock.calls[0][2] as Buffer;
+      const strippedMeta = await sharp(capturedBytes).metadata();
+      // Sharp omits the `exif` key entirely when no EXIF is present.
+      expect(strippedMeta.exif).toBeUndefined();
+    });
+
+    it('non-image buffer -> ValidationError (sharp cannot decode)', async () => {
+      const prisma = buildMockPrisma();
+      const store = buildMockObjectStore();
+      const svc = createUserService(
+        prisma as unknown as PrismaClient,
+        store as unknown as ObjectStore,
+      );
+      await expect(
+        svc.uploadAvatar({
+          userId: USER_ID,
+          bytes: Buffer.from('not an image'),
+          contentType: 'image/jpeg',
+        }),
+      ).rejects.toBeInstanceOf(ValidationError);
+      // No upload should have occurred.
+      expect(store.putObject).not.toHaveBeenCalled();
     });
   });
 

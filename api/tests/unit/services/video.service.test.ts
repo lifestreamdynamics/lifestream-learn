@@ -41,6 +41,7 @@ function fakeVideoRow(overrides: Record<string, unknown> = {}) {
     durationMs: null,
     sourceKey: `uploads/${VIDEO_ID}`,
     hlsPrefix: null,
+    defaultCaptionLanguage: null as string | null,
     createdAt: new Date('2026-01-01T00:00:00Z'),
     updatedAt: new Date('2026-01-01T00:00:00Z'),
     ...overrides,
@@ -295,9 +296,29 @@ describe('video.service', () => {
         orderIndex: 0,
         status: 'READY',
         durationMs: null,
+        defaultCaptionLanguage: null,
         createdAt: expect.any(Date),
         updatedAt: expect.any(Date),
       });
+    });
+
+    it('exposes defaultCaptionLanguage when the video has one set', async () => {
+      const prisma = buildMockPrisma();
+      prisma.video.findUnique
+        .mockResolvedValueOnce({
+          id: VIDEO_ID,
+          status: 'READY',
+          hlsPrefix: 'p',
+          courseId: COURSE_ID,
+          course: { ownerId: OWNER_ID, collaborators: [], enrollments: [] },
+        })
+        .mockResolvedValueOnce(
+          fakeVideoRow({ status: 'READY', defaultCaptionLanguage: 'en' }),
+        );
+      const svc = createVideoService(prisma as unknown as PrismaClient);
+
+      const v = await svc.getVideoById(VIDEO_ID, OWNER_ID, 'COURSE_DESIGNER');
+      expect(v.defaultCaptionLanguage).toBe('en');
     });
 
     it('throws NotFoundError if the row vanishes between access check and refetch', async () => {

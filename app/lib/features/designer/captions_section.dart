@@ -14,11 +14,9 @@ const int _kMaxCaptionBytes = 512 * 1024;
 ///
 /// Renders a list of uploaded tracks and an "+ Add language" CTA that opens
 /// a bottom sheet. Owns its own loading/error state — no BLoC required.
-///
-/// TODO(captions-default): defaultCaptionLanguage is not shown here because
-/// VideoSummary doesn't include it yet. A future slice should expose it via
-/// the video detail endpoint and wire [defaultCaptionLanguage] into the row
-/// rendering. See IMPLEMENTATION_PLAN.md §5 caption slice notes (option c).
+/// The caption row matching [defaultCaptionLanguage] (sourced from
+/// `VideoSummary.defaultCaptionLanguage`) is decorated with a "default"
+/// chip so designers can see at a glance which track plays first.
 class CaptionsSection extends StatefulWidget {
   const CaptionsSection({
     required this.videoId,
@@ -32,8 +30,8 @@ class CaptionsSection extends StatefulWidget {
   final String videoId;
   final CaptionRepository captionRepo;
 
-  /// Current default caption language (BCP-47). Not rendered in Slice B —
-  /// see TODO above.
+  /// Current default caption language (BCP-47). When non-null, the
+  /// matching caption row renders a "default" chip in its trailing area.
   final String? defaultCaptionLanguage;
 
   /// Fired after a successful upload with `setDefault: true`, or when the
@@ -197,7 +195,28 @@ class _CaptionsSectionState extends State<CaptionsSection> {
               Card(
                 key: Key('captions.row.${caption.language}'),
                 child: ListTile(
-                  title: Text(captionLanguageLabel(caption.language)),
+                  title: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(captionLanguageLabel(caption.language)),
+                      if (widget.defaultCaptionLanguage == caption.language) ...[
+                        const SizedBox(width: 8),
+                        Chip(
+                          key: Key(
+                            'captions.default.${caption.language}',
+                          ),
+                          label: const Text('Default'),
+                          visualDensity: VisualDensity.compact,
+                          materialTapTargetSize:
+                              MaterialTapTargetSize.shrinkWrap,
+                          padding: EdgeInsets.zero,
+                          labelPadding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
                   subtitle: Text('${(caption.bytes / 1024).toStringAsFixed(1)} KB'),
                   trailing: IconButton(
                     key: Key('captions.delete.${caption.language}'),

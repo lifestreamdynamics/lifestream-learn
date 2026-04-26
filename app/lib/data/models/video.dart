@@ -42,6 +42,10 @@ class VideoSummary with _$VideoSummary {
     required int orderIndex,
     required VideoStatus status,
     int? durationMs,
+    /// BCP-47 caption language to surface as default in the designer UI
+    /// (matching caption row gets a "default" marker) and the player
+    /// (used for caption auto-selection). Null when no default is set.
+    String? defaultCaptionLanguage,
     required DateTime createdAt,
     DateTime? updatedAt,
   }) = _VideoSummary;

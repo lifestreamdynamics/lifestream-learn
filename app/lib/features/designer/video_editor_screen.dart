@@ -266,6 +266,15 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
               key: const Key('video.captionsSection'),
               videoId: widget.videoId,
               captionRepo: widget.captionRepo,
+              defaultCaptionLanguage: _video?.defaultCaptionLanguage,
+              onDefaultChanged: (language) {
+                if (!mounted) return;
+                final current = _video;
+                if (current == null || language == null) return;
+                setState(() {
+                  _video = current.copyWith(defaultCaptionLanguage: language);
+                });
+              },
             ),
           ),
         ],

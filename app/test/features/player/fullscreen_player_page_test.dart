@@ -3,10 +3,16 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lifestream_learn_app/features/player/fullscreen_player_page.dart';
 import 'package:video_player/video_player.dart';
 
-/// Minimal fake controller — reports initialized with a landscape size
-/// so the page renders the video area correctly. Uses the uninitialized
-/// player ID so no platform texture is requested.
+/// Minimal fake controller. Defaults to a portrait source so the
+/// `FullscreenPlayerPage`'s landscape-only `OrientationBuilder` branch
+/// (which schedules post-frame callbacks chasing the orientation
+/// signal) is skipped in tests. Pass [size] explicitly to exercise the
+/// landscape branch. Uses the uninitialized player ID so no platform
+/// texture is requested.
 class _FakeController implements VideoPlayerController {
+  _FakeController({this.size = const Size(720, 1280)});
+  final Size size;
+
   @override
   int get playerId => VideoPlayerController.kUninitializedPlayerId;
 
@@ -14,7 +20,7 @@ class _FakeController implements VideoPlayerController {
   VideoPlayerValue get value => VideoPlayerValue.uninitialized().copyWith(
         isInitialized: true,
         duration: const Duration(seconds: 60),
-        size: const Size(1280, 720),
+        size: size,
       );
 
   @override
@@ -129,6 +135,26 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(popped, isTrue);
+  });
+
+  testWidgets('landscape source path renders without infinite-loop',
+      (tester) async {
+    // The landscape branch wraps the page in an OrientationBuilder that
+    // schedules post-frame callbacks. Use bounded pump() so we don't chase
+    // those callbacks forever, and assert the static parts render.
+    await tester.pumpWidget(
+      MaterialApp(
+        home: FullscreenPlayerPage(
+          controller: _FakeController(size: const Size(1280, 720)),
+          title: 'Landscape Video',
+        ),
+      ),
+    );
+    for (var i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(find.byKey(const Key('fullscreen.exit')), findsOneWidget);
+    expect(find.byType(VideoPlayer), findsOneWidget);
   });
 }
 

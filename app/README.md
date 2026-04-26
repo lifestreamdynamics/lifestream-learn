@@ -8,6 +8,11 @@ Slices C–F are code-complete and compiled-and-analyzed-only per project CLAUDE
 
 Per project CLAUDE.md, these slices are `compiled-and-analyzed-only (device test needed)` until the operator drives on-device verification.
 
+### Recent polish (2026-04-26)
+
+- **Designer caption default marker.** `CaptionsSection` now renders a "Default" chip on the row whose language matches `VideoSummary.defaultCaptionLanguage` (sourced from `GET /api/videos/:id`). No new endpoint; the Prisma column has been there since Slice D — the field just wasn't surfaced through the public video shape until now. See `lib/features/designer/captions_section.dart`.
+- **Profile quick-stats wiring.** The `QuickStatsStrip` (courses / lessons / streak / accuracy tiles) renders real values from `ProfileBloc` → `ProgressOverall.summary` (already wired in `profile_screen.dart`); stale "Slice P1 placeholder" comments cleaned up. Loading and error states still fall back to `—` placeholders. See `lib/features/profile/widgets/quick_stats_strip.dart`.
+
 ## Stack
 
 - Flutter 3.41.5 / Dart 3.11.3 (pinned via `.fvmrc`)

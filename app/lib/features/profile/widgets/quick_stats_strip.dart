@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 
 /// Four mini-tiles at the top of the profile — courses, lessons,
-/// current streak, overall accuracy. Slice P1 renders placeholder dashes;
-/// Slice P2 feeds real data from `GET /api/me/progress`.
+/// current streak, overall accuracy. Values come from the `ProfileBloc`
+/// → `ProgressOverall.summary`, which calls `GET /api/me/progress`.
+/// Nullable parameters are kept so the strip can render during the
+/// initial loading state (before the first `ProfileLoaded` arrives) and
+/// during error states, where it falls back to "—" placeholders.
 class QuickStatsStrip extends StatelessWidget {
   const QuickStatsStrip({
     this.courses,
@@ -12,7 +15,7 @@ class QuickStatsStrip extends StatelessWidget {
     super.key,
   });
 
-  /// Null → render "—" placeholder. Slice P2 will always pass non-null.
+  /// Null → render "—" placeholder (loading or error state).
   final int? courses;
   final int? lessons;
   final int? streakDays;
