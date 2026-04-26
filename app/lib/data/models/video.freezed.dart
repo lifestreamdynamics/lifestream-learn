@@ -224,6 +224,11 @@ mixin _$VideoSummary {
   int get orderIndex => throw _privateConstructorUsedError;
   VideoStatus get status => throw _privateConstructorUsedError;
   int? get durationMs => throw _privateConstructorUsedError;
+
+  /// BCP-47 caption language to surface as default in the designer UI
+  /// (matching caption row gets a "default" marker) and the player
+  /// (used for caption auto-selection). Null when no default is set.
+  String? get defaultCaptionLanguage => throw _privateConstructorUsedError;
   DateTime get createdAt => throw _privateConstructorUsedError;
   DateTime? get updatedAt => throw _privateConstructorUsedError;
 
@@ -251,6 +256,7 @@ abstract class $VideoSummaryCopyWith<$Res> {
     int orderIndex,
     VideoStatus status,
     int? durationMs,
+    String? defaultCaptionLanguage,
     DateTime createdAt,
     DateTime? updatedAt,
   });
@@ -277,6 +283,7 @@ class _$VideoSummaryCopyWithImpl<$Res, $Val extends VideoSummary>
     Object? orderIndex = null,
     Object? status = null,
     Object? durationMs = freezed,
+    Object? defaultCaptionLanguage = freezed,
     Object? createdAt = null,
     Object? updatedAt = freezed,
   }) {
@@ -306,6 +313,10 @@ class _$VideoSummaryCopyWithImpl<$Res, $Val extends VideoSummary>
                 ? _value.durationMs
                 : durationMs // ignore: cast_nullable_to_non_nullable
                       as int?,
+            defaultCaptionLanguage: freezed == defaultCaptionLanguage
+                ? _value.defaultCaptionLanguage
+                : defaultCaptionLanguage // ignore: cast_nullable_to_non_nullable
+                      as String?,
             createdAt: null == createdAt
                 ? _value.createdAt
                 : createdAt // ignore: cast_nullable_to_non_nullable
@@ -336,6 +347,7 @@ abstract class _$$VideoSummaryImplCopyWith<$Res>
     int orderIndex,
     VideoStatus status,
     int? durationMs,
+    String? defaultCaptionLanguage,
     DateTime createdAt,
     DateTime? updatedAt,
   });
@@ -361,6 +373,7 @@ class __$$VideoSummaryImplCopyWithImpl<$Res>
     Object? orderIndex = null,
     Object? status = null,
     Object? durationMs = freezed,
+    Object? defaultCaptionLanguage = freezed,
     Object? createdAt = null,
     Object? updatedAt = freezed,
   }) {
@@ -390,6 +403,10 @@ class __$$VideoSummaryImplCopyWithImpl<$Res>
             ? _value.durationMs
             : durationMs // ignore: cast_nullable_to_non_nullable
                   as int?,
+        defaultCaptionLanguage: freezed == defaultCaptionLanguage
+            ? _value.defaultCaptionLanguage
+            : defaultCaptionLanguage // ignore: cast_nullable_to_non_nullable
+                  as String?,
         createdAt: null == createdAt
             ? _value.createdAt
             : createdAt // ignore: cast_nullable_to_non_nullable
@@ -413,6 +430,7 @@ class _$VideoSummaryImpl implements _VideoSummary {
     required this.orderIndex,
     required this.status,
     this.durationMs,
+    this.defaultCaptionLanguage,
     required this.createdAt,
     this.updatedAt,
   });
@@ -432,6 +450,12 @@ class _$VideoSummaryImpl implements _VideoSummary {
   final VideoStatus status;
   @override
   final int? durationMs;
+
+  /// BCP-47 caption language to surface as default in the designer UI
+  /// (matching caption row gets a "default" marker) and the player
+  /// (used for caption auto-selection). Null when no default is set.
+  @override
+  final String? defaultCaptionLanguage;
   @override
   final DateTime createdAt;
   @override
@@ -439,7 +463,7 @@ class _$VideoSummaryImpl implements _VideoSummary {
 
   @override
   String toString() {
-    return 'VideoSummary(id: $id, courseId: $courseId, title: $title, orderIndex: $orderIndex, status: $status, durationMs: $durationMs, createdAt: $createdAt, updatedAt: $updatedAt)';
+    return 'VideoSummary(id: $id, courseId: $courseId, title: $title, orderIndex: $orderIndex, status: $status, durationMs: $durationMs, defaultCaptionLanguage: $defaultCaptionLanguage, createdAt: $createdAt, updatedAt: $updatedAt)';
   }
 
   @override
@@ -456,6 +480,8 @@ class _$VideoSummaryImpl implements _VideoSummary {
             (identical(other.status, status) || other.status == status) &&
             (identical(other.durationMs, durationMs) ||
                 other.durationMs == durationMs) &&
+            (identical(other.defaultCaptionLanguage, defaultCaptionLanguage) ||
+                other.defaultCaptionLanguage == defaultCaptionLanguage) &&
             (identical(other.createdAt, createdAt) ||
                 other.createdAt == createdAt) &&
             (identical(other.updatedAt, updatedAt) ||
@@ -472,6 +498,7 @@ class _$VideoSummaryImpl implements _VideoSummary {
     orderIndex,
     status,
     durationMs,
+    defaultCaptionLanguage,
     createdAt,
     updatedAt,
   );
@@ -498,6 +525,7 @@ abstract class _VideoSummary implements VideoSummary {
     required final int orderIndex,
     required final VideoStatus status,
     final int? durationMs,
+    final String? defaultCaptionLanguage,
     required final DateTime createdAt,
     final DateTime? updatedAt,
   }) = _$VideoSummaryImpl;
@@ -517,6 +545,12 @@ abstract class _VideoSummary implements VideoSummary {
   VideoStatus get status;
   @override
   int? get durationMs;
+
+  /// BCP-47 caption language to surface as default in the designer UI
+  /// (matching caption row gets a "default" marker) and the player
+  /// (used for caption auto-selection). Null when no default is set.
+  @override
+  String? get defaultCaptionLanguage;
   @override
   DateTime get createdAt;
   @override

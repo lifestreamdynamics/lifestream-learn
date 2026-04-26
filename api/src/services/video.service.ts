@@ -11,6 +11,14 @@ export interface PublicVideo {
   orderIndex: number;
   status: VideoStatus;
   durationMs: number | null;
+  /**
+   * BCP-47 caption language to surface as default in player + designer
+   * UIs. Mirrors `Video.defaultCaptionLanguage` and is null when no
+   * default has been chosen. Designer reads this to show the "default"
+   * marker on the matching caption row; player reads it via the
+   * playback bundle for caption auto-selection.
+   */
+  defaultCaptionLanguage: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -46,6 +54,7 @@ function toPublic(v: Video): PublicVideo {
     orderIndex: v.orderIndex,
     status: v.status,
     durationMs: v.durationMs,
+    defaultCaptionLanguage: v.defaultCaptionLanguage,
     createdAt: v.createdAt,
     updatedAt: v.updatedAt,
   };

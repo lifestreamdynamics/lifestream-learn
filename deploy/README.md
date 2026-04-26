@@ -250,6 +250,30 @@ ssh root@REDACTED-VPS-HOST 'curl -sf http://127.0.0.1:3101/health/liveness'
 ```
 This is normal. Auth, courses, and all non-video features are operational.
 
+### Internal endpoints (`/metrics`, `/internal/`)
+
+These are gated at the nginx layer in `deploy/nginx/learn-api.REDACTED-BRAND-DOMAIN.conf`:
+
+```nginx
+location = /metrics {
+    allow 127.0.0.1;
+    allow 172.16.0.0/12;   # docker bridge / private VPC
+    deny all;
+}
+location ^~ /internal/ {
+    allow 127.0.0.1;
+    allow 172.16.0.0/12;
+    deny all;
+}
+```
+
+That covers the two valid clients:
+
+- **Same-VPS Prometheus** scrape → `127.0.0.1:80/metrics` (or directly `127.0.0.1:3101/metrics`, bypassing nginx).
+- **tusd → learn-api `/internal/hooks/tusd`** → tusd runs in the docker network, so its source IP is `172.16.0.0/12`.
+
+If a future Prometheus scraper runs from outside the VPS, add its specific IP to both locations. Do NOT widen the CIDR range or remove `deny all`. The threat model (`docs/security/threat-model.md` §6 row 7) documents this.
+
 ---
 
 ## Rollback procedure

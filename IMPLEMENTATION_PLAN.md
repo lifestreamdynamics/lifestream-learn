@@ -346,9 +346,9 @@ Each phase has **exit criteria** that must all be met before the next phase begi
 
 **Exit criteria:**
 - ✓ End-to-end: tus upload of `tests/fixtures/sample-3s.mp4` → status reaches READY (`tests/integration/transcode-e2e.test.ts`).
-- ◐ `ffprobe` on produced master playlist shows 4 variant streams with correct bitrates — manual smoke; not yet a check in the e2e test.
+- ✓ `ffprobe` on produced master playlist shows 4 variant streams with correct bitrates — programmatic assertion in `tests/integration/transcode-e2e.test.ts:174-219` parses `master.m3u8`, verifies every variant exists in S3, checks codec strings (`avc1.`, `mp4a.`) and bandwidth values (Slice G3, 2026-04-23).
 - ✓ Signed master URL → `tests/unit/utils/hls-signer.test.ts` covers MD5 byte-equivalence with `infra/scripts/sign-hls-url.sh`; nginx behaviour (403 expired/tampered, 200 valid) is exercised by infra BATS suite.
-- ◐ `curl` to a segment URL with tampered HMAC → covered at the nginx layer; not yet asserted via the API in an integration test.
+- ✓ `curl` to a segment URL with tampered HMAC → asserted via `tests/integration/secure-link.test.ts:38-74` (tampered signature → 403, tampered videoId → 403, expired URL → 410). Covers both nginx layer and API-side multi-path token authorization.
 - ✓ Transcode worker survives a simulated kill mid-job and resumes cleanly (`tests/integration/transcode-resilience.test.ts`).
 - ✗ BullMQ dashboard (Bull Board) — deferred; not blocking pipeline correctness.
 7. ✓ FFmpeg input policy enforced (`src/services/ffmpeg/input-policy.ts`): rejects unsupported containers, codec combinations, oversized/overlong inputs, and rotated-portrait edge cases.
@@ -462,18 +462,39 @@ Each phase has **exit criteria** that must all be met before the next phase begi
 ### Phase 8 — Deployment Hardening  (in flight)
 **Goal:** Ship to production VPS (`REDACTED-VPS-HOST`) with the same quality bar as local. Infrastructure automation exists in `deploy/`; this phase closes the gap between "locally production-ready" (Phase 7) and "publicly accessible."
 
-Exit criteria:
-1. `deploy/deploy-production.sh` green on a clean VPS (documented in `deploy/README.md`)
-2. Learn-api and transcode worker running under PM2 (`deploy/pm2/ecosystem.config.cjs`)
-3. Nginx vhosts for learn-api and landing page (`deploy/nginx/`) with TLS (Let's Encrypt)
-4. Health check passes at production URL
-5. CPR-007 (bootstrap HLS port bug) resolved before public launch
+**Tasks:**
+1. Atomic-symlink rsync deploy with PM2 reload (`deploy/deploy-production.sh`) — runs from operator workstation; idempotent.
+2. PM2 ecosystem for `learn-api`, `learn-transcode-worker`, `learn-seaweedfs`, `learn-tusd` (`deploy/pm2/ecosystem.config.cjs`). Worker wraps under `nice -n 10` to keep transcode off the API's CPU; `TRANSCODE_CONCURRENCY=1` baked into env.
+3. Nginx vhosts for the API + landing page (`deploy/nginx/`). `/metrics` and `/internal/` IP-allowlisted to loopback + docker bridge (resolved 2026-04-26 — see threat model TM-001).
+4. Let's Encrypt TLS via certbot, auto-renewal hook.
+5. First-time VPS prereqs (`deploy/README.md`): FFmpeg install, SeaweedFS bucket provisioning, `/etc/learn-api/.env` (chmod 600, root-owned).
+6. Health verification post-deploy: `/health/liveness`, `/health/readiness`, signed playback round-trip.
 
----
+**Exit criteria:**
+1. `deploy/deploy-production.sh` green on a clean VPS (documented in `deploy/README.md`).
+2. Learn-api + transcode worker running under PM2; both restart cleanly on PM2 reload.
+3. Nginx vhost for `learn-api.REDACTED-BRAND-DOMAIN` serves with valid TLS; `/metrics` + `/internal/` reject non-allowlisted IPs.
+4. `/health/readiness` is 200 at the production URL.
+5. `~~CPR-007~~` (bootstrap HLS port bug) resolved (2026-04-26).
+6. Signed playback round-trips in production: tusd upload → transcode → master playlist returns 200, segment fetch with valid HMAC returns 200, tampered HMAC returns 403.
 
-### After Phase 7 — Deployment (separate work track)
+**Phase 8 backlog (deferred items, ordered by priority):**
 
-Deployment is deliberately kept out of this plan. Once Phase 7 is green we pick a deploy strategy (self-hosted on the shared VPS, cloud, hybrid), write the relevant runbooks and automation, and schedule a closed beta. That track will include: TLS/domain/CDN decisions, process supervision, backup + restore drill, incident-response runbook, Google Play console setup, release-candidate sign-off.
+| Item | Source | Notes |
+|---|---|---|
+| Linode block-storage volume attach (≥100 GB) | `ops/vps-prereq-check-2026-04-18.md` (VPS-002) | Operator decision; software guardrails (180s duration cap, raw-upload deletion per ADR 0006) keep MVP launch viable on the existing 38 GB until volume is attached. |
+| VPS RAM/CPU upgrade (8 GB / 4 cores) | `ops/vps-prereq-check-2026-04-18.md` (VPS-003/004) | Linode plan upgrade. Software mitigations already in place: `TRANSCODE_CONCURRENCY=1` (`api/src/config/env.ts:93`), `nice -n 10` wrapper (`deploy/pm2/ecosystem.config.cjs:60-66`). |
+| JWT dual-secret rotation (`*_PREVIOUS`) | threat-model.md §6 row 2 | Dev workflow today: env-swap + redeploy invalidates in-flight tokens. Backlog: accept current+previous for a grace window. |
+| MD5 → SHA256 secure_link upgrade | threat-model.md §6 row 1 | Nginx supports `secure_link_sha256`; `hls-signer.ts` swap is a one-line change. Run both algorithms in parallel for ~1 week, then cut over. |
+| `disk-alert.sh` scheduling | ADR 0006; `ops/phase-1-completion-2026-04-19.md` | Script + BATS tests exist (`infra/scripts/disk-alert.sh`); systemd timer/cron not yet wired. |
+| `gitleaks` install + CI enforcement | threat-model.md §6 row 5 | Document install in CONTRIBUTING.md; add CI check in `.github/workflows/secret-scan.yml` to fail when binary missing. |
+| tusd `Location` header `-base-path` fix | `ops/phase-1-completion-2026-04-19.md` (V8) | Today tusd emits internal URLs in `Location`. Add `-base-path /uploads/files/` flag and update Flutter client; not blocking until Flutter upload client targets prod. |
+| `tus_client_dart` major upgrade (5.0+) | `app/pubspec.yaml:26` | Roadmap target was `^5.0.0`; pinned at `^2.5.0` because the upstream 5.x line was a fork that never hit pub.dev. Reassess in H2 2026 dep upgrade slice. |
+| Flutter dep upgrade pass (24 outdated, 3 discontinued transitives) | threat-model.md §6 row 4 | Single dedicated slice; full test suite must stay green under fresh lint rules. |
+| Crash reporter wiring (`@lifestream/doctor-node`) | `api/src/observability/doctor-reporter.ts` | Seam exists; awaits upstream package publication. Until then `CRASH_REPORTING_ENABLED=true` logs captures only. |
+| Production APK signing config | `app/README.md:100` | Conditional release signing already wired (`app/android/app/build.gradle.kts:62-69`); operator must populate `ops/keystore/key.properties`. Separate Play Store slice. |
+| Compose-dependent tests in CI | CPR-011 (now resolved as documentation) | Pre-merge local gate documented in `CONTRIBUTING.md` (2026-04-26). Promoting to a nightly GHA workflow is a future option if local gate fails to hold the line. |
+| AWS SDK dynamic-import friction under Jest | `tests/integration/health.test.ts` | `@aws-sdk/client-s3` v3 lazily `await import('node:http')` / `'@smithy/credential-provider-imds'` from middleware paths. Jest's classic VM rejects these without `--experimental-vm-modules` (surfaces as `ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING_FLAG`). Mitigated in `src/config/s3.ts` (eager `NodeHttpHandler` + `defaultsMode: 'standard'`); the deepest middleware path still fails one assertion in the health integration test. Real fix: migrate the integration suite to ESM Jest, or vendor a thinner S3 client. Production code path is unaffected — manually verified that the API serves `/health = ok` against the local compose stack. |
 
 ---
 
@@ -521,15 +542,19 @@ Assuming Eric + Claude Code working through these in order, with subagent parall
 
 ## 9. Open Questions
 
-Carry-overs that don't block Phase 2 but need to land before a deploy track opens:
+Items below carry an **owner** tag because they require human decisions (legal, business, brand) rather than code. They do not block the implementation phases but each blocks some part of the public-launch gate.
 
-1. **Payment / monetization**: Stripe-based subscription? Per-course one-time? Free tier limits? Stubbed behind a feature flag initially.
-2. **Content moderation**: approved designers publish without review, or does admin review each course? (Current plan: no review post-approval — flag if that's wrong.)
-3. **Data retention**: how long do we keep attempt history and analytics raw events? (GDPR / CCPA relevance before anything goes public.)
-4. **Offline mode**: is "download course for offline playback" required? Currently assumed **no** for initial scope.
-5. **iOS**: target launch date, or strictly post-Android?
-6. **Terms/Privacy content**: real copy needed before anything goes public.
-7. **GitHub org**: publish under personal account, a new `lifestream-dynamics` org, or an existing one? Affects brand and contribution UX.
+| # | Question | Owner | Blocks | Default if no decision |
+|---|----------|-------|--------|------------------------|
+| 1 | **Payment / monetization** — Stripe subscription? Per-course one-time? Free tier limits? | Operator (business) | Public commercial launch | Stubbed behind feature flag; free-only MVP. |
+| 2 | **Content moderation** — approved designers publish without review, or admin reviews each course? | Operator (policy) | First public designer onboarding | No review post-approval (current plan). |
+| 3 | **Data retention** — how long do we keep attempt history + analytics raw events? | Operator (legal — GDPR/CCPA) | First public learner signup outside test users | 12 months (provisional; revisit before launch). |
+| 4 | **Offline mode** — required at launch? | Operator (product) | None — MVP-out-of-scope | No (assumed). |
+| 5 | **iOS target** — launch date, or strictly post-Android? | Operator (product) | iOS app store submission | Post-Android (assumed). |
+| 6 | **Terms/Privacy copy** — real legal text needed for `infra/landing/`. | Operator (legal) | Public landing page going live | Placeholder text remains until replaced. |
+| 7 | **GitHub org** — personal account, new `lifestream-dynamics` org, or existing? Affects landing page link (`infra/landing/index.html`). | Operator (brand) | Repo split (ADR 0005) and public push | Placeholder slug remains; must resolve before split. |
+
+These items are intentionally **not** scheduled in the phase timeline — they require operator action outside the codebase. Each PR that depends on one should reference this section and gate behind the decision.
 
 ---
 
@@ -557,13 +582,13 @@ Tracked issues that warrant future attention. Reported, not fixed, by the /actua
 | CPR-002 | TEST_GAP | MINOR | Compose-dependent integration tests (`transcode-e2e`, `transcode-resilience`, `secure-link`, `health`) are excluded from `api-ci.yml` and only run locally. Accepted trade-off until the project moves to a CI runner that can host docker-compose; documented in CLAUDE.md §Phase awareness. | 2026-04-20 | DEFERRED |
 | CPR-003 | DOC_GAP | MINOR | Video input-hardening work in flight (WIP commit `3e2a615` + follow-ups: `api/src/services/ffmpeg/input-policy.ts`, `poster.ts`, VP9 rejection, rotated-portrait handling, poster-key + failure-reason schema migration) is not yet reflected in the Phase 3 exit criteria below. Update Phase 3 once WIP lands. V1 slice landed; exit criteria updated above. | 2026-04-20 | RESOLVED 2026-04-23 |
 | CPR-004 | FEATURE_DEFERRED | COSMETIC | Bull Board dashboard deferred as Phase 3 polish per CLAUDE.md §Phase awareness; non-blocking for Phase 3 completion. Prometheus `/metrics` endpoint (Slice G1) covers observability needs for MVP; Bull Board adds no blocking value. | 2026-04-20 | WONTFIX 2026-04-23 |
-| CPR-005 | CONFIG_DRIFT | CRITICAL | CONFIG_DRIFT — `scripts/bootstrap-dev.sh:105` hard-codes `HLS_BASE_URL=http://10.0.2.2:80/hls` but `infra/.env` sets `NGINX_HOST_PORT=8090`. A fresh `make bootstrap` writes a broken HLS URL that breaks video playback on a clean checkout. Fix: interpolate `NGINX_HOST_PORT` from `infra/.env` into the sed replacement. | 2026-04-20 | OPEN |
+| CPR-005 | CONFIG_DRIFT | CRITICAL | CONFIG_DRIFT — `scripts/bootstrap-dev.sh:105` hard-codes `HLS_BASE_URL=http://10.0.2.2:80/hls` but `infra/.env` sets `NGINX_HOST_PORT=8090`. A fresh `make bootstrap` writes a broken HLS URL that breaks video playback on a clean checkout. Fix: interpolate `NGINX_HOST_PORT` from `infra/.env` into the sed replacement. | 2026-04-20 | RESOLVED 2026-04-26 — bootstrap reads `NGINX_HOST_PORT` from `infra/.env` (fallback 80) and interpolates into `HLS_BASE_URL`. Regression test: `scripts/tests/bootstrap-dev.bats`. |
 | CPR-006 | OPEN_SOURCE_HYGIENE | MAJOR | `app/README.md` "Manual run" and "Test + analyze + build" blocks reference the private absolute path `/home/eric/flutter/bin/flutter` (and `dart`). This violates the project's open-source hygiene rule in CLAUDE.md ("Never commit internal paths (e.g. `/home/eric/...`)") and will leak once the monorepo splits. Replace with `fvm flutter` (roadmap calls for fvm) or a plain `flutter` assuming the operator has the pinned SDK on `PATH`. Left unchanged in the grooming pass — this needs a small call from the owner about which invocation style to standardise. Private paths removed from app/README.md. | 2026-04-20 | RESOLVED 2026-04-23 |
 
-| CPR-007 | CONFIG_DRIFT | CRITICAL | `scripts/bootstrap-dev.sh:105` hard-codes `HLS_BASE_URL=http://10.0.2.2:80/hls` but `infra/.env` sets `NGINX_HOST_PORT=8090`. Breaks video playback on fresh checkout. Fix: read `NGINX_HOST_PORT` from written `infra/.env` and interpolate. | 2026-04-23 | OPEN |
+| CPR-007 | CONFIG_DRIFT | CRITICAL | `scripts/bootstrap-dev.sh:105` hard-codes `HLS_BASE_URL=http://10.0.2.2:80/hls` but `infra/.env` sets `NGINX_HOST_PORT=8090`. Breaks video playback on fresh checkout. Fix: read `NGINX_HOST_PORT` from written `infra/.env` and interpolate. | 2026-04-23 | RESOLVED 2026-04-26 — duplicate of CPR-005, resolved by the same change. |
 | CPR-008 | DOC_GAP | MINOR | IMPLEMENTATION_PLAN.md §5 Phase 3 exit criteria did not mention input-policy or poster hardening from Slice V1. Fixed in this grooming pass. | 2026-04-23 | RESOLVED 2026-04-23 |
-| CPR-009 | ROADMAP_DRIFT | MINOR | Slices G1–G3, H, V1, U1, P5–P9, D1–D2.1 shipped after the original Phase 7 scope. These represent deployment hardening and feature polish beyond the plan. IMPLEMENTATION_PLAN.md should add a Phase 8 (Deployment Hardening) section or reference a separate DEPLOYMENT_PLAN.md. | 2026-04-23 | OPEN |
+| CPR-009 | ROADMAP_DRIFT | MINOR | Slices G1–G3, H, V1, U1, P5–P9, D1–D2.1 shipped after the original Phase 7 scope. These represent deployment hardening and feature polish beyond the plan. IMPLEMENTATION_PLAN.md should add a Phase 8 (Deployment Hardening) section or reference a separate DEPLOYMENT_PLAN.md. | 2026-04-23 | RESOLVED 2026-04-26 — Phase 8 expanded with task list, exit criteria, and a "Phase 8 backlog" subsection enumerating deferred items. See §5 Phase 8. |
 | CPR-010 | FEATURE_DEFERRED | COSMETIC | Bull Board dashboard (CPR-004) — marked WONTFIX. See CPR-004. | 2026-04-23 | WONTFIX 2026-04-23 |
-| CPR-011 | TEST_GAP | MEDIUM | Compose-dependent integration tests (`transcode-e2e`, `transcode-resilience`, `secure-link`, `health`) remain excluded from CI. Slice G3 added new HMAC integration tests also excluded. CI cannot validate the full pipeline. Options: add docker-in-docker CI runner, or document these as a required pre-merge local gate. | 2026-04-23 | OPEN |
+| CPR-011 | TEST_GAP | MEDIUM | Compose-dependent integration tests (`transcode-e2e`, `transcode-resilience`, `secure-link`, `health`) remain excluded from CI. Slice G3 added new HMAC integration tests also excluded. CI cannot validate the full pipeline. Options: add docker-in-docker CI runner, or document these as a required pre-merge local gate. | 2026-04-23 | RESOLVED 2026-04-26 — chose option 2 (pre-merge local gate). `CONTRIBUTING.md` now lists the four suites with exact commands and a per-PR result-capture rule. Promoting to a nightly GHA workflow remains a Phase 8 backlog item if the local gate doesn't hold. |
 
 Update this table on each grooming pass. Mark entries RESOLVED (with date) rather than removing them, so the history stays visible.

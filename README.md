@@ -67,7 +67,7 @@ The verbose per-subproject command sequences are still documented in [`api/READM
 
 ## Status
 
-Pre-alpha. Phase 3 (upload → transcode → playback pipeline) is complete. Flutter Phases 4–6 are code-complete — slices compiled and analyzed; on-device verification pending. Deployment infrastructure lives in `deploy/`. See [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md) §5 for phase details and exit criteria.
+Pre-alpha. Phases 0–3 (decisions, infra, API scaffold, upload → transcode → playback pipeline) are complete. Flutter Phases 4–6 (auth, feed, player + cue engine, designer authoring, admin, analytics buffer) are code-complete on `main` — every slice passes `flutter analyze` + `flutter test` + `flutter build apk --debug --flavor dev`; on-device verification is operator-driven per the `app/` rule in `CLAUDE.md` and is currently in progress. Phase 7 (local hardening) is in flight; Phase 8 (deployment) automation lives in `deploy/`. See [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md) §5 for per-phase exit criteria and the Phase 8 backlog.
 
 ---
 

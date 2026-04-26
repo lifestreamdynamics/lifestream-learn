@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Prisma, PrismaClient } from '@prisma/client';
+import sharp from 'sharp';
 import { prisma as defaultPrisma } from '@/config/prisma';
 import { NotFoundError, ValidationError } from '@/utils/errors';
 import type { ObjectStore, ObjectStreamResult } from '@/services/object-store';
@@ -86,6 +87,36 @@ const CONTENT_TYPE_TO_EXT: Record<AvatarUploadInput['contentType'], string> = {
   'image/png': 'png',
   'image/webp': 'webp',
 };
+
+/**
+ * Strip all metadata (including EXIF GPS coordinates) from an image buffer
+ * and re-encode it in the same format. The `.rotate()` call bakes EXIF
+ * orientation into pixel data before the metadata is discarded so the image
+ * does not visibly rotate. Sharp omits all metadata by default; we never call
+ * `.withMetadata()`, which is the desired behaviour.
+ *
+ * Throws [ValidationError] for any payload that sharp cannot decode (truncated,
+ * malformed, or unsupported format), so callers receive a 400 rather than a 500.
+ */
+async function stripImageMetadata(
+  bytes: Buffer,
+  contentType: AvatarUploadInput['contentType'],
+): Promise<Buffer> {
+  try {
+    const pipeline = sharp(bytes, { failOn: 'truncated' }).rotate();
+    let out: Buffer;
+    if (contentType === 'image/jpeg') {
+      out = await pipeline.jpeg({ quality: 85, mozjpeg: true }).toBuffer();
+    } else if (contentType === 'image/png') {
+      out = await pipeline.png().toBuffer();
+    } else {
+      out = await pipeline.webp({ quality: 85 }).toBuffer();
+    }
+    return out;
+  } catch {
+    throw new ValidationError('Avatar image could not be processed');
+  }
+}
 
 function toPrivate(u: {
   id: string;
@@ -188,6 +219,8 @@ export function createUserService(
       if (bytes.byteLength === 0) {
         throw new ValidationError('Avatar file is empty');
       }
+      // Cap incoming bytes before handing to sharp (defense-in-depth;
+      // the route middleware already enforces this at the HTTP layer).
       if (bytes.byteLength > AVATAR_MAX_BYTES) {
         throw new ValidationError('Avatar exceeds 2 MB limit');
       }
@@ -196,16 +229,21 @@ export function createUserService(
         throw new ValidationError('Unsupported avatar content type');
       }
 
+      // Strip EXIF (including GPS coordinates) and re-encode. Runs before
+      // the upload so no raw metadata ever reaches object storage.
+      const sanitized = await stripImageMetadata(bytes, contentType);
+
+      // Also cap the re-encoded output — pathological inputs can inflate
+      // after re-encoding, and we must not persist oversized objects.
+      if (sanitized.byteLength > AVATAR_MAX_BYTES) {
+        throw new ValidationError('Avatar exceeds 2 MB limit after processing');
+      }
+
       const key = `avatars/${userId}/${randomUUID()}.${ext}`;
 
       // Upload before we persist the key — so if the upload fails we
       // don't end up with a User row pointing at a non-existent object.
-      await uploadBytes(objectStore, env.S3_UPLOAD_BUCKET, key, bytes, contentType);
-
-      // TODO(Slice P1 follow-up): strip EXIF on upload. Not adding a
-      // `sharp` dependency in this slice — flag for a follow-up before
-      // the profile surface leaves internal dogfooding. Raw JPEG/PNG/WebP
-      // from a modern phone camera can contain GPS coordinates.
+      await uploadBytes(objectStore, env.S3_UPLOAD_BUCKET, key, sanitized, contentType);
 
       const previousKey = await prisma.user
         .findUnique({ where: { id: userId }, select: { avatarKey: true } })
