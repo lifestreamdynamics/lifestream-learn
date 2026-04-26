@@ -81,6 +81,26 @@ hls_base_url() {
     [ "${result}" != "${first_url}" ]
 }
 
+@test "TUSD_PUBLIC_URL uses nginx-proxied path (not direct tusd port) — regression for tusd Location fix" {
+    run "${SCRIPT}"
+    [ "${status}" -eq 0 ]
+    tusd_url="$(grep -E '^TUSD_PUBLIC_URL=' "${API_ENV}" | cut -d= -f2-)"
+    # Must contain /uploads/files (the nginx-proxied base-path).
+    [[ "${tusd_url}" == */uploads/files* ]]
+    # Must NOT point directly at tusd on port 1080.
+    [[ "${tusd_url}" != *:1080* ]]
+}
+
+@test "TUSD_PUBLIC_URL respects NGINX_HOST_PORT override (e.g. 8090)" {
+    cp "${BATS_TMP}/infra/.env.example" "${INFRA_ENV}"
+    printf '\nNGINX_HOST_PORT=8090\n' >> "${INFRA_ENV}"
+
+    run "${SCRIPT}"
+    [ "${status}" -eq 0 ]
+    tusd_url="$(grep -E '^TUSD_PUBLIC_URL=' "${API_ENV}" | cut -d= -f2-)"
+    [ "${tusd_url}" = "http://localhost:8090/uploads/files" ]
+}
+
 @test "TUSD_HOOK_SECRET matches between infra/.env and api/.env.local" {
     run "${SCRIPT}"
     [ "${status}" -eq 0 ]

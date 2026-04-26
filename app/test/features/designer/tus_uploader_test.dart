@@ -16,11 +16,12 @@ VideoSummary _video() => VideoSummary(
 VideoUploadTicket _ticket({
   String videoId = 'abc',
   Map<String, String>? serverHeaders,
+  String? uploadUrl,
 }) =>
     VideoUploadTicket(
       videoId: videoId,
       video: _video(),
-      uploadUrl: 'http://test.local/tus',
+      uploadUrl: uploadUrl ?? 'http://localhost:8090/uploads/files',
       uploadHeaders: serverHeaders ??
           <String, String>{
             'Tus-Resumable': '1.0.0',
@@ -48,6 +49,28 @@ void main() {
       ));
       expect(headers.containsKey('upload-metadata'), isFalse);
       expect(headers['X-Custom'], 'keep');
+    });
+  });
+
+  // Regression for the tusd Location-header base-path fix (2026-04-26).
+  // tusd is now started with -base-path=/uploads/files/ -behind-proxy so its
+  // Location headers use the nginx-proxied path.  The API's TUSD_PUBLIC_URL
+  // must point at that same path, and the VideoUploadTicket fixture must
+  // reflect the new shape so end-to-end URL construction is tested.
+  group('VideoUploadTicket upload URL shape (tusd Location fix regression)', () {
+    test('default fixture upload URL uses nginx-proxied /uploads/files path', () {
+      final ticket = _ticket();
+      final uri = Uri.parse(ticket.uploadUrl);
+      expect(uri.path, startsWith('/uploads/files'),
+          reason: 'TUSD_PUBLIC_URL must use the nginx-proxied base-path, '
+              'not the direct tusd :1080/files path');
+    });
+
+    test('upload URL does not point directly at tusd port 1080', () {
+      final ticket = _ticket();
+      expect(ticket.uploadUrl, isNot(contains(':1080')),
+          reason: 'Clients must reach tusd via nginx proxy, '
+              'not the internal tusd port');
     });
   });
 

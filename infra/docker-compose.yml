@@ -65,6 +65,16 @@ services:
       # open. 2 GiB default matches VIDEO_MAX_BYTES in api/src/config/env.ts.
       - "-max-size=${TUSD_MAX_SIZE_BYTES:-2147483648}"
       - "-port=1080"
+      # Tells tusd the public base path that sits in front of its /files
+      # endpoint. nginx forwards /uploads/files/<id> straight through (no
+      # rewrite), so tusd's internal router and the path it bakes into
+      # Location headers must both start with /uploads/files/.
+      - "-base-path=/uploads/files/"
+      # Tells tusd to trust X-Forwarded-Host / X-Forwarded-Port from the
+      # upstream proxy so it can reconstruct correct absolute Location URLs
+      # (e.g. http://localhost:8090/uploads/files/<id> rather than the
+      # internal http://tusd:1080/files/<id>).
+      - "-behind-proxy"
     environment:
       # Scoped to the `tusd-upload` identity in seaweedfs/s3.json —
       # write-only against learn-uploads/, cannot touch learn-vod/.

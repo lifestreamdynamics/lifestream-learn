@@ -95,12 +95,12 @@ Shell scripts are covered by BATS:
 bats scripts/tests/*.bats
 ```
 
-Coverage: `create-buckets.bats`, `create-databases.bats`, `disk-alert.bats`, `sign-hls-url.bats` — 34 cases, mock-driven (no live SeaweedFS/Postgres required).
+Coverage: `create-buckets.bats`, `create-databases.bats`, `disk-alert.bats`, `sign-hls-url.bats` — mock-driven (no live SeaweedFS/Postgres required).
 
 ## Known caveats
 
 - **secure_link uses MD5**, not HMAC-SHA256, because stock `nginx-full` only exposes MD5. With a ≥32-byte secret + 2 h TTL this is acceptable for VOD; documented in `nginx/secure_link.conf.inc`. Upgrade path if needed: njs/Lua for HMAC-SHA256.
-- **tusd behind reverse proxy** currently emits `Location` headers using the internal tusd URL (`http://localhost/files/...`) rather than the public `/uploads/files/...`. The tus client will follow the Location header as given — fix by passing `-behind-proxy` + `-base-path=/uploads/files/` to tusd, or by rewriting the Location header in nginx. Tracked as a Phase-2-adjacent task since the upload client isn't wired yet.
+- **tusd behind reverse proxy** — Resolved 2026-04-26: tusd is now started with `-base-path=/uploads/files/ -behind-proxy` (see `docker-compose.yml`); nginx no longer strips the path prefix via rewrite and instead passes `/uploads/files/<id>` straight through. The API's `TUSD_PUBLIC_URL` now points at the nginx-proxied URL (`http://localhost:<NGINX_HOST_PORT>/uploads/files`) so `Location` headers returned to the Flutter tus client are correct.
 - **Raw uploads are kept** in `learn-uploads/` by tusd/SeaweedFS until the API (Phase 2) explicitly deletes them after a successful transcode. ADR 0006 requires the delete; wire it in the transcode worker before opening the beta.
 - **The `disk-alert.sh` script** is written and tested, but the systemd timer that would schedule it isn't set up — deployment concern, out of scope for now.
 
