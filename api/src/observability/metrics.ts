@@ -8,22 +8,31 @@ import {
 } from 'prom-client';
 
 /**
- * Metrics registry for learn-api. Slice G1 ships four first-class series:
+ * Metrics registry for learn-api. Slice G1 ships four first-class series;
+ * Phase 8 (ADR 0007) adds one for JWT dual-secret rotation:
  *
  *   learn_http_request_duration_seconds   histogram (route, method, status)
  *   learn_http_requests_total             counter   (route, method, status)
  *   learn_transcode_queue_depth           gauge     (state)
  *   learn_playback_signed_urls_total      counter
+ *   learn_jwt_verify_with_previous_total  counter   (tokenType)
  *
  * Every exported symbol is safe to import even when METRICS_ENABLED is
  * false — increments against the counters/gauges just accumulate in memory
  * and are never scraped. That lets call sites (hls-signer, queue-depth
- * sampler) stay free of env-var checks.
+ * sampler, JWT verify) stay free of env-var checks.
  *
  * High-cardinality guard: the HTTP middleware labels by `req.route.path`
  * (the Express pattern, e.g. `/api/videos/:id/playback`), NOT the raw URL.
  * Unmatched routes collapse to the string `unmatched` to prevent a
  * crawler-spammed 404 wave from exploding the series count.
+ *
+ * `learn_jwt_verify_with_previous_total` is the operator's signal that a
+ * dual-secret rotation is still being relied on — increments while the
+ * rotation window is open, and should drop to zero before *_PREVIOUS is
+ * unset (ADR 0007 step 3). Labelled by `tokenType` (`access` | `refresh`)
+ * so the operator can confirm BOTH secrets have stopped catching live
+ * traffic before retiring them.
  */
 
 export interface LearnMetrics {
@@ -32,6 +41,7 @@ export interface LearnMetrics {
   httpRequestsTotal: Counter<'route' | 'method' | 'status'>;
   transcodeQueueDepth: Gauge<'state'>;
   playbackSignedUrlsTotal: Counter<string>;
+  jwtVerifyWithPreviousTotal: Counter<'tokenType'>;
 }
 
 let cached: LearnMetrics | null = null;
@@ -71,12 +81,25 @@ export function buildMetrics(): LearnMetrics {
     registers: [registry],
   });
 
+  // Phase 8 / ADR 0007 — incremented every time a JWT is accepted only
+  // after falling back to JWT_*_SECRET_PREVIOUS. A non-zero value means
+  // the rotation window is still load-bearing; the operator should not
+  // unset *_PREVIOUS until this counter has been flat at zero for one
+  // JWT_REFRESH_TTL.
+  const jwtVerifyWithPreviousTotal = new Counter({
+    name: 'learn_jwt_verify_with_previous_total',
+    help: 'JWT verifications that succeeded only via the *_PREVIOUS secret. Indicates the dual-secret rotation window is still being used.',
+    labelNames: ['tokenType'] as const,
+    registers: [registry],
+  });
+
   return {
     registry,
     httpRequestDuration,
     httpRequestsTotal,
     transcodeQueueDepth,
     playbackSignedUrlsTotal,
+    jwtVerifyWithPreviousTotal,
   };
 }
 
