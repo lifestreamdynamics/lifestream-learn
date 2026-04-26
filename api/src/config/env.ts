@@ -22,6 +22,20 @@ const EnvSchema = z.object({
   JWT_REFRESH_SECRET: z.string().min(32),
   JWT_ACCESS_TTL: z.string().default('15m'),
   JWT_REFRESH_TTL: z.string().default('30d'),
+  // Phase 8 — JWT dual-secret rotation (ADR 0007). When set, verify
+  // accepts a signature from EITHER the current or the previous secret;
+  // sign always uses the current. Operator runbook for a clean rotation:
+  //   1. Set `*_PREVIOUS = current` value, deploy.
+  //   2. Bump `*` to a fresh secret, deploy. Tokens minted under the
+  //      old secret keep verifying for the rotation window.
+  //   3. After the rotation window (>= JWT_REFRESH_TTL = 30d by default),
+  //      unset `*_PREVIOUS`, deploy. Any token minted under the old
+  //      secret then fails to verify on its next use.
+  // Both vars are optional; when unset, verify only accepts the current
+  // secret (existing behaviour). Length floor matches the current secret
+  // so an operator can't downgrade entropy by routing through PREVIOUS.
+  JWT_ACCESS_SECRET_PREVIOUS: z.string().min(32).optional(),
+  JWT_REFRESH_SECRET_PREVIOUS: z.string().min(32).optional(),
 
   // Slice P6 — salt for hashing remote IPs before persisting them on
   // `Session.ipHash`. We never store raw IPs; the stored value is
