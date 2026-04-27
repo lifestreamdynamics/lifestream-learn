@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Pre-commit operator-private-identifier scan for lifestream-learn.
+#
+# Mirrors the .githooks/pre-push scan but runs on the staged diff so the
+# operator catches a slip before the commit lands instead of at push time.
+# Single allowlisted exception: the public `learn@lifestreamdynamics.com`
+# forwarder used in CONTRIBUTING.md / CODE_OF_CONDUCT.md / README.md.
+set -euo pipefail
+
+# Skip empty commits and merge commits — neither has a useful staged diff.
+if git rev-parse --verify --quiet MERGE_HEAD >/dev/null 2>&1; then
+  exit 0
+fi
+
+# Exclude self-references from the hook's own source and the gitleaks
+# config — the patterns naturally appear there as regex literals and
+# documentation, not as identifier leaks.
+staged="$(git diff --cached -- . \
+  ':(exclude).githooks/' \
+  ':(exclude).gitleaks.toml' \
+  ':(exclude).github/workflows/secret-scan.yml' \
+  2>/dev/null || true)"
+if [ -z "$staged" ]; then
+  exit 0
+fi
+
+added_lines="$(printf '%s' "$staged" | grep -E '^\+' | grep -Ev '^\+\+\+' || true)"
+banned="$(printf '%s' "$added_lines" \
+  | grep -E -i '(mittonvillage\.com|digitalartifacts\.ca|lifestreamdynamics\.com)' \
+  | grep -E -v -i 'learn@lifestreamdynamics\.com' || true)"
+
+if [ -n "$banned" ]; then
+  echo "pre-commit: operator-private identifier in staged changes:" >&2
+  printf '%s\n' "$banned" | head -10 >&2
+  echo "" >&2
+  echo "Move the value into ops/ (gitignored) or replace with a placeholder/env var." >&2
+  echo "Allowlisted: learn@lifestreamdynamics.com (the public maintainer forwarder)." >&2
+  exit 1
+fi
+
+exit 0

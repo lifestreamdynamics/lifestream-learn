@@ -74,7 +74,12 @@ void main() {
     await tester.pumpWidget(
       BlocProvider<SettingsCubit>.value(
         value: cubit,
-        child: const MaterialApp(home: PrivacySection()),
+        child: const MaterialApp(
+          home: PrivacySection(
+            privacyPolicyUrl: 'https://example.invalid/privacy',
+            termsUrl: 'https://example.invalid/terms',
+          ),
+        ),
       ),
     );
     // Avoid `pumpAndSettle` — the Material 3 Switch's ink/sparkle
@@ -117,7 +122,10 @@ void main() {
       routes: [
         GoRoute(
           path: '/profile/settings/privacy',
-          builder: (_, __) => const PrivacySection(),
+          builder: (_, __) => const PrivacySection(
+            privacyPolicyUrl: 'https://example.invalid/privacy',
+            termsUrl: 'https://example.invalid/terms',
+          ),
         ),
         GoRoute(
           path: '/profile/export',
@@ -173,7 +181,11 @@ void main() {
       BlocProvider<SettingsCubit>.value(
         value: cubit,
         child: MaterialApp(
-          home: PrivacySection(launcher: fakeLauncher),
+          home: PrivacySection(
+            launcher: fakeLauncher,
+            privacyPolicyUrl: 'https://example.invalid/privacy',
+            termsUrl: 'https://example.invalid/terms',
+          ),
         ),
       ),
     );
@@ -193,7 +205,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(launched, hasLength(1));
-    expect(launched.single.$1.toString(), 'https://learn.REDACTED-BRAND-DOMAIN/privacy');
+    expect(launched.single.$1.toString(), 'https://example.invalid/privacy');
     expect(launched.single.$2, LaunchMode.externalApplication);
 
     await cubit.close();
@@ -223,7 +235,11 @@ void main() {
       BlocProvider<SettingsCubit>.value(
         value: cubit,
         child: MaterialApp(
-          home: PrivacySection(launcher: rejectingLauncher),
+          home: PrivacySection(
+            launcher: rejectingLauncher,
+            privacyPolicyUrl: 'https://example.invalid/privacy',
+            termsUrl: 'https://example.invalid/terms',
+          ),
         ),
       ),
     );
@@ -245,7 +261,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(
-      find.textContaining('Copied: https://learn.REDACTED-BRAND-DOMAIN/terms'),
+      find.textContaining('Copied: https://example.invalid/terms'),
       findsOneWidget,
     );
 

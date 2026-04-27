@@ -5,7 +5,7 @@
 
 ## Context
 
-Lifestream Learn is planned as a commercial SaaS at `learn.REDACTED-BRAND-DOMAIN`. The question: should the code be open source, and if so under which license?
+Lifestream Learn is planned as a commercial hosted SaaS. The question: should the code be open source, and if so under which license?
 
 ## Decision
 

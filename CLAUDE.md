@@ -179,7 +179,7 @@ Specialist agents live in `.claude/agents/`. Invoke via the Agent tool when the 
 | `code-reviewer` | Code quality review on TypeScript backend, Flutter app, or infra |
 | `accessibility-tester` | WCAG compliance, assistive technology, screen reader support |
 | `mfa-engineer` | Authentication/MFA work — TOTP (timing-safe, drift, backup codes), WebAuthn (ceremony order, attestation), JWT access/refresh lifecycle, password hashing, session management. Implementation in `api/src/services/auth.service.ts`, `api/src/services/mfa/`, `api/src/services/session.service.ts`, `api/src/services/refresh-token-store.ts`. Also covers ADR-0007 dual-secret rotation discipline. |
-| `deploy-engineer` | Production VPS deployment to REDACTED-VPS-HOST — `deploy/deploy-production.sh`, PM2 (`learn-api` + `learn-transcode-worker`), nginx vhosts in `deploy/nginx/`, TLS via Let's Encrypt, atomic-symlink rollback, SSH ControlMaster troubleshooting. Coordinates with `shared-resource-guardian` before adding ports/Redis keys/Postgres roles. |
+| `deploy-engineer` | Production VPS deployment via `lsd` (Lifestream ecosystem deploy CLI). Operator-private manifests live in `ops/lsd/learn-api/deploy.yaml` and `ops/lsd/learn-landing/deploy.yaml`; PM2 services (`learn-api` + `learn-transcode-worker`), TLS via Let's Encrypt, atomic-symlink rollback. Coordinates with `shared-resource-guardian` before adding ports/Redis keys/Postgres roles. |
 
 ## Flutter app development (overrides default "test UI before done" rule)
 
