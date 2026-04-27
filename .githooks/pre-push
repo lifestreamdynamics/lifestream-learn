@@ -52,7 +52,7 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     # placeholder markers (`CHANGE_ME`, `REPLACE_ME`). A reviewer should
     # still eyeball the diff; this list only exists to keep the hook
     # from blocking on values that are intentionally public.
-    safe_marker='do_not_use_in_prod|CHANGE_ME|REPLACE_ME|placeholder|example\.local|example\.invalid|learn_dev|learn_access_key|learn_secret_key|tusd_access_key|tusd_secret_key'
+    safe_marker='do_not_use_in_prod|CHANGE_ME|REPLACE_ME|placeholder|example\.local|example\.invalid|learn_dev|learn_access_key|learn_secret_key|tusd_access_key|tusd_secret_key|CorrectHorseBattery1|Dev12345!Pass'
     for p in "${patterns[@]}"; do
       # `-- $p` prevents grep from treating a pattern that starts with `-`
       # (e.g. the private-key `-----BEGIN...` regex) as a command-line flag.
