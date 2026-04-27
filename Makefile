@@ -141,50 +141,23 @@ status: ## One-line status report for local services
 	echo "Flutter API_BASE_URL         : $(API_BASE_URL_EMULATOR)"
 
 # ---------------------------------------------------------------------------
-# Production deploy targets
+# Production build target
 #
-# These are thin wrappers around deploy/deploy-production.sh. The real
-# deploy logic — SSH ControlMaster, atomic release swap, nginx reload,
-# health check — lives in that script. These targets exist so operators
-# get the same muscle-memory entrypoint (`make`) for local and remote
-# work, and so the prod-flavor Flutter build recipe lives next to the
-# dev-flavor one.
+# `app-prod` builds the prod-flavor APK. The public API host, privacy URL,
+# and terms URL are required at build time via env vars — no defaults
+# baked in. Operator-private values live in the operator's shell or in
+# `ops/env/app.production.env`; never commit them.
 #
-# The deploy script itself is delivered by a parallel slice (see
-# the Phasing section of the production-deploy plan). Running these
-# targets before that script lands will print a friendly error.
+# Production deploys themselves are driven by `lsd` against the manifests
+# in `ops/lsd/learn-api/deploy.yaml` and `ops/lsd/learn-landing/deploy.yaml`
+# (operator-private). See `deploy/lsd-migration.md` for the workflow.
 # ---------------------------------------------------------------------------
 
-# Extra args forwarded to deploy/deploy-production.sh (e.g. --skip-tests,
-# --skip-ssl, --sync-env, --rollback). Example:
-#   make deploy-prod DEPLOY_ARGS="--skip-tests --sync-env"
-DEPLOY_ARGS ?=
-DEPLOY_SCRIPT := $(ROOT)/deploy/deploy-production.sh
-
-app-prod: ## Build the production-flavor Flutter APK (release, prod API URL)
+app-prod: ## Build the production-flavor Flutter APK (release). Requires API_BASE_URL, PRIVACY_URL, TERMS_URL env vars.
+	@: $${API_BASE_URL:?API_BASE_URL must be set (e.g. https://api.example.com)} ; \
+	  : $${PRIVACY_URL:?PRIVACY_URL must be set (e.g. https://example.com/privacy)} ; \
+	  : $${TERMS_URL:?TERMS_URL must be set (e.g. https://example.com/terms)}
 	@cd "$(APP_DIR)" && $(FLUTTER) build apk --flavor prod --release \
-		--dart-define=API_BASE_URL=https://learn-api.lifestreamdynamics.com
-
-deploy-prod: ## Run the production deploy script (SSH, atomic release swap, nginx reload)
-	@if [ ! -x "$(DEPLOY_SCRIPT)" ]; then \
-		echo "ERROR: $(DEPLOY_SCRIPT) not found or not executable." >&2; \
-		echo "       The deploy script is delivered by the deploy-automation slice." >&2; \
-		exit 1; \
-	fi
-	@"$(DEPLOY_SCRIPT)" $(DEPLOY_ARGS)
-
-deploy-prod-dry-run: ## Print the deploy plan without making remote changes
-	@if [ ! -x "$(DEPLOY_SCRIPT)" ]; then \
-		echo "ERROR: $(DEPLOY_SCRIPT) not found or not executable." >&2; \
-		echo "       The deploy script is delivered by the deploy-automation slice." >&2; \
-		exit 1; \
-	fi
-	@"$(DEPLOY_SCRIPT)" --dry-run $(DEPLOY_ARGS)
-
-deploy-status: ## SSH to the VPS and show pm2 status for learn-api + transcode worker
-	@if [ ! -x "$(DEPLOY_SCRIPT)" ]; then \
-		echo "ERROR: $(DEPLOY_SCRIPT) not found or not executable." >&2; \
-		echo "       The deploy script is delivered by the deploy-automation slice." >&2; \
-		exit 1; \
-	fi
-	@"$(DEPLOY_SCRIPT)" --status
+		--dart-define=API_BASE_URL=$(API_BASE_URL) \
+		--dart-define=PRIVACY_URL=$(PRIVACY_URL) \
+		--dart-define=TERMS_URL=$(TERMS_URL)

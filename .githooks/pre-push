@@ -22,6 +22,31 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     range="$remote_sha..$local_sha"
   fi
 
+  # ---------------------------------------------------------------------------
+  # Operator-private identifier scan. Always runs (regardless of gitleaks
+  # availability) — the cleanup branch redact-identifiers established the
+  # invariant that mittonvillage.com, lifestreamdynamics.com, and
+  # digitalartifacts.ca never appear in tracked files. Single allowlisted
+  # exception: the public `learn@lifestreamdynamics.com` forwarder used in
+  # CONTRIBUTING.md / CODE_OF_CONDUCT.md / README.md.
+  # ---------------------------------------------------------------------------
+  range_diff="$(git diff "$range" -- . \
+    ':(exclude).githooks/' \
+    ':(exclude).gitleaks.toml' \
+    ':(exclude).github/workflows/secret-scan.yml' \
+    2>/dev/null || true)"
+  added_lines="$(printf '%s' "$range_diff" | grep -E '^\+' | grep -Ev '^\+\+\+' || true)"
+  banned="$(printf '%s' "$added_lines" \
+    | grep -E -i '(mittonvillage\.com|digitalartifacts\.ca|lifestreamdynamics\.com)' \
+    | grep -E -v -i 'learn@lifestreamdynamics\.com' || true)"
+  if [ -n "$banned" ]; then
+    echo "pre-push: operator-private identifier in newly-added lines:" >&2
+    printf '%s\n' "$banned" | head -10 >&2
+    echo "" >&2
+    echo "Move the value into ops/ (gitignored) or replace with a placeholder/env var." >&2
+    found=1
+  fi
+
   if command -v gitleaks >/dev/null 2>&1; then
     if ! gitleaks detect --no-banner --redact --log-level=warn --source . --log-opts="$range" 2>&1; then
       found=1

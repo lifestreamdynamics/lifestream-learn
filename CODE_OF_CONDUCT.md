@@ -14,6 +14,6 @@ Unacceptable behaviour: sexualised language or imagery, trolling, insulting or d
 
 ## Enforcement
 
-Report violations to `eric@digitalartifacts.ca`. Reports will be reviewed promptly and confidentially. Consequences range from a warning to a permanent ban from all project spaces.
+Report violations to `learn@lifestreamdynamics.com`. Reports will be reviewed promptly and confidentially. Consequences range from a warning to a permanent ban from all project spaces.
 
 The full Contributor Covenant text governs where this summary is silent.

@@ -5,12 +5,12 @@
 # Copied from infra/nginx/secure_link.conf.inc (local dev variant). Same
 # validation logic — the caller is responsible for:
 #   - capturing  $sig, $path_expires, $video_id  from the URL via a
-#     named-group regex location (see learn-api.lifestreamdynamics.com.conf)
+#     named-group regex location (see the API vhost in your private
+#     ops/nginx/ directory; the rendered template ships from lsd)
 #   - setting    $secure_link_secret              before the include
-#                (production value comes from /etc/learn-api/.env via
-#                 HLS_SIGNING_SECRET, injected into this config at deploy
-#                 time — see deploy/README.md §§"first-deploy" and
-#                 "rotating the HMAC secret")
+#                (production value comes from the rendered .env via
+#                 HLS_SIGNING_SECRET, materialized at deploy time by the
+#                 lsd pre_cutover hook — see deploy/lsd-migration.md)
 #   - setting    $secure_link_expires_override   = $path_expires
 #   - setting    $signed_prefix                  = "/hls/$video_id/"
 #

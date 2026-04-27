@@ -2,7 +2,7 @@
 
 Short-form educational video platform. Learners scroll a TikTok-style vertical feed of course videos that pause mid-play for interactive exercises — multiple choice, matching, fill-in-the-blank. Course Designers author courses, upload videos, and place interactive cues on a timeline.
 
-**Hosted by Lifestream Dynamics at [learn.lifestreamdynamics.com](https://learn.lifestreamdynamics.com)** · **Source available under AGPL-3.0**
+**Source available under AGPL-3.0** · Maintained by Lifestream Dynamics
 
 ---
 
@@ -25,6 +25,8 @@ The canonical implementation plan lives at [`IMPLEMENTATION_PLAN.md`](./IMPLEMEN
 ## Business model
 
 Open-source core, commercial SaaS. The code is public under AGPL-3.0. The content (videos, cues, course metadata) and user data are served only through the authenticated API run by Lifestream Dynamics. Anyone can self-host for their own content; paid subscriptions on the hosted service support development.
+
+The hosted service URL, marketing pages, and operator contacts are not part of the open-source distribution — they live in the operator-private `ops/` directory.
 
 ---
 
@@ -73,4 +75,4 @@ Pre-alpha. Phases 0–3 (decisions, infra, API scaffold, upload → transcode �
 
 ## Contributing
 
-See [`CONTRIBUTING.md`](./CONTRIBUTING.md). By contributing you agree your changes are licensed under AGPL-3.0. For commercial licensing inquiries, contact `eric@digitalartifacts.ca`.
+See [`CONTRIBUTING.md`](./CONTRIBUTING.md). By contributing you agree your changes are licensed under AGPL-3.0. For commercial licensing inquiries, contact `learn@lifestreamdynamics.com`.

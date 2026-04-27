@@ -1,0 +1,58 @@
+# gitleaks config for lifestream-learn.
+#
+# Extends the default gitleaks rule set with project-specific rules:
+# operator-private hostnames and the maintainer's personal domain must
+# never appear in tracked files. The single allowlisted exception is
+# the public `learn@lifestreamdynamics.com` forwarder.
+
+# Inherit gitleaks' default rule set so the standard secret patterns
+# (AWS keys, GitHub tokens, Stripe keys, private keys, etc.) keep working.
+[extend]
+useDefault = true
+
+# ---------------------------------------------------------------------------
+# Project-specific rules
+# ---------------------------------------------------------------------------
+
+[[rules]]
+id = "lifestream-vps-hostname"
+description = "Operator-private VPS hostname (mittonvillage.com) must never appear in tracked files."
+regex = '''mittonvillage\.com'''
+tags = ["lifestream", "operator-private"]
+
+[[rules]]
+id = "lifestream-maintainer-domain"
+description = "Maintainer's personal domain (digitalartifacts.ca) must never appear in tracked files."
+regex = '''digitalartifacts\.ca'''
+tags = ["lifestream", "operator-private"]
+
+[[rules]]
+id = "lifestream-brand-domain"
+description = "Brand domain (lifestreamdynamics.com) must never appear in tracked files except the allowlisted learn@ forwarder."
+regex = '''lifestreamdynamics\.com'''
+tags = ["lifestream", "operator-private"]
+[rules.allowlist]
+description = "The public maintainer/contact forwarder is the single approved use of this domain."
+regexes = ['''learn@lifestreamdynamics\.com''']
+
+# ---------------------------------------------------------------------------
+# Global allowlist — paths and stopwords that are intentionally exempt.
+# ---------------------------------------------------------------------------
+
+[allowlist]
+description = "Files that legitimately reference the operator-private patterns (hook source, gitleaks config, CI)."
+paths = [
+  '''\.githooks/.*''',
+  '''\.gitleaks\.toml''',
+  '''\.github/workflows/secret-scan\.yml''',
+]
+# Documented dev-only fixtures that already ship publicly. The rest of the
+# fallback list lives in .githooks/pre-push; gitleaks needs only the
+# values its default rules might surface as secrets.
+stopwords = [
+  "CorrectHorseBattery1",
+  "Dev12345!Pass",
+  "do_not_use_in_prod",
+  "CHANGE_ME",
+  "REPLACE_ME",
+]

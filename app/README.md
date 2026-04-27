@@ -91,16 +91,24 @@ flutter build apk --debug --flavor dev
 
 ## Production build
 
-The `prod` flavor points at the real API URL (`https://learn-api.lifestreamdynamics.com`) and blocks cleartext HTTP. Use either the Makefile target or the explicit invocation below; do not hard-code the URL into Dart sources — it's threaded in at build time via `--dart-define`.
+The `prod` flavor blocks cleartext HTTP and reads its API host, privacy
+URL, and terms URL from build-time `--dart-define` values — no defaults
+are baked into Dart sources. The operator must supply real values via
+env vars before invoking the build.
 
 ```bash
-# From the repo root (preferred):
+# From the repo root (preferred): API_BASE_URL, PRIVACY_URL, TERMS_URL must be exported.
 make app-prod
 
 # Or directly from app/:
 flutter build apk --flavor prod --release \
-  --dart-define=API_BASE_URL=https://learn-api.lifestreamdynamics.com
+  --dart-define=API_BASE_URL="$API_BASE_URL" \
+  --dart-define=PRIVACY_URL="$PRIVACY_URL" \
+  --dart-define=TERMS_URL="$TERMS_URL"
 ```
+
+The Makefile target fails fast if any of the three env vars is unset, so
+a misconfigured build can't ship pointing at the wrong host.
 
 The resulting APK lands at `app/build/app/outputs/flutter-apk/app-prod-release.apk`. It signs with the debug keystore until a production signing config is wired — that's a separate Play Store slice, out of scope for the current deploy prep.
 
