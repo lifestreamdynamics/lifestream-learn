@@ -3,9 +3,17 @@ import path from 'node:path';
 import dotenv from 'dotenv';
 import { defineConfig } from '@prisma/config';
 
-// Load .env.local (dev) or .env.test (test) the same way src/config/env.ts does,
-// so `prisma migrate dev/deploy` can resolve DATABASE_URL without duplicating secrets.
-const envFile = process.env.NODE_ENV === 'test' ? '.env.test' : '.env.local';
+// Load env the same way src/config/env.ts does, so `prisma migrate
+// dev/deploy` can resolve DATABASE_URL without duplicating secrets.
+// Production reads `.env.production` (rendered into the release dir
+// by lsd from lsd-vault); test reads `.env.test`; everything else
+// reads `.env.local`.
+const envFile =
+  process.env.NODE_ENV === 'test'
+    ? '.env.test'
+    : process.env.NODE_ENV === 'production'
+      ? '.env.production'
+      : '.env.local';
 dotenv.config({ path: path.resolve(__dirname, envFile) });
 
 export default defineConfig({
