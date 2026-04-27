@@ -19,7 +19,12 @@ import '../../../core/settings/settings_cubit.dart';
 ///   `url_launcher`; when no browser can be resolved we fall back to
 ///   copying the URL to the clipboard so the user is never stranded.
 class PrivacySection extends StatelessWidget {
-  const PrivacySection({super.key, this.launcher});
+  const PrivacySection({
+    super.key,
+    this.launcher,
+    this.privacyPolicyUrl = _defaultPrivacyPolicyUrl,
+    this.termsUrl = _defaultTermsUrl,
+  });
 
   /// Test-only URL-launcher injection. Real builds use `launchUrl`
   /// from `package:url_launcher`. Widget tests pass a fake so they
@@ -27,10 +32,22 @@ class PrivacySection extends StatelessWidget {
   @visibleForTesting
   final UrlLauncher? launcher;
 
-  static const String _privacyPolicyUrl =
-      'https://learn.REDACTED-BRAND-DOMAIN/privacy';
-  static const String _termsUrl =
-      'https://learn.REDACTED-BRAND-DOMAIN/terms';
+  /// Public privacy policy URL. Defaults to the build-time
+  /// `--dart-define=PRIVACY_URL=...` value; no implicit fallback.
+  /// Tests pass an explicit value so they don't need build-time defines.
+  final String privacyPolicyUrl;
+
+  /// Public terms-of-service URL. Same convention as `privacyPolicyUrl`.
+  final String termsUrl;
+
+  // Build-time defines. Operator must supply both:
+  //   --dart-define=PRIVACY_URL=https://<your-host>/privacy
+  //   --dart-define=TERMS_URL=https://<your-host>/terms
+  // Empty default means an unconfigured build renders an empty link
+  // tile — caught by the manual-test checklist before shipping.
+  static const String _defaultPrivacyPolicyUrl =
+      String.fromEnvironment('PRIVACY_URL');
+  static const String _defaultTermsUrl = String.fromEnvironment('TERMS_URL');
 
   @override
   Widget build(BuildContext context) {
@@ -82,13 +99,13 @@ class PrivacySection extends StatelessWidget {
           _LinkTile(
             keyValue: const Key('settings.privacy.privacyPolicy'),
             title: 'Privacy Policy',
-            url: _privacyPolicyUrl,
+            url: privacyPolicyUrl,
             launcher: launcher,
           ),
           _LinkTile(
             keyValue: const Key('settings.privacy.terms'),
             title: 'Terms of Service',
-            url: _termsUrl,
+            url: termsUrl,
             launcher: launcher,
           ),
         ],

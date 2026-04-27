@@ -460,20 +460,20 @@ Each phase has **exit criteria** that must all be met before the next phase begi
 ---
 
 ### Phase 8 — Deployment Hardening  (in flight)
-**Goal:** Ship to production VPS (`REDACTED-VPS-HOST`) with the same quality bar as local. Infrastructure automation exists in `deploy/`; this phase closes the gap between "locally production-ready" (Phase 7) and "publicly accessible."
+**Goal:** Ship to the production VPS with the same quality bar as local. Deployment is driven by `lsd` (Lifestream ecosystem deploy CLI) against operator-private manifests in `ops/lsd/`; this phase closes the gap between "locally production-ready" (Phase 7) and "publicly accessible."
 
 **Tasks:**
-1. Atomic-symlink rsync deploy with PM2 reload (`deploy/deploy-production.sh`) — runs from operator workstation; idempotent.
-2. PM2 ecosystem for `learn-api`, `learn-transcode-worker`, `learn-seaweedfs`, `learn-tusd` (`deploy/pm2/ecosystem.config.cjs`). Worker wraps under `nice -n 10` to keep transcode off the API's CPU; `TRANSCODE_CONCURRENCY=1` baked into env.
-3. Nginx vhosts for the API + landing page (`deploy/nginx/`). `/metrics` and `/internal/` IP-allowlisted to loopback + docker bridge (resolved 2026-04-26 — see threat model TM-001).
-4. Let's Encrypt TLS via certbot, auto-renewal hook.
-5. First-time VPS prereqs (`deploy/README.md`): FFmpeg install, SeaweedFS bucket provisioning, `/etc/learn-api/.env` (chmod 600, root-owned).
+1. `lsd`-driven atomic deploy with PM2 reload — runs from operator workstation; idempotent. Manifests at `ops/lsd/learn-api/deploy.yaml` and `ops/lsd/learn-landing/deploy.yaml` (operator-private).
+2. PM2 services declared in the lsd manifest: `learn-api`, `learn-transcode-worker`. Long-running daemons (`learn-tusd`, `learn-seaweedfs`) remain hand-managed via a one-time PM2 `start` + `pm2 save`. `TRANSCODE_CONCURRENCY=1` baked into env.
+3. Nginx vhosts for the API + landing page rendered by lsd from operator-private templates in `ops/nginx/`. `/metrics` and `/internal/` IP-allowlisted to loopback + docker bridge (resolved 2026-04-26 — see threat model TM-001).
+4. Let's Encrypt TLS auto-provisioned by lsd Phase 4 if missing, with renewal handled by certbot's system timer.
+5. First-time VPS prereqs (`deploy/lsd-migration.md`): FFmpeg install, SeaweedFS bucket provisioning, secrets imported into lsd-vault.
 6. Health verification post-deploy: `/health/liveness`, `/health/readiness`, signed playback round-trip.
 
 **Exit criteria:**
-1. `deploy/deploy-production.sh` green on a clean VPS (documented in `deploy/README.md`).
+1. `lsd deploy learn-api` green on a clean VPS (documented in `deploy/lsd-migration.md`).
 2. Learn-api + transcode worker running under PM2; both restart cleanly on PM2 reload.
-3. Nginx vhost for `learn-api.REDACTED-BRAND-DOMAIN` serves with valid TLS; `/metrics` + `/internal/` reject non-allowlisted IPs.
+3. Nginx vhost for the public API host serves with valid TLS; `/metrics` + `/internal/` reject non-allowlisted IPs.
 4. `/health/readiness` is 200 at the production URL.
 5. `~~CPR-007~~` (bootstrap HLS port bug) resolved (2026-04-26).
 6. Signed playback round-trips in production: tusd upload → transcode → master playlist returns 200, segment fetch with valid HMAC returns 200, tampered HMAC returns 403.
@@ -491,7 +491,7 @@ These slices landed after the original Phase 7 close and span observability, har
 | V1 | Video-input hardening (container/codec/duration/size policy) + FLAG_SECURE-ready player polish. |
 | U1 | UI overhaul: brand rollout, cyan theme, dark/light mode, splash + launcher icon. |
 | P5–P9 | Playback polish: seek bar refinement, double-tap accumulation, back-button guard, fullscreen orientation, layout fix. |
-| D1, D1.1 | Production deploy prep for `learn-api` + landing page on `REDACTED-VPS-HOST`; Android release signing wiring. |
+| D1, D1.1 | Production deploy prep for `learn-api` + landing page on the production VPS; Android release signing wiring. |
 | D2, D2.1 | Designer editor timeline seek + live playhead; deploy polish, privacy/terms content, Android manifest fixes. |
 
 **Phase 8 backlog (deferred items, ordered by priority):**

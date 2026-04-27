@@ -4,7 +4,7 @@ Thanks for your interest. This project is open source under AGPL-3.0 while being
 
 ## Before you start
 
-- **License:** by opening a PR you agree your contribution is licensed under AGPL-3.0. If you need a different license for your use case, email `eric@REDACTED-DOMAIN` before contributing.
+- **License:** by opening a PR you agree your contribution is licensed under AGPL-3.0. If you need a different license for your use case, email `learn@lifestreamdynamics.com` before contributing.
 - **Issues first:** for non-trivial changes, open an issue to discuss the approach before writing code. Drive-by refactors will usually be closed.
 - **Scope:** this project deliberately keeps a narrow feature surface. New interaction cue types, new auth flows, and major architectural changes should be discussed before implementation.
 
