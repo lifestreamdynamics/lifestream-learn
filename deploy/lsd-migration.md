@@ -34,15 +34,57 @@ laptop-side quickstart.
 ## What's still hand-managed (out of scope for lsd today)
 
 - **`learn-tusd`** and **`learn-seaweedfs`** — long-running daemons that
-  don't ship per-deploy artifacts. Operator starts each once via
-  `pm2 start <command> --name learn-tusd` (and `learn-seaweedfs`) using
-  the binary args from the operator-private `ops/pm2/legacy.cjs`, then
-  `pm2 save`. (Or migrate them to systemd units — a TODO for after
-  MVP launch.)
-- **The HMAC HLS secret include**: lsd renders
-  `/etc/nginx/snippets/learn-api-hls-secret.inc` per-deploy via a
-  `pre_cutover` hook (sources `HLS_SIGNING_SECRET` from the rendered
-  `.env.production`).
+  don't ship per-deploy artifacts. They run under the **root** pm2
+  daemon (separate from the `learn-api` user pm2 daemon that hosts the
+  app + worker), persisted via `pm2 save` and resurrected on boot by
+  `pm2-root.service`. Operator brought them up once via:
+  - `pm2 start /usr/local/bin/weed --name learn-seaweedfs --interpreter none --no-autorestart -- server -dir=/var/lib/learn-seaweedfs -s3 -s3.config=/etc/learn-api/s3.json -filer -master.volumeSizeLimitMB=1024 -ip=127.0.0.1 -ip.bind=127.0.0.1`
+  - `AWS_ACCESS_KEY_ID=<tusd-upload key from /etc/learn-api/s3.json> AWS_SECRET_ACCESS_KEY=<tusd-upload secret> AWS_REGION=us-east-1 pm2 start /etc/learn-api/tusd-start.sh --name learn-tusd --interpreter none --update-env`
+  - `pm2 save`
+- **The HMAC HLS secret include** at `/etc/nginx/snippets/learn-api-hls-secret.inc`
+  is populated manually (not via an lsd hook). lsd's hook runner exec's
+  as the app user (`learn-api`), which can't write to `/etc/nginx/`.
+  See "HLS secret rotation" below for the runbook.
+
+## HLS secret rotation
+
+The HMAC secret used for signed-URL HLS playback has two storage sites:
+
+1. **lsd-vault** — source of truth. Read by the API at runtime as
+   `HLS_SIGNING_SECRET` (rendered into `.env.production` per release).
+2. **`/etc/nginx/snippets/learn-api-hls-secret.inc`** — a one-line
+   `set $secure_link_secret "<value>";` directive included by the API
+   nginx vhost. Mode `0640 root:www-data` so only nginx can read it.
+
+When you rotate, update both. Mismatched values cause every signed URL
+to return HTTP 403 (HMAC validation fails).
+
+```bash
+# 1. Generate a new secret (48 bytes, base64; matches the api/.env.production.example pattern)
+NEW_SECRET="$(openssl rand -base64 48)"
+
+# 2. Update lsd-vault
+cd ~/Projects/lifestream-learn/api
+echo "$NEW_SECRET" | lsd secrets set learn-api HLS_SIGNING_SECRET=-
+
+# 3. Materialize on the VPS — write the snippet, validate nginx, reload
+ssh "root@$VPS_HOST" \
+  "printf 'set \$secure_link_secret \"%s\";\n' '$NEW_SECRET' \
+   | install -m 0640 -o root -g www-data /dev/stdin /etc/nginx/snippets/learn-api-hls-secret.inc \
+   && nginx -t && systemctl reload nginx"
+
+# 4. Trigger a fresh API deploy so the running process picks up the new
+#    HLS_SIGNING_SECRET from .env.production.
+cd ~/Projects/lifestream-learn/api
+lsd deploy learn-api <next-tag>
+```
+
+Order matters: vault → snippet → API deploy. If the API picks up the
+new secret before nginx does, in-flight playback URLs signed with the
+old secret 403 until they expire (≤ 2h with the default TTL).
+
+To read back what's currently in vault (for verification / disaster
+recovery): `cd ~/Projects/lifestream-learn/api && lsd secrets get learn-api HLS_SIGNING_SECRET`.
 
 ## First-deploy gate
 
