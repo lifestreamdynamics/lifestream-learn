@@ -478,6 +478,8 @@ Each phase has **exit criteria** that must all be met before the next phase begi
 5. `~~CPR-007~~` (bootstrap HLS port bug) resolved (2026-04-26).
 6. Signed playback round-trips in production: tusd upload → transcode → master playlist returns 200, segment fetch with valid HMAC returns 200, tampered HMAC returns 403.
 
+**Status as of 2026-04-26 (first lsd deploy pending):** the manifests, vault rules, and runbook are in place, but `lsd deploy learn-api` has not yet been invoked against the production VPS for this project (verified against `~/Projects/lsd-ledger/deploys.jsonl`). The first deploy is therefore not a routine deploy — see `deploy/lsd-migration.md §First-deploy gate` for the prerequisite-verification checklist that must pass before invoking `lsd deploy`.
+
 **Phase 8 Slices ledger (post-Phase-7 work shipped through 2026-04-26):**
 
 These slices landed after the original Phase 7 close and span observability, hardening, UX, deploy prep, and designer authoring. On-device verification for Flutter slices remains the operator's call (per the Flutter rule in `CLAUDE.md`); Claude marks them `✎ compiled-and-analyzed-only` and Eric promotes to `✓ verified` after a real-device pass.

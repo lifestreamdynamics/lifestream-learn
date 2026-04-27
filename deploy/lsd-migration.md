@@ -34,14 +34,47 @@ laptop-side quickstart.
 ## What's still hand-managed (out of scope for lsd today)
 
 - **`learn-tusd`** and **`learn-seaweedfs`** — long-running daemons that
-  don't ship per-deploy artifacts. Operator runs once:
-  `pm2 start /var/www/learn-api/current/deploy/pm2/ecosystem.config.cjs --only learn-tusd,learn-seaweedfs`
-  then `pm2 save`. (Or migrate them to systemd units — a TODO for after
+  don't ship per-deploy artifacts. Operator starts each once via
+  `pm2 start <command> --name learn-tusd` (and `learn-seaweedfs`) using
+  the binary args from the operator-private `ops/pm2/legacy.cjs`, then
+  `pm2 save`. (Or migrate them to systemd units — a TODO for after
   MVP launch.)
 - **The HMAC HLS secret include**: lsd renders
   `/etc/nginx/snippets/learn-api-hls-secret.inc` per-deploy via a
   `pre_cutover` hook (sources `HLS_SIGNING_SECRET` from the rendered
   `.env.production`).
+
+## First-deploy gate
+
+Before invoking `lsd deploy learn-api` for the **first time** against any
+VPS, run these read-only checks and confirm each one passes. Skipping
+this gate is how a first deploy half-succeeds, leaving the box in a state
+neither the legacy script nor lsd recognizes.
+
+```bash
+# 1. lsd-side preflight
+lsd doctor                              # vault agent, ssh keys, etc.
+lsd secrets diff learn-api              # MUST print "OK: 47 keys aligned"
+
+# 2. VPS-side preflight (read-only)
+ssh "root@$VPS_HOST" '
+  id learn-api 2>&1 || echo "MISSING: learn-api user"
+  ls -la /var/www/learn-api/{releases,shared} 2>&1 | head -5
+  ls -la /etc/nginx/snippets/learn-api-secure_link.conf.inc 2>&1
+  test -d /etc/nginx/sites-enabled && ls /etc/nginx/sites-enabled/ | grep -i learn || echo "no learn vhost yet"
+  pm2 list 2>&1 | grep -i learn || sudo -u learn-api pm2 list 2>&1 | grep -i learn || echo "no pm2 learn-api yet"
+  command -v ffmpeg && ffmpeg -version | head -1
+  test -f /etc/learn-api/.env && stat -c "%a %U:%G" /etc/learn-api/.env || echo "no legacy /etc/learn-api/.env"
+'
+
+# 3. Confirm the dry-run plan looks right
+cd ~/Projects/lifestream-learn/ops/lsd/learn-api
+lsd deploy --dry-run learn-api v0.1.0
+```
+
+Stop and read every line of `lsd deploy --dry-run` output before you run
+the real deploy. If the dry-run wants to overwrite a vhost or PM2 process
+you didn't expect, fix that first.
 
 ## One-time setup (operator)
 
