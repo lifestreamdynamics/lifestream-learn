@@ -6,6 +6,12 @@
 # ---- Private ops directory (NEVER commit) ----
 ops/
 
+# ---- Operator-private lsd manifests (live in ops/lsd/, but lsd's
+#      worktree resolution requires a deploy.yaml next to package.json,
+#      so a copy lands at api/deploy.yaml at deploy time). NEVER commit. ----
+/api/deploy.yaml
+/infra/landing/deploy.yaml
+
 # ---- Environment files ----
 .env
 .env.local
