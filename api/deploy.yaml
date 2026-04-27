@@ -1,0 +1,184 @@
+schema_version: 1
+name: learn-api
+plugin: node-pm2
+version_scheme: semver
+target: vps
+
+# `runtime.port` is the single source of truth for the listen port. lsd
+# injects PORT=3101 into the rendered .env.production AND auto-fills
+# `nginx.vars.upstream` as 127.0.0.1:3101. Don't repeat the value in
+# the secrets keys list — lsd validates that PORT is NOT in vault keys.
+runtime:
+  port: 3101
+
+remote:
+  host: mittonvillage.com
+  user: learn-api
+  ssh_user: root
+  app_dir: /var/www/learn-api
+  releases_kept: 5
+  # `local_path` defaults to the cwd of `lsd deploy`, which is the API
+  # subdir of the lifestream-learn monorepo. Tags are at the repo root,
+  # so deploys are launched from this directory (the worktree git ops
+  # walk upward to find .git).
+
+build:
+  commands:
+    # Generate the Prisma client during build so the production
+    # `npm ci --omit=dev --ignore-scripts` in stage doesn't have to
+    # re-run it (and so `tsc` can compile against the generated types).
+    - npm ci
+    - npm run prisma:generate
+    - npm run build
+  artifact_dir: dist
+  include:
+    - package.json
+    - package-lock.json
+    # Prisma needs schema + migrations at runtime for `prisma migrate deploy`.
+    - prisma
+  # No build.env: NODE_ENV=production would make `npm ci` skip
+  # devDependencies, breaking tsc / tsc-alias / rimraf.
+
+services:
+  - name: learn-api
+    kind: pm2
+    # `dist/index.js` after tsc compiles src/index.ts (rootDir=. so the
+    # `src/` prefix is preserved — see api/tsconfig.build.json).
+    script: dist/index.js
+    # Singleton fork mode: the VPS has 2 vCPU + 3.8 GB RAM and runs
+    # eight other apps. Cluster mode would double the RSS for marginal
+    # throughput at MVP-scale traffic. Revisit when we hit RAM headroom.
+    exec_mode: fork
+    singleton: true
+    max_memory: 512M
+
+  - name: learn-transcode-worker
+    kind: pm2
+    # FFmpeg is CPU-hungry; one worker, one job at a time, low priority.
+    # The PM2 `nice` wrap from the legacy ecosystem.config.cjs isn't
+    # representable in lsd's rendered ecosystem yet — for now the worker
+    # runs at default priority. Track in IMPLEMENTATION_PLAN follow-up:
+    # if FFmpeg is starving the API at peak, add a wrapper script under
+    # api/scripts/transcode-nice.sh that exec's the worker via `nice -n 10`
+    # and point this service.script at that wrapper.
+    script: dist/workers/transcode.js
+    exec_mode: fork
+    singleton: true
+    max_memory: 512M
+    depends_on: [learn-api]
+
+health:
+  url: https://learn-api.lifestreamdynamics.com/health
+  localhost_url: http://127.0.0.1:3101/health
+  expect_status: 200
+  timeout_s: 30
+  retries: 6
+  retry_delay_s: 5
+
+# learn_api_production currently carries 15 BASE TABLEs (2026-04-26;
+# Phase 3 schema). 12 ≈ 80% leaves headroom for two table renames in a
+# single migration while still flagging an empty/dev DB or a wrong-DSN
+# misconfiguration. Bump this number as the schema grows.
+db_sanity_check:
+  min_tables: 12
+
+nginx:
+  # api-hls.conf.tpl renders an HTTPS vhost with three upstream-aware
+  # locations: /api/* → the Node port, /uploads/* → tusd, and the
+  # signed /hls/<sig>/<expires>/<videoId>/<path> path → SeaweedFS.
+  template: api-hls.conf.tpl
+  server_name: learn-api.lifestreamdynamics.com
+  vars:
+    # `upstream` is auto-derived from runtime.port if omitted, but we
+    # include it explicitly here so the Extra map carries it for the
+    # template's other vars-driven blocks.
+    upstream: "127.0.0.1:3101"
+    tusd_upstream: "127.0.0.1:1080"
+    seaweedfs_upstream: "127.0.0.1:8333"
+    hls_bucket: "learn-vod"
+    hls_secret_file: "/etc/nginx/snippets/learn-api-hls-secret.inc"
+  # The HMAC validator snippet is shipped from the project's
+  # deploy/nginx/snippets/secure_link.conf.inc by a post_stage hook.
+  required_snippets:
+    - /etc/nginx/snippets/learn-api-secure_link.conf.inc
+
+secrets:
+  provider: lsd-vault
+  lsd_vault:
+    # Every key listed in api/.env.production.example except PORT (which
+    # comes from runtime.port — lsd validates PORT is NOT in this list).
+    # SEED_* keys are intentionally OMITTED in production: Phase 3 ships
+    # `SEED_SAMPLE_VIDEO=false` and seed runs only via the dev workflow.
+    keys:
+      - NODE_ENV
+      - LOG_LEVEL
+      - DATABASE_URL
+      - REDIS_URL
+      - REDIS_KEY_PREFIX
+      - JWT_ACCESS_SECRET
+      - JWT_REFRESH_SECRET
+      - JWT_ACCESS_TTL
+      - JWT_REFRESH_TTL
+      - IP_HASH_SALT
+      - S3_ENDPOINT
+      - S3_REGION
+      - S3_ACCESS_KEY
+      - S3_SECRET_KEY
+      - S3_UPLOAD_BUCKET
+      - S3_VOD_BUCKET
+      - S3_FORCE_PATH_STYLE
+      - TUSD_PUBLIC_URL
+      - TUSD_HOOK_SECRET
+      - HLS_BASE_URL
+      - HLS_SIGNING_SECRET
+      - HLS_SIGNING_TTL_SECONDS
+      - WEBAUTHN_RP_ID
+      - WEBAUTHN_RP_NAME
+      - WEBAUTHN_ORIGIN
+      - MFA_ENCRYPTION_KEY
+      - MFA_TOTP_ISSUER
+      - CORS_ALLOWED_ORIGINS
+      - METRICS_ENABLED
+      - HTTP_KEEPALIVE_MS
+      - HTTP_HEADERS_TIMEOUT_MS
+      - VIDEO_MAX_DURATION_MS
+      - TRANSCODE_CONCURRENCY
+      - TRANSCODE_TMP_DIR
+      - FFMPEG_BIN
+      - FFPROBE_BIN
+      - RATE_LIMIT_LOGIN_MAX
+      - RATE_LIMIT_LOGIN_WINDOW_MS
+      - RATE_LIMIT_SIGNUP_MAX
+      - RATE_LIMIT_SIGNUP_WINDOW_MS
+      - RATE_LIMIT_REFRESH_MAX
+      - RATE_LIMIT_REFRESH_WINDOW_MS
+      - RATE_LIMIT_TUSD_HOOK_MAX
+      - RATE_LIMIT_TUSD_HOOK_WINDOW_MS
+      - CRASH_REPORTING_ENABLED
+      - LEARN_CRASH_ENDPOINT
+      - LEARN_CRASH_API_KEY
+
+hooks:
+  preflight:
+    - npm run lint
+    - npm run typecheck
+  pre_cutover:
+    # Materialize the HMAC secret into the include file the api-hls
+    # template reads. Runs on the VPS in $RELEASE_DIR (the new release,
+    # not yet current) — Phase 3.5 has already rendered .env.production
+    # there so HLS_SIGNING_SECRET is available. We render a one-line
+    # nginx file at /etc/nginx/snippets/learn-api-hls-secret.inc, mode
+    # 0640 owned root:www-data so only nginx (running as www-data) can
+    # read it. Doing this BEFORE cutover means the freshly-rendered
+    # vhost (Phase 4) and the secret include land on the same reload.
+    #
+    # The secret value rotates only when the operator runs
+    # `lsd secrets set learn-api HLS_SIGNING_SECRET=...`, but rendering
+    # on every deploy is idempotent and trivially cheap.
+    - { id: render-hls-secret, cmd: 'bash -c ''set -a; . "$RELEASE_DIR/.env.production"; set +a; printf "set \$secure_link_secret \"%s\";\n" "$HLS_SIGNING_SECRET" | install -m 0640 -o root -g www-data /dev/stdin /etc/nginx/snippets/learn-api-hls-secret.inc''' }
+  post_deploy:
+    # Apply pending Prisma migrations against the now-current release.
+    # `migrate deploy` is idempotent: applied migrations are tracked in
+    # _prisma_migrations and skipped on re-runs. NEVER use `migrate dev`
+    # in prod — it wipes the DB on shadow conflicts.
+    - { id: prisma-migrate, cmd: npx prisma migrate deploy, cwd: current }
